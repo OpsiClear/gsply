@@ -2,9 +2,9 @@ name: Benchmark
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master, main ]
   pull_request:
-    branches: [ main ]
+    branches: [ master, main ]
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
 
     - name: Run standard benchmark
       run: |
-        python benchmarks/benchmark.py --config.file test_data.ply --config.iterations 10 2>&1 | tee benchmark_results.txt
+        python benchmarks/benchmark.py --file test_data.ply --iterations 10 2>&1 | tee benchmark_results.txt
       continue-on-error: true
 
     - name: Run compressed benchmark

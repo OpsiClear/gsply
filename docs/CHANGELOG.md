@@ -122,7 +122,7 @@ pip install -e .[all]
 - **Required**: numpy>=1.20.0
 - **Optional**: numba>=0.59.0 (for parallel processing)
 - **Dev**: pytest, pytest-cov, build, twine
-- **Benchmark**: open3d, plyfile, tyro
+- **Benchmark**: open3d, plyfile
 
 ### Contributors
 - OpsiClear

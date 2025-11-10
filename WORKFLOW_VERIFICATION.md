@@ -58,7 +58,7 @@ All workflow files have valid YAML syntax:
 
 **Dependencies Verified**:
 - ✓ `[benchmark,jit]` extras exist in pyproject.toml
-- ✓ numba, tyro, open3d, plyfile specified
+- ✓ numba, open3d, plyfile specified (tyro removed - uses argparse)
 
 **Scripts Verified**:
 - ✓ `benchmarks/benchmark.py` exists
@@ -190,10 +190,12 @@ All required extras are properly defined:
 ```toml
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov", "build", "twine"]
-benchmark = ["open3d>=0.17.0", "plyfile>=0.9.0", "tyro>=0.8.0"]
+benchmark = ["open3d>=0.17.0", "plyfile>=0.9.0"]
 jit = ["numba>=0.59.0"]
 all = [all of the above]
 ```
+
+**Note**: tyro dependency removed - benchmark script now uses standard argparse
 
 **Verification**:
 - ✓ `[dev]` - Used by test.yml, build.yml, docs.yml
