@@ -1,0 +1,22 @@
+# Include documentation
+include README.md
+include LICENSE
+include INVESTIGATION_SUMMARY.md
+include OPTIMIZATION_RESULTS.md
+include MINIPLY_ANALYSIS.md
+
+# Include test data (if any)
+recursive-include tests *.py
+
+# Exclude build artifacts and caches
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude *.so
+global-exclude *.dylib
+global-exclude .DS_Store
+exclude .gitignore
+exclude uv.lock
+prune .venv
+prune build
+prune dist
+prune *.egg-info

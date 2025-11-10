@@ -1,0 +1,12 @@
+# Code owners for gsply
+# These owners will be requested for review when PRs are opened
+
+# Default owners for everything in the repo
+*       @OpsiClear
+
+# Specific owners for different areas
+/src/           @OpsiClear
+/tests/         @OpsiClear
+/docs/          @OpsiClear
+*.md            @OpsiClear
+pyproject.toml  @OpsiClear

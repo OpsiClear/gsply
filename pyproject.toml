@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gsply"
+version = "0.1.0"
+description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python, zero dependencies"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    {name = "OpsiClear", email = "yehe@opsiclear.com"}
+]
+maintainers = [
+    {name = "OpsiClear", email = "yehe@opsiclear.com"}
+]
+keywords = ["gaussian-splatting", "ply", "3d", "point-cloud", "compression", "nerf", "3dgs"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "numpy>=1.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "build",
+    "twine",
+]
+benchmark = [
+    "open3d>=0.17.0",
+    "plyfile>=0.9.0",
+    "tyro>=0.8.0",
+]
+jit = [
+    "numba>=0.59.0",
+]
+all = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "build",
+    "twine",
+    "open3d>=0.17.0",
+    "plyfile>=0.9.0",
+    "tyro>=0.8.0",
+    "numba>=0.59.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/OpsiClear/gsply"
+Repository = "https://github.com/OpsiClear/gsply"
+Issues = "https://github.com/OpsiClear/gsply/issues"
+Documentation = "https://github.com/OpsiClear/gsply#readme"
+
+[tool.setuptools]
+packages = ["gsply"]
+package-dir = {"" = "src"}
+zip-safe = true
+
+[tool.setuptools.package-data]
+gsply = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--strict-config",
+]
+
+[tool.coverage.run]
+source = ["gsply"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+exclude = [
+    "benchmarks",
+]
