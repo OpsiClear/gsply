@@ -18,7 +18,7 @@ import tempfile
 import gc
 
 import numpy as np
-import tyro
+import argparse
 
 # Import libraries
 try:
@@ -98,8 +98,8 @@ def benchmark_gsply_read(file_path: Path, **timer_kwargs):
         return gsply.plyread(file_path)
 
     mean_time, std_time, result = timer(read_fn, **timer_kwargs)
-    means, scales, quats, opacities, sh0, shN = result
-    num_gaussians = means.shape[0]
+    # GSData namedtuple - access via attributes
+    num_gaussians = result.means.shape[0]
 
     return {
         'name': 'gsply',
@@ -189,7 +189,8 @@ def benchmark_plyfile_read(file_path: Path, **timer_kwargs):
 
 def benchmark_gsply_write(data, output_path: Path, **timer_kwargs):
     """Benchmark gsply write performance."""
-    means, scales, quats, opacities, sh0, shN = data
+    # GSData namedtuple - unpack first 6 elements
+    means, scales, quats, opacities, sh0, shN = data[:6]
 
     def write_fn():
         gsply.plywrite(output_path, means, scales, quats, opacities, sh0, shN)
@@ -231,7 +232,8 @@ def benchmark_open3d_write(data, output_path: Path, **timer_kwargs):
 
 def benchmark_plyfile_write(data, output_path: Path, **timer_kwargs):
     """Benchmark plyfile write performance (full SH degree 3)."""
-    means, scales, quats, opacities, sh0, shN = data
+    # GSData namedtuple - unpack first 6 elements
+    means, scales, quats, opacities, sh0, shN = data[:6]
     num_gaussians = means.shape[0]
 
     # Flatten shN for writing
@@ -643,4 +645,36 @@ def main(config: BenchmarkConfig):
 
 
 if __name__ == "__main__":
-    exit(tyro.cli(main))
+    parser = argparse.ArgumentParser(description="Benchmark gsply performance")
+    parser.add_argument(
+        "--file",
+        type=str,
+        default="../export_with_edits/frame_00000.ply",
+        help="Path to test PLY file"
+    )
+    parser.add_argument(
+        "--warmup",
+        type=int,
+        default=3,
+        help="Number of warmup iterations"
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=10,
+        help="Number of benchmark iterations"
+    )
+    parser.add_argument(
+        "--skip-write",
+        action="store_true",
+        help="Skip write benchmarks"
+    )
+
+    args = parser.parse_args()
+    config = BenchmarkConfig(
+        file=args.file,
+        warmup=args.warmup,
+        iterations=args.iterations,
+        skip_write=args.skip_write
+    )
+    exit(main(config))

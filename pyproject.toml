@@ -45,7 +45,6 @@ dev = [
 benchmark = [
     "open3d>=0.17.0",
     "plyfile>=0.9.0",
-    "tyro>=0.8.0",
 ]
 jit = [
     "numba>=0.59.0",
@@ -57,7 +56,6 @@ all = [
     "twine",
     "open3d>=0.17.0",
     "plyfile>=0.9.0",
-    "tyro>=0.8.0",
     "numba>=0.59.0",
 ]
 
