@@ -22,10 +22,9 @@
 
 **Why gsply?**
 - **Blazing Fast**: Zero-copy reads by default, single bulk operations
-- **Zero Dependencies**: Pure Python + numpy (no C++ compilation needed)
-- **Format Support**: Uncompressed PLY + PlayCanvas compressed format
+- **Zero Dependencies**: Pure Python + numpy + numba (no C++ compilation needed)
+- **Format Support**: native Gaussian Splatting ply + PlayCanvas compressed ply format
 - **Auto-Detection**: Automatically detects format and SH degree
-- **Production Ready**: 65 passing tests, comprehensive benchmarks, CI/CD pipeline
 
 ---
 
@@ -39,10 +38,8 @@
 - **Zero-copy optimization**: Enabled by default for maximum performance
 - **Zero dependencies**: Pure Python + numpy (no compilation required)
 - **Multiple SH degrees**: Supports SH degrees 0-3 (14, 23, 38, 59 properties)
-- **Compressed format**: PlayCanvas-compatible chunk-based compression (3.4x smaller for SH0)
 - **Auto-format detection**: Automatically detects uncompressed vs compressed formats
 - **Type-safe**: Full type hints for Python 3.10+
-- **GSData container**: Named tuple for clean attribute access and tuple unpacking
 
 ---
 
