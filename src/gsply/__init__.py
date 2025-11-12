@@ -15,12 +15,6 @@ Basic Usage:
     >>> # Or unpack if needed
     >>> means, scales, quats, opacities, sh0, shN = data[:6]
     >>>
-    >>> # Zero-copy reading (1.65x faster, default behavior)
-    >>> data = gsply.plyread("model.ply", fast=True)
-    >>>
-    >>> # Safe copy reading (if you need independent arrays)
-    >>> data = gsply.plyread("model.ply", fast=False)
-    >>>
     >>> # Write uncompressed PLY file
     >>> gsply.plywrite("output.ply", data.means, data.scales, data.quats,
     ...                data.opacities, data.sh0, data.shN)
@@ -36,20 +30,25 @@ Features:
     - Zero dependencies (pure Python + numpy)
     - SH degrees 0-3 support (14, 23, 38, 59 properties)
     - Compressed format (PlayCanvas compatible)
-    - Ultra-fast (~3-5ms read, ~5-10ms write)
-    - Zero-copy optimization (1.65x faster reads)
+    - Ultra-fast (~3-6ms read, ~5-10ms write)
+    - Zero-copy optimization (all reads use views)
     - Auto-format detection
+    - Optional JIT acceleration (3.8-6x faster compressed I/O)
 
-Performance (50K Gaussians):
-    - Read uncompressed (fast=True): ~3ms (SH degree 3, zero-copy)
-    - Read uncompressed (fast=False): ~5ms (SH degree 3, safe copies)
-    - Read compressed: ~30-50ms (with decompression)
-    - Write uncompressed: ~5-10ms
+Performance (400K Gaussians):
+    - Read uncompressed: ~6ms (zero-copy views)
+    - Read compressed (with JIT): ~15ms
+    - Read compressed (no JIT): ~90ms
+    - Write uncompressed: ~23ms
+    - Write compressed (with JIT): ~63ms
+    - Write compressed (no JIT): ~240ms
 """
 
 from gsply.reader import plyread, GSData
 from gsply.writer import plywrite
 from gsply.formats import detect_format
+from gsply.utils import sh2rgb, rgb2sh, SH_C0
 
-__version__ = "0.1.0"
-__all__ = ["plyread", "GSData", "plywrite", "detect_format", "__version__"]
+__version__ = "0.1.1"
+__all__ = ["plyread", "GSData", "plywrite", "detect_format",
+           "sh2rgb", "rgb2sh", "SH_C0", "__version__"]

@@ -15,10 +15,11 @@ from pathlib import Path
 import sys
 
 # Add paths
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "third_party" / "pyminiply" / "src"))
 
 import gsply
+from test_utils import get_test_file
 
 def timer(func, warmup=3, iterations=10):
     """Time a function with warmup and multiple iterations."""
@@ -121,10 +122,10 @@ def benchmark_hybrid_approach(file_path):
 
 
 def main():
-    test_file = Path("../export_with_edits/frame_00000.ply")
-
-    if not test_file.exists():
-        print(f"Error: Test file not found: {test_file}")
+    try:
+        test_file = get_test_file()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
         return
 
     print("=" * 80)

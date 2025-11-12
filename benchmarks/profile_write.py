@@ -7,6 +7,7 @@ import tempfile
 
 import gsply
 from plyfile import PlyData, PlyElement
+from test_utils import get_test_file
 
 
 def profile_gsply_sh0(means, scales, quats, opacities, sh0, iterations=50):
@@ -126,8 +127,9 @@ def profile_plyfile_sh0(means, scales, quats, opacities, sh0, iterations=50):
 
 def main():
     # Load test data
-    test_file = Path("../export_with_edits/frame_00000.ply")
-    means, scales, quats, opacities, sh0, shN = gsply.plyread(test_file)
+    test_file = get_test_file()
+    data = gsply.plyread(test_file)
+    means, scales, quats, opacities, sh0, shN = data.means, data.scales, data.quats, data.opacities, data.sh0, data.shN
 
     print("=" * 80)
     print("WRITE PERFORMANCE PROFILING (SH0)")

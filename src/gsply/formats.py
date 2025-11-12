@@ -1,7 +1,7 @@
 """Format detection and constants for Gaussian splatting PLY files."""
 
 from pathlib import Path
-from typing import Tuple, Dict, List, Optional
+
 
 # Property counts by SH degree
 PROPERTY_COUNTS_BY_SH_DEGREE = {
@@ -12,7 +12,7 @@ PROPERTY_COUNTS_BY_SH_DEGREE = {
 }
 
 # Expected property names in order for each SH degree
-EXPECTED_PROPERTIES_BY_SH_DEGREE: Dict[int, List[str]] = {
+EXPECTED_PROPERTIES_BY_SH_DEGREE: dict[int, list[str]] = {
     0: [
         "x", "y", "z",
         "f_dc_0", "f_dc_1", "f_dc_2",
@@ -52,10 +52,10 @@ COMPRESSED_CHUNK_PROPERTIES = 18  # min/max bounds (6*3)
 COMPRESSED_VERTEX_PROPERTIES = 4  # packed position, rotation, scale, color
 
 # SH coefficient for color conversion
-SH_C0 = 0.28209479177387814
+SH_C0 = 0.28209479177387814  # sqrt(1/(4*pi))
 
 
-def _parse_ply_header(file_path: Path) -> Tuple[Dict, int]:
+def _parse_ply_header(file_path: Path) -> tuple[dict, int]:
     """Parse PLY header to extract element definitions.
 
     Args:
@@ -107,7 +107,7 @@ def _parse_ply_header(file_path: Path) -> Tuple[Dict, int]:
     return elements, header_size
 
 
-def detect_format(file_path: str | Path) -> Tuple[bool, Optional[int]]:
+def detect_format(file_path: str | Path) -> tuple[bool, int | None]:
     """Detect PLY format type and SH degree.
 
     Args:
@@ -154,7 +154,7 @@ def detect_format(file_path: str | Path) -> Tuple[bool, Optional[int]]:
     return False, None
 
 
-def _is_compressed_format(elements: Dict) -> bool:
+def _is_compressed_format(elements: dict) -> bool:
     """Check if elements dict represents compressed format.
 
     Args:
@@ -211,7 +211,7 @@ def _is_compressed_format(elements: Dict) -> bool:
     return True
 
 
-def get_sh_degree_from_property_count(property_count: int) -> Optional[int]:
+def get_sh_degree_from_property_count(property_count: int) -> int | None:
     """Get SH degree from property count.
 
     Args:

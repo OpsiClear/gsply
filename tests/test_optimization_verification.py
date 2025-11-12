@@ -138,24 +138,27 @@ class TestDataOrderingAfterSorting:
                                     err_msg="Means do not match after compression round-trip")
 
     def test_shuffled_data_order(self, tmp_path):
-        """Test that shuffled input data is correctly sorted and compressed.
+        """Test that data with varying spatial patterns compresses correctly.
 
-        NOTE: The compressed PLY format stores data in chunk order, NOT original order.
-        When input data is shuffled, the writer will sort it by chunks before compression.
-        This test verifies that the sorting doesn't break the compression/decompression.
+        NOTE: The compressed PLY format assigns chunks based on INDEX position, not spatial position.
+        Chunk indices are computed as: index // CHUNK_SIZE
+        The writer sorts by these chunk indices, but for sequentially indexed data,
+        this is a no-op (data stays in same order).
+
+        This test verifies compression works correctly with spatially varying data.
         """
         output_file = tmp_path / "shuffled_order_test.ply"
 
-        # Create 512 Gaussians (2 chunks) in NON-SEQUENTIAL order
+        # Create 512 Gaussians (2 chunks) with alternating spatial values
         num_gaussians = 2 * CHUNK_SIZE
 
-        # Create interleaved data: alternating between chunk 0 and chunk 1
-        means_shuffled = np.zeros((num_gaussians, 3), dtype=np.float32)
+        # Create data with alternating x-values (tests compression with varying data)
+        means_input = np.zeros((num_gaussians, 3), dtype=np.float32)
         for i in range(num_gaussians):
-            chunk_idx = i % 2  # Alternates: 0, 1, 0, 1, ...
-            means_shuffled[i, 0] = chunk_idx * 100.0  # Chunk 0: 0, Chunk 1: 100
-            means_shuffled[i, 1] = i * 0.1
-            means_shuffled[i, 2] = 0.0
+            val = (i % 2) * 100.0  # Alternates: 0, 100, 0, 100, ...
+            means_input[i, 0] = val
+            means_input[i, 1] = i * 0.1
+            means_input[i, 2] = 0.0
 
         scales = np.ones((num_gaussians, 3), dtype=np.float32) * 0.01
         quats = np.tile([1, 0, 0, 0], (num_gaussians, 1)).astype(np.float32)
@@ -163,23 +166,19 @@ class TestDataOrderingAfterSorting:
         opacities = np.ones(num_gaussians, dtype=np.float32)
         sh0 = np.zeros((num_gaussians, 3), dtype=np.float32)
 
-        # Write and read back (writer will sort by chunks internally)
-        write_compressed(output_file, means_shuffled, scales, quats, opacities, sh0, validate=True)
+        # Write and read back
+        write_compressed(output_file, means_input, scales, quats, opacities, sh0, validate=True)
         result = read_compressed(output_file)
 
-        # Verify that output is in chunk order (NOT original shuffled order)
+        # Verify that output preserves order (since chunks are based on index, not position)
         print("\n=== Shuffled Data Compression Verification ===")
-        print(f"Input pattern (alternating 0, 100): {means_shuffled[:10, 0]}")
-        print(f"Output pattern (should be sorted by chunks): {result.means[:10, 0]}")
+        print(f"Input pattern (alternating 0, 100): {means_input[:10, 0]}")
+        print(f"Output pattern (should match input): {result.means[:10, 0]}")
 
-        # Create expected sorted output
-        chunk_indices = np.arange(num_gaussians) // CHUNK_SIZE
-        sort_idx = np.argsort(chunk_indices)
-        means_expected = means_shuffled[sort_idx]
-
-        # Verify that output matches sorted input (within compression tolerance)
-        np.testing.assert_allclose(result.means, means_expected, rtol=1e-2, atol=0.2,
-                                    err_msg="Compressed data does not match expected sorted order")
+        # Writer doesn't reorder data - chunks are based on original index position
+        # So output should match input (within compression tolerance)
+        np.testing.assert_allclose(result.means, means_input, rtol=1e-2, atol=0.2,
+                                    err_msg="Compressed data does not match input order")
 
 
 class TestChunkBoundsAlignment:
@@ -279,8 +278,10 @@ class TestRoundTripWithRealData:
         assert result.sh0.shape == sh0_orig.shape
 
         # Sort original data by chunks to match output order
+        # The data is stored sequentially, so chunks are already in order
+        # (first 256 in chunk 0, next 256 in chunk 1)
         chunk_indices = np.arange(num_gaussians) // CHUNK_SIZE
-        sort_idx = np.argsort(chunk_indices)
+        sort_idx = np.argsort(chunk_indices)  # This is identity for sequential data
         means_sorted = means_orig[sort_idx]
         scales_sorted = scales_orig[sort_idx]
         quats_sorted = quats_orig[sort_idx]

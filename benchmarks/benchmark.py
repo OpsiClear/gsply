@@ -20,6 +20,9 @@ import gc
 import numpy as np
 import argparse
 
+# Import shared utilities
+from test_utils import get_test_file
+
 # Import libraries
 try:
     import gsply
@@ -47,7 +50,7 @@ except ImportError:
 class BenchmarkConfig:
     """Configuration for benchmarking."""
 
-    file: str = "../export_with_edits/frame_00000.ply"
+    file: str | None = None
     """Path to test PLY file"""
 
     warmup: int = 3
@@ -189,8 +192,8 @@ def benchmark_plyfile_read(file_path: Path, **timer_kwargs):
 
 def benchmark_gsply_write(data, output_path: Path, **timer_kwargs):
     """Benchmark gsply write performance."""
-    # GSData namedtuple - unpack first 6 elements
-    means, scales, quats, opacities, sh0, shN = data[:6]
+    # GSData NamedTuple - use attribute access
+    means, scales, quats, opacities, sh0, shN = data.means, data.scales, data.quats, data.opacities, data.sh0, data.shN
 
     def write_fn():
         gsply.plywrite(output_path, means, scales, quats, opacities, sh0, shN)
@@ -232,8 +235,8 @@ def benchmark_open3d_write(data, output_path: Path, **timer_kwargs):
 
 def benchmark_plyfile_write(data, output_path: Path, **timer_kwargs):
     """Benchmark plyfile write performance (full SH degree 3)."""
-    # GSData namedtuple - unpack first 6 elements
-    means, scales, quats, opacities, sh0, shN = data[:6]
+    # GSData NamedTuple - use attribute access
+    means, scales, quats, opacities, sh0, shN = data.means, data.scales, data.quats, data.opacities, data.sh0, data.shN
     num_gaussians = means.shape[0]
 
     # Flatten shN for writing
@@ -301,7 +304,8 @@ def benchmark_plyfile_write(data, output_path: Path, **timer_kwargs):
 
 def benchmark_gsply_write_sh0(data, output_path: Path, **timer_kwargs):
     """Benchmark gsply write performance (SH degree 0 only)."""
-    means, scales, quats, opacities, sh0, _ = data
+    # Use attribute access for GSData NamedTuple
+    means, scales, quats, opacities, sh0 = data.means, data.scales, data.quats, data.opacities, data.sh0
 
     def write_fn():
         gsply.plywrite(output_path, means, scales, quats, opacities, sh0, shN=None)
@@ -321,7 +325,8 @@ def benchmark_gsply_write_sh0(data, output_path: Path, **timer_kwargs):
 
 def benchmark_plyfile_write_sh0(data, output_path: Path, **timer_kwargs):
     """Benchmark plyfile write performance (SH degree 0 only)."""
-    means, scales, quats, opacities, sh0, _ = data
+    # Use attribute access for GSData NamedTuple
+    means, scales, quats, opacities, sh0 = data.means, data.scales, data.quats, data.opacities, data.sh0
     num_gaussians = means.shape[0]
 
     def write_fn():
@@ -397,8 +402,13 @@ def verify_outputs_equivalent(gsply_path: Path, plyfile_path: Path) -> tuple[boo
         else:
             plyfile_shN = np.empty((len(vertex['x']), 0, 3), dtype=np.float32)
 
-        # Unpack gsply data
-        gsply_means, gsply_scales, gsply_quats, gsply_opacities, gsply_sh0, gsply_shN = gsply_data
+        # Unpack gsply data (GSData namedtuple)
+        gsply_means = gsply_data.means
+        gsply_scales = gsply_data.scales
+        gsply_quats = gsply_data.quats
+        gsply_opacities = gsply_data.opacities
+        gsply_sh0 = gsply_data.sh0
+        gsply_shN = gsply_data.shN
 
         # Compare shapes
         if gsply_means.shape != plyfile_means.shape:
@@ -645,11 +655,20 @@ def main(config: BenchmarkConfig):
 
 
 if __name__ == "__main__":
+    # Try to get default test file
+    try:
+        from test_utils import get_test_data_dir
+        test_data_dir = get_test_data_dir()
+        ply_files = list(test_data_dir.glob("*.ply"))
+        default_file = str(ply_files[0]) if ply_files else None
+    except:
+        default_file = None
+
     parser = argparse.ArgumentParser(description="Benchmark gsply performance")
     parser.add_argument(
         "--file",
         type=str,
-        default="../export_with_edits/frame_00000.ply",
+        default=default_file,
         help="Path to test PLY file"
     )
     parser.add_argument(
@@ -671,6 +690,12 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    if args.file is None:
+        print("ERROR: No test file specified and no default file found.")
+        print("Please use --file to specify a PLY file to benchmark.")
+        exit(1)
+
     config = BenchmarkConfig(
         file=args.file,
         warmup=args.warmup,

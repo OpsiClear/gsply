@@ -35,22 +35,30 @@ jobs:
         python -c "
         import numpy as np
         from pathlib import Path
-        import sys
-        sys.path.insert(0, 'src')
         import gsply
+
+        # Create directory structure expected by test_utils
+        test_dir = Path('export_with_edits')
+        test_dir.mkdir(exist_ok=True)
 
         # Generate synthetic Gaussian data
         num_gaussians = 50000
-        means = np.random.randn(num_gaussians, 3).astype(np.float32)
-        scales = np.random.randn(num_gaussians, 3).astype(np.float32)
+        np.random.seed(42)  # Reproducible data
+        means = np.random.randn(num_gaussians, 3).astype(np.float32) * 10
+        scales = np.abs(np.random.randn(num_gaussians, 3).astype(np.float32))
         quats = np.random.randn(num_gaussians, 4).astype(np.float32)
-        opacities = np.random.rand(num_gaussians).astype(np.float32)
+        quats = quats / np.linalg.norm(quats, axis=1, keepdims=True)
+        opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
         shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
 
-        # Write test file
+        # Write test file in expected location
+        test_file = test_dir / 'frame_00000.ply'
+        gsply.plywrite(str(test_file), means, scales, quats, opacities, sh0, shN)
+        print(f'Created test file: {test_file} ({test_file.stat().st_size / 1024 / 1024:.2f}MB)')
+
+        # Also create a copy for direct file argument
         gsply.plywrite('test_data.ply', means, scales, quats, opacities, sh0, shN)
-        print(f'Created test file: {Path(\"test_data.ply\").stat().st_size / 1024 / 1024:.2f}MB')
         "
 
     - name: Run standard benchmark

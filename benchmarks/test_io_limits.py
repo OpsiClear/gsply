@@ -3,10 +3,11 @@
 import numpy as np
 import time
 from pathlib import Path
+from test_utils import get_test_file
 
 def benchmark_raw_io():
     """Benchmark raw file I/O to understand limits."""
-    test_file = Path("../export_with_edits/frame_00000.ply")
+    test_file = get_test_file()
     file_size = test_file.stat().st_size
 
     print("=" * 80)

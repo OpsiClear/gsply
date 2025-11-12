@@ -22,7 +22,7 @@ Performance:
 import numpy as np
 import struct
 from pathlib import Path
-from typing import Optional, Union, Tuple, NamedTuple
+from typing import NamedTuple
 import logging
 
 from gsply.formats import (
@@ -92,6 +92,57 @@ class GSData(NamedTuple):
     sh0: np.ndarray
     shN: np.ndarray
     base: np.ndarray  # Keeps base array alive for zero-copy views
+
+
+# ======================================================================================
+# OPTIMIZED HEADER READING
+# ======================================================================================
+
+def _read_header_fast(file_path: Path) -> tuple[list[str], int] | None:
+    """Read PLY header with optimized bulk reading.
+
+    This optimization reads the header in a single bulk operation (8KB chunk)
+    and decodes it once, rather than doing multiple readline() + decode() calls.
+    Provides 4-10% speedup for reads.
+
+    Args:
+        file_path: Path to PLY file
+
+    Returns:
+        Tuple of (header_lines, data_offset) or None on error
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            # Read first 8KB (typical header is 300-2000 bytes)
+            chunk = f.read(8192)
+
+            # Find end_header marker
+            end_marker = b'end_header\n'
+            end_idx = chunk.find(end_marker)
+
+            if end_idx == -1:
+                # Header larger than 8KB - use line-by-line fallback
+                f.seek(0)
+                header_lines = []
+                while True:
+                    line = f.readline().decode('ascii').strip()
+                    header_lines.append(line)
+                    if line == "end_header":
+                        break
+                    if len(header_lines) > 200:
+                        return None
+                return header_lines, f.tell()
+
+            # Fast path: decode entire header at once
+            header_bytes = chunk[:end_idx + len(end_marker)]
+            header_text = header_bytes.decode('ascii')
+            header_lines = [line.strip() for line in header_text.split('\n') if line.strip()]
+            data_offset = len(header_bytes)
+
+            return header_lines, data_offset
+
+    except Exception:
+        return None
 
 
 # ======================================================================================
@@ -276,175 +327,44 @@ def _unpack_quaternions_jit(packed_rotation, chunk_size=256):
 # UNCOMPRESSED PLY READER
 # ======================================================================================
 
-def read_uncompressed(file_path: Union[str, Path]) -> Optional[GSData]:
-    """Read uncompressed Gaussian splatting PLY file.
-
-    Supports all standard Gaussian PLY formats (SH degrees 0-3).
-    Uses zero-copy numpy operations for maximum performance.
-
-    Args:
-        file_path: Path to PLY file
-
-    Returns:
-        GSData container with Gaussian parameters, or None if format
-        is incompatible. The base field is None for this function (copies are made).
-
-    Performance:
-        - SH degree 0 (14 props): ~17ms for 388K Gaussians
-        - SH degree 3 (59 props): ~8ms for 50K Gaussians
-
-    Example:
-        >>> result = read_uncompressed("scene.ply")
-        >>> if result is not None:
-        ...     print(f"Loaded {result.means.shape[0]} Gaussians")
-        ...     positions = result.means
-    """
-    file_path = Path(file_path)
-
-    try:
-        with open(file_path, 'rb') as f:
-            # Read header
-            header_lines = []
-            while True:
-                line = f.readline().decode('ascii').strip()
-                header_lines.append(line)
-                if line == "end_header":
-                    break
-                if len(header_lines) > 200:
-                    return None
-
-            # Parse header inline (while file is still open)
-            vertex_count = None
-            is_binary_le = False
-            property_names = []
-
-            for line in header_lines:
-                if line.startswith("format "):
-                    format_type = line.split()[1]
-                    is_binary_le = (format_type == "binary_little_endian")
-                elif line.startswith("element vertex "):
-                    vertex_count = int(line.split()[2])
-                elif line.startswith("property float "):
-                    prop_name = line.split()[2]
-                    property_names.append(prop_name)
-
-            # Validate format
-            if not is_binary_le or vertex_count is None:
-                return None
-
-            # Detect SH degree from property count
-            property_count = len(property_names)
-            sh_degree = get_sh_degree_from_property_count(property_count)
-
-            if sh_degree is None:
-                return None
-
-            # Validate property names and order (batch comparison is faster)
-            expected_properties = EXPECTED_PROPERTIES_BY_SH_DEGREE[sh_degree]
-            if property_names != expected_properties:
-                return None
-
-            # Read binary data in single operation (file already positioned after header)
-            data = np.fromfile(f, dtype=np.float32, count=vertex_count * property_count)
-
-            if data.size != vertex_count * property_count:
-                return None
-
-            data = data.reshape(vertex_count, property_count)
-
-        # Extract arrays based on SH degree (zero-copy slicing)
-        # No .copy() needed - arrays are returned immediately and parent data goes out of scope
-        means = data[:, 0:3]
-        sh0 = data[:, 3:6]
-
-        if sh_degree == 0:
-            shN = np.zeros((vertex_count, 0, 3), dtype=np.float32)
-            opacities = data[:, 6]
-            scales = data[:, 7:10]
-            quats = data[:, 10:14]
-        elif sh_degree == 1:
-            shN = data[:, 6:15]
-            opacities = data[:, 15]
-            scales = data[:, 16:19]
-            quats = data[:, 19:23]
-        elif sh_degree == 2:
-            shN = data[:, 6:30]
-            opacities = data[:, 30]
-            scales = data[:, 31:34]
-            quats = data[:, 34:38]
-        else:  # sh_degree == 3
-            shN = data[:, 6:51]
-            opacities = data[:, 51]
-            scales = data[:, 52:55]
-            quats = data[:, 55:59]
-
-        # Reshape shN to (N, K, 3) format - need copy here since we're reshaping
-        if sh_degree > 0:
-            num_sh_coeffs = shN.shape[1]
-            shN = shN.copy().reshape(vertex_count, num_sh_coeffs // 3, 3)
-
-        logger.debug(f"[Gaussian PLY] Read uncompressed: {vertex_count} Gaussians, SH degree {sh_degree}")
-
-        # Return GSData container (base=None since we made copies)
-        return GSData(
-            means=means,
-            scales=scales,
-            quats=quats,
-            opacities=opacities,
-            sh0=sh0,
-            shN=shN,
-            base=None  # No shared base array for standard read
-        )
-
-    except (OSError, ValueError, IOError):
-        return None
-
-
-def read_uncompressed_fast(file_path: Union[str, Path]) -> Optional[GSData]:
+def read_uncompressed(file_path: str | Path) -> GSData | None:
     """Read uncompressed Gaussian splatting PLY file with zero-copy optimization.
 
-    This is a high-performance variant of read_uncompressed() that avoids expensive
-    memory copies by returning views into a single base array. Approximately 1.86x
-    faster than read_uncompressed() for files with higher-order SH coefficients.
+    Uses zero-copy views into a single base array for maximum performance.
+    The returned arrays share memory with a base array that is kept alive
+    via the GSData container's reference counting.
+
+    Note: This function does NOT use JIT compilation - it's already optimally
+    implemented with NumPy zero-copy views. JIT is only used for compressed format.
 
     Args:
         file_path: Path to PLY file
 
     Returns:
-        GSData namedtuple with zero-copy array views, or None if format
+        GSData container with zero-copy array views, or None if format
         is incompatible. The base array is kept alive to ensure views remain valid.
 
     Performance:
-        - SH degree 3 (59 props): ~3.2ms for 50K Gaussians (1.86x faster)
+        - SH degree 0 (14 props): ~6ms for 400K Gaussians
+        - SH degree 3 (59 props): ~3ms for 50K Gaussians
         - Zero memory overhead (views share memory with base array)
+        - Performance is the same with or without numba installed
 
     Example:
-        >>> data = read_uncompressed_fast("scene.ply")
+        >>> data = read_uncompressed("scene.ply")
         >>> if data is not None:
         ...     print(f"Loaded {data.means.shape[0]} Gaussians")
         ...     positions = data.means
         ...     colors = data.sh0
-
-    Note:
-        The returned arrays are views into a shared base array. This is safe
-        because the GSData container keeps the base array alive via
-        Python's reference counting mechanism.
     """
     file_path = Path(file_path)
 
     try:
-        with open(file_path, 'rb') as f:
-            # Read header
-            header_lines = []
-            while True:
-                line = f.readline().decode('ascii').strip()
-                header_lines.append(line)
-                if line == "end_header":
-                    break
-                if len(header_lines) > 200:
-                    return None
-
-            data_offset = f.tell()
+        # Read header with bulk reading optimization (4-10% faster)
+        result = _read_header_fast(file_path)
+        if result is None:
+            return None
+        header_lines, data_offset = result
 
         # Parse header
         vertex_count = None
@@ -545,7 +465,7 @@ def _unpack_unorm(value: int, bits: int) -> float:
     return (value & mask) / mask
 
 
-def _unpack_111011(value: int) -> Tuple[float, float, float]:
+def _unpack_111011(value: int) -> tuple[float, float, float]:
     """Unpack 3D vector from 32-bit value (11-10-11 bits)."""
     x = _unpack_unorm(value >> 21, 11)
     y = _unpack_unorm(value >> 11, 10)
@@ -553,7 +473,7 @@ def _unpack_111011(value: int) -> Tuple[float, float, float]:
     return x, y, z
 
 
-def _unpack_8888(value: int) -> Tuple[float, float, float, float]:
+def _unpack_8888(value: int) -> tuple[float, float, float, float]:
     """Unpack 4 channels from 32-bit value (8 bits each)."""
     x = _unpack_unorm(value >> 24, 8)
     y = _unpack_unorm(value >> 16, 8)
@@ -562,7 +482,7 @@ def _unpack_8888(value: int) -> Tuple[float, float, float, float]:
     return x, y, z, w
 
 
-def _unpack_rotation(value: int) -> Tuple[float, float, float, float]:
+def _unpack_rotation(value: int) -> tuple[float, float, float, float]:
     """Unpack quaternion using smallest-three encoding."""
     norm = 1.0 / (np.sqrt(2) * 0.5)
 
@@ -621,11 +541,14 @@ def _is_compressed_format(header_lines: list) -> bool:
     return True
 
 
-def read_compressed(file_path: Union[str, Path]) -> Optional[GSData]:
+def read_compressed(file_path: str | Path) -> GSData | None:
     """Read compressed Gaussian splatting PLY file (PlayCanvas format).
 
     Format uses chunk-based quantization with 256 Gaussians per chunk.
     Achieves 14.5x compression (16 bytes/splat vs 232 bytes/splat).
+
+    JIT Optimization: This function uses Numba JIT compilation when available
+    for 6x faster decompression. Falls back to vectorized NumPy if numba is not installed.
 
     Args:
         file_path: Path to compressed PLY file
@@ -635,7 +558,8 @@ def read_compressed(file_path: Union[str, Path]) -> Optional[GSData]:
         if format is incompatible. The base field is None (no shared array).
 
     Performance:
-        ~30-50ms for 50K Gaussians (decompression overhead)
+        - Without JIT: ~90ms for 400K Gaussians
+        - With JIT: ~15ms for 400K Gaussians (6x faster)
 
     Example:
         >>> result = read_compressed("scene.ply_compressed")
@@ -832,16 +756,16 @@ def read_compressed(file_path: Union[str, Path]) -> Optional[GSData]:
 # UNIFIED READING API
 # ======================================================================================
 
-def plyread(file_path: Union[str, Path], fast: bool = True) -> GSData:
+def plyread(file_path: str | Path) -> GSData:
     """Read Gaussian splatting PLY file (auto-detect format).
 
     Automatically detects and reads both compressed and uncompressed formats.
     Uses formats.detect_format() for fast format detection.
 
+    All reads use zero-copy optimization for maximum performance.
+
     Args:
         file_path: Path to PLY file
-        fast: If True, use zero-copy optimization for uncompressed files (1.65x faster).
-              If False, make safe copies of all arrays. Default: True.
 
     Returns:
         GSData container with Gaussian parameters
@@ -850,19 +774,17 @@ def plyread(file_path: Union[str, Path], fast: bool = True) -> GSData:
         ValueError: If file format is not recognized or invalid
 
     Performance:
-        - fast=True: 2.89ms for 50K Gaussians (zero-copy views, 1.65x faster)
-        - fast=False: 4.75ms for 50K Gaussians (safe independent copies)
+        - Uncompressed: ~6ms for 400K Gaussians (zero-copy views)
+        - Compressed (with JIT): ~15ms for 400K Gaussians
+        - Compressed (no JIT): ~90ms for 400K Gaussians
 
     Example:
-        >>> # Fast zero-copy reading (default, recommended)
         >>> data = plyread("scene.ply")
         >>> print(f"Loaded {data.means.shape[0]} Gaussians")
         >>> positions = data.means
+        >>> colors = data.sh0
         >>>
-        >>> # Safe reading with independent copies
-        >>> data = plyread("scene.ply", fast=False)
-        >>>
-        >>> # Can still unpack if needed
+        >>> # Can unpack if needed
         >>> means, scales, quats, opacities, sh0, shN = data[:6]
     """
     file_path = Path(file_path)
@@ -870,14 +792,11 @@ def plyread(file_path: Union[str, Path], fast: bool = True) -> GSData:
     # Detect format first
     is_compressed, sh_degree = detect_format(file_path)
 
-    # Try appropriate reader based on format and fast parameter
+    # Try appropriate reader based on format
     if is_compressed:
         result = read_compressed(file_path)
     else:
-        if fast:
-            result = read_uncompressed_fast(file_path)
-        else:
-            result = read_uncompressed(file_path)
+        result = read_uncompressed(file_path)
 
     if result is not None:
         return result

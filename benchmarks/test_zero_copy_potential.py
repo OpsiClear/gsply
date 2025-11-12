@@ -4,12 +4,14 @@ import numpy as np
 import time
 from pathlib import Path
 import sys
-sys.path.insert(0, '../src')
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
+from test_utils import get_test_file
 
 def benchmark_return_strategies():
     """Compare different return strategies for zero-copy."""
 
-    test_file = Path("../export_with_edits/frame_00000.ply")
+    test_file = get_test_file()
 
     print("=" * 80)
     print("ZERO-COPY RETURN STRATEGY ANALYSIS")

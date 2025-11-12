@@ -241,6 +241,8 @@ class TestRoundTrip:
         uncompressed_file = tmp_path / "uncompressed.ply"
         compressed_file = tmp_path / "compressed.ply"
 
+        # Fixed seed for reproducible compression ratio
+        np.random.seed(42)
         num_gaussians = 512
         means = np.random.randn(num_gaussians, 3).astype(np.float32)
         scales = np.abs(np.random.randn(num_gaussians, 3).astype(np.float32))
@@ -299,16 +301,15 @@ class TestRoundTrip:
 
         assert result.shN.shape == (num_gaussians, 15, 3)
 
-    def test_roundtrip_with_actual_file(self, tmp_path):
+    def test_roundtrip_with_actual_file(self, test_ply_file, tmp_path):
         """Test round-trip with real file."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
         output_file = tmp_path / "roundtrip_real.ply"
 
         # Read original
-        data_orig = plyread(test_file)
+        data_orig = plyread(test_ply_file)
 
         # Write
         plywrite(output_file, data_orig.means, data_orig.scales, data_orig.quats, data_orig.opacities, data_orig.sh0, data_orig.shN)

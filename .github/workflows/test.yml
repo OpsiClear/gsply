@@ -47,6 +47,34 @@ jobs:
       run: |
         pip install -e ".[jit]"
 
+    - name: Create test data
+      run: |
+        python -c "
+        import numpy as np
+        from pathlib import Path
+        import gsply
+
+        # Create directory structure expected by tests
+        test_dir = Path('export_with_edits')
+        test_dir.mkdir(exist_ok=True)
+
+        # Generate synthetic Gaussian data (same as benchmark workflow)
+        num_gaussians = 50000
+        np.random.seed(42)  # Reproducible data
+        means = np.random.randn(num_gaussians, 3).astype(np.float32) * 10
+        scales = np.abs(np.random.randn(num_gaussians, 3).astype(np.float32))
+        quats = np.random.randn(num_gaussians, 4).astype(np.float32)
+        quats = quats / np.linalg.norm(quats, axis=1, keepdims=True)
+        opacities = np.random.randn(num_gaussians).astype(np.float32)
+        sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
+        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
+
+        # Write test file in expected location
+        test_file = test_dir / 'frame_00000.ply'
+        gsply.plywrite(str(test_file), means, scales, quats, opacities, sh0, shN)
+        print(f'Created test file: {test_file} ({test_file.stat().st_size / 1024 / 1024:.2f}MB)')
+        "
+
     - name: Run tests
       run: |
         pytest tests/ -v --cov=gsply --cov-report=xml --cov-report=term

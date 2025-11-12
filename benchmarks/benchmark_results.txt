@@ -1,0 +1,64 @@
+WARNING:root:Open3D not available - install with: uv pip install open3d
+
+================================================================================
+GSPLY BENCHMARK
+================================================================================
+
+Test file: D:\4D\all_plys\frame_0.ply
+Warmup iterations: 3
+Benchmark iterations: 20
+
+File size: 20.76MB
+
+Library availability:
+  gsply:   [OK]
+  Open3D:  [FAIL]
+  plyfile: [OK]
+
+Running READ benchmarks...
+  Benchmarking gsply read...
+  Benchmarking plyfile read...
+
+Running WRITE benchmarks...
+  Benchmarking gsply write...
+  Benchmarking plyfile write...
+
+Running WRITE (SH0) benchmarks...
+  Benchmarking gsply write (SH0)...
+  Benchmarking plyfile write (SH0)...
+
+Verifying output equivalence...
+  SH3 outputs: [OK] Files are equivalent
+  SH0 outputs: [OK] Files are equivalent
+
+================================================================================
+READ PERFORMANCE
+================================================================================
+
+Library         Time            Std Dev         Speedup    Gaussians   
+--------------------------------------------------------------------------------
+gsply           8.07ms          1.33ms          baseline   388,679     
+plyfile         34.72ms         5.68ms          0.23x      388,679     
+
+================================================================================
+WRITE PERFORMANCE (SH degree 3, 59 properties)
+================================================================================
+
+Library         Time            Std Dev         Speedup    File Size   
+--------------------------------------------------------------------------------
+gsply           29.70ms         3.56ms          baseline   20.76MB     
+plyfile         51.33ms         10.05ms         0.58x      20.76MB     
+
+================================================================================
+WRITE PERFORMANCE (SH degree 0, 14 properties)
+================================================================================
+
+Library         Time            Std Dev         Speedup    File Size   
+--------------------------------------------------------------------------------
+gsply (SH0)     29.25ms         3.83ms          1.00x      20.76MB     
+plyfile (SH0)   52.78ms         7.69ms          0.55x      20.76MB     
+
+================================================================================
+BENCHMARK COMPLETE
+================================================================================
+

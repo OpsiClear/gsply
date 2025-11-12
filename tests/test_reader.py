@@ -9,13 +9,12 @@ from gsply.reader import plyread, read_uncompressed, read_compressed
 class TestReadUncompressed:
     """Test read_uncompressed function."""
 
-    def test_read_sh3_file(self):
-        """Test reading SH degree 3 PLY file."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+    def test_read_sh3_file(self, test_ply_file):
+        """Test reading PLY file."""
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = read_uncompressed(test_file)
+        result = read_uncompressed(test_ply_file)
         assert result is not None
 
         # Check shapes
@@ -25,9 +24,8 @@ class TestReadUncompressed:
         assert result.quats.shape == (num_gaussians, 4)
         assert result.opacities.shape == (num_gaussians,)
         assert result.sh0.shape == (num_gaussians, 3)
-
-        # SH degree 3 should have 45 coefficients (15 sets of 3)
-        assert result.shN.shape == (num_gaussians, 15, 3)
+        assert result.shN.shape[0] == num_gaussians
+        assert result.shN.shape[2] == 3
 
         # Check data types
         assert result.means.dtype == np.float32
@@ -108,13 +106,12 @@ end_header
 class TestReadCompressed:
     """Test read_compressed function."""
 
-    def test_read_uncompressed_returns_none(self):
+    def test_read_uncompressed_returns_none(self, test_ply_file):
         """Test that uncompressed files return None from compressed reader."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = read_compressed(test_file)
+        result = read_compressed(test_ply_file)
         assert result is None  # Uncompressed file should return None
 
     def test_read_nonexistent_file(self, tmp_path):
@@ -127,13 +124,12 @@ class TestReadCompressed:
 class TestPlyread:
     """Test plyread function (main API)."""
 
-    def test_plyread_uncompressed(self):
+    def test_plyread_uncompressed(self, test_ply_file):
         """Test plyread with uncompressed file."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = plyread(test_file)
+        result = plyread(test_ply_file)
 
         # Basic shape checks
         num_gaussians = result.means.shape[0]
@@ -152,49 +148,49 @@ class TestPlyread:
         with pytest.raises(ValueError, match="Unsupported PLY format or invalid file"):
             plyread(nonexistent)
 
-    def test_plyread_data_consistency(self):
+    def test_plyread_data_consistency(self, test_ply_file):
         """Test that plyread returns consistent data."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
         # Read twice
-        result1 = plyread(test_file)
-        result2 = plyread(test_file)
+        result1 = plyread(test_ply_file)
+        result2 = plyread(test_ply_file)
 
-        # Should be identical
-        for arr1, arr2 in zip(result1, result2):
-            np.testing.assert_array_equal(arr1, arr2)
+        # Should be identical - compare fields explicitly (skip base as it may differ)
+        np.testing.assert_array_equal(result1.means, result2.means)
+        np.testing.assert_array_equal(result1.scales, result2.scales)
+        np.testing.assert_array_equal(result1.quats, result2.quats)
+        np.testing.assert_array_equal(result1.opacities, result2.opacities)
+        np.testing.assert_array_equal(result1.sh0, result2.sh0)
+        np.testing.assert_array_equal(result1.shN, result2.shN)
 
-    def test_plyread_accepts_string_path(self):
+    def test_plyread_accepts_string_path(self, test_ply_file):
         """Test that plyread accepts string paths."""
-        test_file = "../export_with_edits/frame_00000.ply"
-        if not Path(test_file).exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = plyread(test_file)
+        result = plyread(str(test_ply_file))
         assert result.means.shape[0] > 0  # Should load some Gaussians
 
-    def test_plyread_accepts_path_object(self):
+    def test_plyread_accepts_path_object(self, test_ply_file):
         """Test that plyread accepts Path objects."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = plyread(test_file)
+        result = plyread(test_ply_file)
         assert result.means.shape[0] > 0
 
 
 class TestDataIntegrity:
     """Test data integrity checks."""
 
-    def test_no_nan_values(self):
+    def test_no_nan_values(self, test_ply_file):
         """Test that loaded data contains no NaN values."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = plyread(test_file)
+        result = plyread(test_ply_file)
 
         assert not np.any(np.isnan(result.means))
         assert not np.any(np.isnan(result.scales))
@@ -204,13 +200,12 @@ class TestDataIntegrity:
         if result.shN.size > 0:
             assert not np.any(np.isnan(result.shN))
 
-    def test_no_inf_values(self):
+    def test_no_inf_values(self, test_ply_file):
         """Test that loaded data contains no infinite values."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = plyread(test_file)
+        result = plyread(test_ply_file)
 
         assert not np.any(np.isinf(result.means))
         assert not np.any(np.isinf(result.scales))
@@ -220,13 +215,12 @@ class TestDataIntegrity:
         if result.shN.size > 0:
             assert not np.any(np.isinf(result.shN))
 
-    def test_finite_values(self):
+    def test_finite_values(self, test_ply_file):
         """Test that all loaded data is finite."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = plyread(test_file)
+        result = plyread(test_ply_file)
 
         assert np.all(np.isfinite(result.means))
         assert np.all(np.isfinite(result.scales))

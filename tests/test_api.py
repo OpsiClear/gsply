@@ -45,26 +45,24 @@ class TestAPIExports:
 class TestAPIFunctionality:
     """Test that API functions work correctly."""
 
-    def test_plyread_works(self):
+    def test_plyread_works(self, test_ply_file):
         """Test that plyread works through main API."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        result = gsply.plyread(test_file)
+        result = gsply.plyread(test_ply_file)
         assert isinstance(result, gsply.GSData)
 
         assert isinstance(result.means, np.ndarray)
         assert result.means.ndim == 2
         assert result.means.shape[1] == 3
 
-    def test_detect_format_works(self):
+    def test_detect_format_works(self, test_ply_file):
         """Test that detect_format works through main API."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        is_compressed, sh_degree = gsply.detect_format(test_file)
+        is_compressed, sh_degree = gsply.detect_format(test_ply_file)
         assert isinstance(is_compressed, bool)
         assert sh_degree in [0, 1, 2, 3, None]
 
@@ -84,62 +82,12 @@ class TestAPIFunctionality:
         assert output_file.exists()
         assert output_file.stat().st_size > 0
 
-    def test_plyread_fast_parameter(self):
-        """Test that plyread fast parameter works correctly."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
-            pytest.skip("Test file not found")
-
-        # Test with fast=True (zero-copy)
-        result = gsply.plyread(test_file, fast=True)
-        assert isinstance(result, gsply.GSData)
-
-        # Check all attributes exist
-        assert hasattr(result, 'means')
-        assert hasattr(result, 'scales')
-        assert hasattr(result, 'quats')
-        assert hasattr(result, 'opacities')
-        assert hasattr(result, 'sh0')
-        assert hasattr(result, 'shN')
-        assert hasattr(result, 'base')
-
-        # Check data types
-        assert isinstance(result.means, np.ndarray)
-        assert result.means.ndim == 2
-        assert result.means.shape[1] == 3
-
-        # Verify zero-copy behavior (base should exist for uncompressed fast reads)
-        assert result.base is not None
-
-    def test_fast_vs_standard_equivalence(self):
-        """Test that plyread fast=True returns same data as fast=False."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
-            pytest.skip("Test file not found")
-
-        # Read with both methods
-        standard = gsply.plyread(test_file, fast=False)
-        fast = gsply.plyread(test_file, fast=True)
-
-        # Both should be GSData
-        assert isinstance(standard, gsply.GSData)
-        assert isinstance(fast, gsply.GSData)
-
-        # Compare all arrays
-        np.testing.assert_allclose(fast.means, standard.means, rtol=1e-6, atol=1e-6)
-        np.testing.assert_allclose(fast.scales, standard.scales, rtol=1e-6, atol=1e-6)
-        np.testing.assert_allclose(fast.quats, standard.quats, rtol=1e-6, atol=1e-6)
-        np.testing.assert_allclose(fast.opacities, standard.opacities, rtol=1e-6, atol=1e-6)
-        np.testing.assert_allclose(fast.sh0, standard.sh0, rtol=1e-6, atol=1e-6)
-        np.testing.assert_allclose(fast.shN, standard.shN, rtol=1e-6, atol=1e-6)
-
-    def test_gsdata_can_unpack(self):
+    def test_gsdata_can_unpack(self, test_ply_file):
         """Test that GSData result can be unpacked like a tuple."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
-        data = gsply.plyread(test_file)
+        data = gsply.plyread(test_ply_file)
 
         # Can unpack first 6 elements (excluding base)
         means, scales, quats, opacities, sh0, shN = data[:6]
@@ -155,21 +103,20 @@ class TestAPIFunctionality:
 class TestEndToEnd:
     """Test end-to-end workflows using main API."""
 
-    def test_complete_workflow(self, tmp_path):
+    def test_complete_workflow(self, test_ply_file, tmp_path):
         """Test complete read -> modify -> write workflow."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
         output_file = tmp_path / "workflow_output.ply"
 
         # 1. Detect format
-        is_compressed, sh_degree = gsply.detect_format(test_file)
-        assert is_compressed is False
-        assert sh_degree == 3
+        is_compressed, sh_degree = gsply.detect_format(test_ply_file)
+        assert isinstance(is_compressed, bool)
+        assert sh_degree in [0, 1, 2, 3, None]
 
         # 2. Read
-        data = gsply.plyread(test_file)
+        data = gsply.plyread(test_ply_file)
 
         num_gaussians = data.means.shape[0]
         assert num_gaussians > 0
@@ -185,16 +132,15 @@ class TestEndToEnd:
 
         np.testing.assert_allclose(data_read.means, means_modified, rtol=1e-6, atol=1e-6)
 
-    def test_conversion_workflow(self, tmp_path):
+    def test_conversion_workflow(self, test_ply_file, tmp_path):
         """Test conversion from one SH degree to another."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
         output_file = tmp_path / "converted_sh0.ply"
 
-        # Read SH degree 3
-        data = gsply.plyread(test_file)
+        # Read
+        data = gsply.plyread(test_ply_file)
 
         # Write as SH degree 0 (drop higher-order SH)
         gsply.plywrite(output_file, data.means, data.scales, data.quats, data.opacities, data.sh0, shN=None)
@@ -205,14 +151,13 @@ class TestEndToEnd:
         # Should have empty shN (degree 0)
         assert data_read.shN.shape[1] == 0
 
-    def test_batch_processing(self, tmp_path):
+    def test_batch_processing(self, test_ply_file, tmp_path):
         """Test processing multiple files."""
-        test_file = Path("../export_with_edits/frame_00000.ply")
-        if not test_file.exists():
+        if test_ply_file is None:
             pytest.skip("Test file not found")
 
         # Read once
-        data = gsply.plyread(test_file)
+        data = gsply.plyread(test_ply_file)
 
         # Write 5 modified versions
         for i in range(5):

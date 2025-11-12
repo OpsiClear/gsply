@@ -27,10 +27,12 @@ def benchmark_array_operations():
     print()
 
     # Simulate packed data
-    packed_position = np.random.randint(0, 2**32, size=num_vertices, dtype=np.uint32)
-    packed_rotation = np.random.randint(0, 2**32, size=num_vertices, dtype=np.uint32)
-    packed_scale = np.random.randint(0, 2**32, size=num_vertices, dtype=np.uint32)
-    packed_color = np.random.randint(0, 2**32, size=num_vertices, dtype=np.uint32)
+    # Use np.random.randint with proper uint32 range or use random bytes
+    # randint upper bound is exclusive, so 2**32 would overflow
+    packed_position = np.random.randint(0, 2**31, size=num_vertices, dtype=np.uint32)
+    packed_rotation = np.random.randint(0, 2**31, size=num_vertices, dtype=np.uint32)
+    packed_scale = np.random.randint(0, 2**31, size=num_vertices, dtype=np.uint32)
+    packed_color = np.random.randint(0, 2**31, size=num_vertices, dtype=np.uint32)
 
     # Simulate chunk bounds
     min_x = np.random.rand(num_chunks).astype(np.float32)

@@ -48,7 +48,7 @@ def benchmark_file(file_path, iterations=3):
         times_fast = []
         for i in range(iterations):
             start = time.perf_counter()
-            result = gsply.plyread(file_path, fast=True)
+            result = gsply.plyread(file_path)
             end = time.perf_counter()
             times_fast.append((end - start) * 1000)
 
@@ -58,46 +58,54 @@ def benchmark_file(file_path, iterations=3):
         # Benchmark write compressed
         times_write_comp = []
         temp_file_comp = Path("temp_write_test_compressed.ply")
-        for i in range(iterations):
-            start = time.perf_counter()
-            gsply.plywrite(temp_file_comp, data.means, data.scales, data.quats,
-                          data.opacities, data.sh0, data.shN, compressed=True)
-            end = time.perf_counter()
-            times_write_comp.append((end - start) * 1000)
-
-        results['write_time_ms'] = np.mean(times_write_comp)
-        results['write_std_ms'] = np.std(times_write_comp)
-
-        # Check compression ratio
         comp_file = Path(str(temp_file_comp).replace(".ply", ".compressed.ply"))
-        if comp_file.exists():
-            comp_size = comp_file.stat().st_size / (1024 * 1024)
-            results['comp_size_mb'] = comp_size
-            results['comp_ratio'] = file_size / comp_size
 
-            # Benchmark compressed read
-            times_read_comp = []
+        try:
             for i in range(iterations):
                 start = time.perf_counter()
-                data_comp = gsply.plyread(comp_file)
+                gsply.plywrite(temp_file_comp, data.means, data.scales, data.quats,
+                              data.opacities, data.sh0, data.shN, compressed=True)
                 end = time.perf_counter()
-                times_read_comp.append((end - start) * 1000)
+                times_write_comp.append((end - start) * 1000)
 
-            results['comp_read_time_ms'] = np.mean(times_read_comp)
-            results['comp_read_std_ms'] = np.std(times_read_comp)
+            results['write_time_ms'] = np.mean(times_write_comp)
+            results['write_std_ms'] = np.std(times_write_comp)
 
-            # Cleanup
-            comp_file.unlink()
+            # Check compression ratio
+            if comp_file.exists():
+                comp_size = comp_file.stat().st_size / (1024 * 1024)
+                results['comp_size_mb'] = comp_size
+                results['comp_ratio'] = file_size / comp_size
+
+                # Benchmark compressed read
+                times_read_comp = []
+                for i in range(iterations):
+                    start = time.perf_counter()
+                    data_comp = gsply.plyread(comp_file)
+                    end = time.perf_counter()
+                    times_read_comp.append((end - start) * 1000)
+
+                results['comp_read_time_ms'] = np.mean(times_read_comp)
+                results['comp_read_std_ms'] = np.std(times_read_comp)
+        finally:
+            # Cleanup - ensure files are removed even on error
+            if comp_file.exists():
+                comp_file.unlink()
+            if temp_file_comp.exists():
+                temp_file_comp.unlink()
 
     return results
 
 
 def main():
-    data_dir = Path("D:/4D/all_plys")
+    import os
+    # Use environment variable or default to D:/4D/all_plys
+    data_dir_str = os.getenv("GSPLY_TEST_DATA_DIR", "D:/4D/all_plys")
+    data_dir = Path(data_dir_str)
 
     if not data_dir.exists():
         print(f"[ERROR] Directory not found: {data_dir}")
-        print("Please update the path in the script.")
+        print("Please set GSPLY_TEST_DATA_DIR environment variable or update the default path.")
         return
 
     # Get all PLY files
