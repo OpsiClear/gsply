@@ -278,10 +278,12 @@ class TestRoundTripWithRealData:
         assert result.sh0.shape == sh0_orig.shape
 
         # Sort original data by chunks to match output order
-        # The data is stored sequentially, so chunks are already in order
-        # (first 256 in chunk 0, next 256 in chunk 1)
+        # IMPORTANT: Must use stable sort to match the writer's radix sort behavior
+        # The writer uses a stable radix sort, so within each chunk, elements
+        # maintain their original order. np.argsort() defaults to quicksort which
+        # is NOT stable and can produce different orderings on different platforms.
         chunk_indices = np.arange(num_gaussians) // CHUNK_SIZE
-        sort_idx = np.argsort(chunk_indices)  # This is identity for sequential data
+        sort_idx = np.argsort(chunk_indices, kind='stable')  # Stable sort is critical
         means_sorted = means_orig[sort_idx]
         scales_sorted = scales_orig[sort_idx]
         quats_sorted = quats_orig[sort_idx]

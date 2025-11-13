@@ -40,4 +40,4 @@ def rgb2sh(rgb: np.ndarray | float) -> np.ndarray | float:
     return (rgb - 0.5) / SH_C0
 
 
-__all__ = ['sh2rgb', 'rgb2sh', 'SH_C0']
+__all__ = ["sh2rgb", "rgb2sh", "SH_C0"]

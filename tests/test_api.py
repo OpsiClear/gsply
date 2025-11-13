@@ -28,7 +28,7 @@ class TestAPIExports:
         """Test that __version__ is exported."""
         assert hasattr(gsply, '__version__')
         assert isinstance(gsply.__version__, str)
-        assert gsply.__version__ == "0.1.0"
+        assert gsply.__version__ == "0.1.1"
 
     def test_all_contains_expected_exports(self):
         """Test that __all__ contains expected exports."""
@@ -174,6 +174,96 @@ class TestEndToEnd:
             np.testing.assert_allclose(data_read.means, means_modified, rtol=1e-6, atol=1e-6)
 
 
+class TestCompressionAPIs:
+    """Test the new compression APIs."""
+
+    def test_compress_to_bytes_in_exports(self):
+        """Test that compress_to_bytes is exported."""
+        assert hasattr(gsply, 'compress_to_bytes')
+        assert callable(gsply.compress_to_bytes)
+
+    def test_compress_to_arrays_in_exports(self):
+        """Test that compress_to_arrays is exported."""
+        assert hasattr(gsply, 'compress_to_arrays')
+        assert callable(gsply.compress_to_arrays)
+
+    def test_compress_to_bytes_usage(self, tmp_path):
+        """Test compress_to_bytes basic usage."""
+        # Create test data
+        n_gaussians = 256
+        means = np.random.randn(n_gaussians, 3).astype(np.float32)
+        scales = np.random.rand(n_gaussians, 3).astype(np.float32) * 0.1
+        quats = np.random.randn(n_gaussians, 4).astype(np.float32)
+        quats = quats / np.linalg.norm(quats, axis=1, keepdims=True)
+        opacities = np.random.rand(n_gaussians).astype(np.float32)
+        sh0 = np.random.rand(n_gaussians, 3).astype(np.float32)
+
+        # Compress to bytes
+        compressed_bytes = gsply.compress_to_bytes(
+            means, scales, quats, opacities, sh0
+        )
+
+        assert isinstance(compressed_bytes, bytes)
+        assert len(compressed_bytes) > 0
+
+        # Should be able to save and read
+        temp_file = tmp_path / "test.compressed.ply"
+        with open(temp_file, 'wb') as f:
+            f.write(compressed_bytes)
+
+        data = gsply.plyread(str(temp_file))
+        assert data.means.shape == means.shape
+
+    def test_compress_to_arrays_usage(self):
+        """Test compress_to_arrays basic usage."""
+        # Create test data
+        n_gaussians = 512
+        means = np.random.randn(n_gaussians, 3).astype(np.float32)
+        scales = np.random.rand(n_gaussians, 3).astype(np.float32) * 0.1
+        quats = np.random.randn(n_gaussians, 4).astype(np.float32)
+        quats = quats / np.linalg.norm(quats, axis=1, keepdims=True)
+        opacities = np.random.rand(n_gaussians).astype(np.float32)
+        sh0 = np.random.rand(n_gaussians, 3).astype(np.float32)
+
+        # Compress to arrays
+        header, chunks, packed, sh = gsply.compress_to_arrays(
+            means, scales, quats, opacities, sh0
+        )
+
+        assert isinstance(header, bytes)
+        assert isinstance(chunks, np.ndarray)
+        assert isinstance(packed, np.ndarray)
+        assert chunks.dtype == np.float32  # Chunk bounds are float32
+        assert packed.dtype == np.uint32
+
+    def test_compress_apis_with_gsdata(self, sample_gaussian_data):
+        """Test that compression APIs work with GSData."""
+        means = sample_gaussian_data['means']
+        scales = sample_gaussian_data['scales']
+        quats = sample_gaussian_data['quats']
+        opacities = sample_gaussian_data['opacities']
+        sh0 = sample_gaussian_data['sh0']
+        shN = sample_gaussian_data['shN']
+
+        # Create GSData
+        data = gsply.GSData(means, scales, quats, opacities, sh0, shN, base=None)
+
+        # Test clean GSData API
+        compressed_bytes = gsply.compress_to_bytes(data)
+        assert isinstance(compressed_bytes, bytes)
+
+        header, chunks, packed, sh = gsply.compress_to_arrays(data)
+        assert isinstance(header, bytes)
+        assert isinstance(chunks, np.ndarray)
+
+        # Also verify backward compatibility works
+        compressed_bytes2 = gsply.compress_to_bytes(
+            data.means, data.scales, data.quats,
+            data.opacities, data.sh0, data.shN
+        )
+        assert compressed_bytes == compressed_bytes2
+
+
 class TestDocstrings:
     """Test that functions have proper docstrings."""
 
@@ -196,3 +286,72 @@ class TestDocstrings:
         """Test that module has docstring."""
         assert gsply.__doc__ is not None
         assert 'gsply' in gsply.__doc__
+
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    def test_single_gaussian(self, tmp_path):
+        """Test reading and writing a single Gaussian."""
+        output_file = tmp_path / "single_gaussian.ply"
+
+        # Create single Gaussian
+        means = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+        scales = np.array([[0.1, 0.1, 0.1]], dtype=np.float32)
+        quats = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        opacities = np.array([1.0], dtype=np.float32)
+        sh0 = np.array([[0.5, 0.5, 0.5]], dtype=np.float32)
+
+        # Write
+        gsply.plywrite(output_file, means, scales, quats, opacities, sh0)
+
+        # Read back
+        data = gsply.plyread(output_file)
+
+        assert data.means.shape[0] == 1
+        assert data.scales.shape[0] == 1
+        assert data.quats.shape[0] == 1
+        assert data.opacities.shape[0] == 1
+        assert data.sh0.shape[0] == 1
+
+    def test_gsdata_attribute_access(self, test_ply_file):
+        """Test GSData attribute access methods."""
+        if test_ply_file is None:
+            pytest.skip("Test file not found")
+
+        data = gsply.plyread(test_ply_file)
+
+        # Test attribute access
+        assert hasattr(data, 'means')
+        assert hasattr(data, 'scales')
+        assert hasattr(data, 'quats')
+        assert hasattr(data, 'opacities')
+        assert hasattr(data, 'sh0')
+        assert hasattr(data, 'shN')
+        assert hasattr(data, 'base')
+
+        # Test indexing
+        assert data[0] is data.means
+        assert data[1] is data.scales
+        assert data[2] is data.quats
+        assert data[3] is data.opacities
+        assert data[4] is data.sh0
+        assert data[5] is data.shN
+
+    def test_gsdata_slicing(self, test_ply_file):
+        """Test GSData slicing behavior."""
+        if test_ply_file is None:
+            pytest.skip("Test file not found")
+
+        data = gsply.plyread(test_ply_file)
+
+        # Test tuple unpacking via slicing
+        first_six = data[:6]
+        assert len(first_six) == 6
+        assert first_six[0] is data.means
+        assert first_six[5] is data.shN
+
+        # Test full unpacking
+        means, scales, quats, opacities, sh0, shN = data[:6]
+        assert means is data.means
+        assert shN is data.shN

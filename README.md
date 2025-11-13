@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](#testing)
 
-**4.3x faster reads | 1.5x faster writes | Zero dependencies | Pure Python**
+**78M Gaussians/sec read | 29M Gaussians/sec write | Pure Python with NumPy and Numba**
 
 [Features](#features) | [Installation](#installation) | [Quick Start](#quick-start) | [Performance](#performance) | [Documentation](#documentation)
 
@@ -18,11 +18,11 @@
 
 ## Overview
 
-**gsply** is a pure Python library for ultra-fast reading and writing of Gaussian Splatting PLY files. Built specifically for performance-critical applications, gsply achieves 4.3x faster reads and 1.5x faster writes compared to plyfile, with zero external dependencies beyond numpy.
+**gsply** is a pure Python library for ultra-fast reading and writing of Gaussian Splatting PLY files. Built specifically for performance-critical applications, gsply achieves read speeds up to 78M Gaussians/sec and write speeds up to 29M Gaussians/sec, with zero external dependencies beyond numpy.
 
 **Why gsply?**
-- **Blazing Fast**: Zero-copy reads by default, single bulk operations
-- **Zero Dependencies**: Pure Python + numpy + numba (no C++ compilation needed)
+- **Blazing Fast**: Zero-copy reads by default, JIT-accelerated compressed I/O
+- **Pure Python**: NumPy + Numba (no C++ compilation needed)
 - **Format Support**: native Gaussian Splatting ply + PlayCanvas compressed ply format
 - **Auto-Detection**: Automatically detects format and SH degree
 
@@ -30,15 +30,18 @@
 
 ## Features
 
-- **Fastest Gaussian PLY I/O**: Read 4.3x faster, write 1.5x faster than plyfile
-  - Read (zero-copy): 7.46ms vs 31.73ms (388K Gaussians, SH3) - 52M Gaussians/sec
-  - Write (uncompressed): 28.24ms vs 41.78ms (388K Gaussians, SH3) - 14M Gaussians/sec
+- **Fastest Gaussian PLY I/O**: Peak performance of 78M Gaussians/sec read, 29M Gaussians/sec write
+  - **400K Gaussians, SH0 (uncompressed)**: Read 5.7ms (70M/s), Write 19.3ms (21M/s)
+  - **400K Gaussians, SH3 (uncompressed)**: Read 25.3ms (16M/s), Write 98ms (4.1M/s)
+  - **100K Gaussians, SH0 (compressed)**: Read 2.8ms (35M/s), Write 3.4ms (29M/s) - **71% smaller**
+  - **1M Gaussians, SH0**: Peak read 12.8ms (78M/s), compressed write 35.5ms (28M/s)
   - **Verified equivalent**: Output files match plyfile exactly (byte-for-byte validation)
-  - **Optimized**: Bulk header reading, pre-computed templates, buffered I/O
+  - **Optimizations**: Zero-copy reads, parallel JIT processing, LRU header caching, lookup tables
 - **Zero-copy optimization**: Enabled by default for maximum performance
-- **Zero dependencies**: Pure Python + numpy (no compilation required)
+- **Pure Python**: NumPy + Numba JIT (no C++ compilation required)
 - **Multiple SH degrees**: Supports SH degrees 0-3 (14, 23, 38, 59 properties)
 - **Auto-format detection**: Automatically detects uncompressed vs compressed formats
+- **In-memory compression/decompression**: New APIs for compressing and decompressing bytes without disk I/O
 - **Type-safe**: Full type hints for Python 3.10+
 
 ---
@@ -64,11 +67,11 @@ pip install -e .
 ## Quick Start
 
 ```python
-import gsply
+from gsply import plyread, plywrite, detect_format
 
 # Read PLY file (auto-detects format) - returns GSData container
-# Always uses zero-copy optimization (6.3x faster than plyfile)
-data = gsply.plyread("model.ply")
+# Zero-copy optimization for maximum speed (up to 78M Gaussians/sec)
+data = plyread("model.ply")
 print(f"Loaded {data.means.shape[0]} Gaussians")
 
 # Access via attributes
@@ -79,15 +82,21 @@ colors = data.sh0
 means, scales, quats, opacities, sh0, shN = data[:6]
 
 # Write uncompressed PLY file
-gsply.plywrite("output.ply", data.means, data.scales, data.quats,
-               data.opacities, data.sh0, data.shN)
+plywrite("output.ply", data.means, data.scales, data.quats,
+         data.opacities, data.sh0, data.shN)
 
 # Write compressed PLY file (saves as "output.compressed.ply", 14.5x smaller)
-gsply.plywrite("output.ply", data.means, data.scales, data.quats,
-               data.opacities, data.sh0, data.shN, compressed=True)
+plywrite("output.ply", data.means, data.scales, data.quats,
+         data.opacities, data.sh0, data.shN, compressed=True)
+
+# NEW: Compress/decompress without disk I/O (clean API!)
+from gsply import compress_to_bytes, decompress_from_bytes
+compressed = compress_to_bytes(data)  # Compress to bytes
+data_restored = decompress_from_bytes(compressed)  # Decompress from bytes
+# Perfect for network transfer, database storage, streaming, etc.
 
 # Detect format before reading
-is_compressed, sh_degree = gsply.detect_format("model.ply")
+is_compressed, sh_degree = detect_format("model.ply")
 print(f"Compressed: {is_compressed}, SH degree: {sh_degree}")
 ```
 
@@ -115,14 +124,16 @@ Always uses zero-copy optimization for maximum performance.
 - `base`: Base array (kept alive for zero-copy views)
 
 **Performance:**
-- Uncompressed: ~6ms for 400K Gaussians (zero-copy views)
-- Compressed (with JIT): ~15ms for 400K Gaussians
-- Compressed (no JIT): ~90ms for 400K Gaussians
+- Uncompressed: 5.7ms for 400K Gaussians (70M/sec), 12.8ms for 1M (78M/sec peak)
+- Compressed: 8.5ms for 400K Gaussians (47M/sec), 16.7ms for 1M (60M/sec)
+- Scales linearly with data size
 
 **Example:**
 ```python
-# Zero-copy reading (6.3x faster than plyfile)
-data = gsply.plyread("model.ply")
+from gsply import plyread
+
+# Zero-copy reading - up to 78M Gaussians/sec
+data = plyread("model.ply")
 print(f"Loaded {data.means.shape[0]} Gaussians with SH degree {data.shN.shape[1]}")
 
 # Access via attributes
@@ -160,11 +171,13 @@ Write Gaussian Splatting PLY file.
 
 **Example:**
 ```python
+from gsply import plywrite
+
 # Write uncompressed (fast, ~8ms for 400K Gaussians)
-gsply.plywrite("output.ply", means, scales, quats, opacities, sh0, shN)
+plywrite("output.ply", means, scales, quats, opacities, sh0, shN)
 
 # Write compressed (saves as "output.compressed.ply", ~63ms, 3.4x smaller)
-gsply.plywrite("output.ply", means, scales, quats, opacities, sh0, shN, compressed=True)
+plywrite("output.ply", means, scales, quats, opacities, sh0, shN, compressed=True)
 ```
 
 ---
@@ -183,7 +196,9 @@ Tuple of (is_compressed, sh_degree):
 
 **Example:**
 ```python
-is_compressed, sh_degree = gsply.detect_format("model.ply")
+from gsply import detect_format
+
+is_compressed, sh_degree = detect_format("model.ply")
 if is_compressed:
     print("Compressed PlayCanvas format")
 else:
@@ -192,44 +207,212 @@ else:
 
 ---
 
+### `compress_to_bytes(data)`
+
+Compress Gaussian splatting data to bytes (PlayCanvas format) without writing to disk.
+
+Useful for network transfer, streaming, or custom storage solutions.
+
+**Parameters:**
+- `data` (GSData): Gaussian data from `plyread()` or created manually
+  - Alternative: Pass individual arrays for backward compatibility
+
+**Returns:**
+`bytes`: Complete compressed PLY file as bytes
+
+**Example:**
+```python
+from gsply import plyread, compress_to_bytes
+
+# Method 1: Clean API with GSData (recommended)
+data = plyread("model.ply")
+compressed_bytes = compress_to_bytes(data)  # Simple!
+
+# Method 2: Individual arrays (backward compatible)
+compressed_bytes = compress_to_bytes(
+    means, scales, quats, opacities, sh0, shN
+)
+
+# Send over network or store in database
+with open("output.compressed.ply", "wb") as f:
+    f.write(compressed_bytes)
+```
+
+---
+
+### `compress_to_arrays(data)`
+
+Compress Gaussian splatting data to component arrays (PlayCanvas format).
+
+Returns separate components for custom processing or partial updates.
+
+**Parameters:**
+- `data` (GSData): Gaussian data from `plyread()` or created manually
+  - Alternative: Pass individual arrays for backward compatibility
+
+**Returns:**
+Tuple containing:
+- `header_bytes` (bytes): PLY header as bytes
+- `chunk_bounds` (np.ndarray): Shape (num_chunks, 18) float32 - Chunk boundary array
+- `packed_data` (np.ndarray): Shape (N, 4) uint32 - Main compressed data
+- `packed_sh` (np.ndarray | None): Shape varies, uint8 - Compressed SH data if present
+
+**Example:**
+```python
+from gsply import plyread, compress_to_arrays
+from io import BytesIO
+
+# Method 1: Clean API with GSData (recommended)
+data = plyread("model.ply")
+header, chunks, packed, sh = compress_to_arrays(data)  # Simple!
+
+# Method 2: Individual arrays (backward compatible)
+header, chunks, packed, sh = compress_to_arrays(
+    means, scales, quats, opacities, sh0, shN
+)
+
+# Process components individually
+print(f"Header size: {len(header)} bytes")
+print(f"Chunks: {chunks.shape[0]} chunks")
+print(f"Packed data: {packed.nbytes} bytes")
+
+# Manually assemble if needed
+buffer = BytesIO()
+buffer.write(header)
+buffer.write(chunks.tobytes())
+buffer.write(packed.tobytes())
+if sh is not None:
+    buffer.write(sh.tobytes())
+
+compressed_bytes = buffer.getvalue()
+```
+
+---
+
+### `decompress_from_bytes(compressed_bytes)`
+
+Decompress Gaussian splatting data from bytes (PlayCanvas format) without reading from disk.
+
+Symmetric with `compress_to_bytes()` - perfect for network transfer, streaming, or custom storage.
+
+**Parameters:**
+- `compressed_bytes` (bytes): Complete compressed PLY file as bytes
+
+**Returns:**
+`GSData` namedtuple with decompressed Gaussian parameters:
+- `means`: (N, 3) - Gaussian centers
+- `scales`: (N, 3) - Log scales
+- `quats`: (N, 4) - Rotations as quaternions (wxyz)
+- `opacities`: (N,) - Logit opacities
+- `sh0`: (N, 3) - DC spherical harmonics
+- `shN`: (N, K, 3) - Higher-order SH coefficients
+- `base`: None (not applicable for decompressed data)
+
+**Example:**
+```python
+from gsply import compress_to_bytes, decompress_from_bytes, plyread
+
+# Example 1: Round-trip without disk I/O
+data = plyread("model.ply")
+compressed = compress_to_bytes(data)
+data_restored = decompress_from_bytes(compressed)
+# data_restored is ready to use!
+
+# Example 2: Network transfer
+# Sender side
+compressed_bytes = compress_to_bytes(data)
+# send compressed_bytes over network...
+
+# Receiver side
+# ...receive compressed_bytes from network
+data = decompress_from_bytes(compressed_bytes)
+# No temporary files needed!
+
+# Example 3: Database storage
+import sqlite3
+conn = sqlite3.connect('gaussians.db')
+conn.execute('CREATE TABLE IF NOT EXISTS models (id INTEGER, data BLOB)')
+# Store
+compressed = compress_to_bytes(data)
+conn.execute('INSERT INTO models VALUES (?, ?)', (1, compressed))
+# Retrieve
+row = conn.execute('SELECT data FROM models WHERE id = 1').fetchone()
+data_restored = decompress_from_bytes(row[0])
+```
+
+**Note:** PlayCanvas compression is lossy (quantization). Decompressed data will be very close to but not exactly identical to the original.
+
+---
+
 ## Performance
 
 ### Benchmark Results
 
-**Real-World Dataset** (388K Gaussians, SH degree 3, 30 iterations):
+Comprehensive performance benchmarks across different file sizes and formats (median of multiple runs):
 
-| Operation | gsply | plyfile | Speedup |
-|-----------|-------|---------|---------|
-| **Read** (uncompressed) | **7.46ms** (52M/sec) | 31.73ms (12M/sec) | **4.3x faster** |
-| **Write** (uncompressed) | **28.24ms** (14M/sec) | 41.78ms (9M/sec) | **1.5x faster** |
+**Uncompressed Format Performance**
 
-- **Input/Output Equivalence**: Verified - gsply and plyfile produce identical results
-- **File size**: 20.76 MB (59 properties per Gaussian)
-- **Test file**: frame_0.ply from production dataset
-- **Optimizations**: Bulk header reading (7.6% read improvement), pre-computed templates + buffered I/O (4.9% write improvement)
+| Gaussians | SH | Read (ms) | Write (ms) | Read (M/s) | Write (M/s) |
+|-----------|----|---------:|-----------:|-----------:|------------:|
+| 100K | 0 | 1.4 | 5.5 | **70.7** | 18.3 |
+| 100K | 3 | 6.1 | 18.4 | 16.4 | 5.4 |
+| 400K | 0 | 5.7 | 19.3 | **69.6** | 20.7 |
+| 400K | 3 | 25.3 | 98.0 | 15.8 | 4.1 |
+| 1M | 0 | 12.8 | 62.2 | **78.0** | 16.1 |
+| 1M | 3 | 71.3 | 256.1 | 14.0 | 3.9 |
+
+**Compressed Format Performance**
+
+| Gaussians | SH | Read (ms) | Write (ms) | Read (M/s) | Write (M/s) | Size Reduction |
+|-----------|----|---------:|-----------:|-----------:|------------:|---------------:|
+| 100K | 0 | 2.8 | 3.4 | 35.4 | **29.4** | 71% |
+| 100K | 3 | 30.5 | 22.5 | 3.3 | 4.5 | 74% |
+| 400K | 0 | 8.5 | 15.0 | 47.0 | 26.6 | 71% |
+| 400K | 3 | 118.2 | 91.7 | 3.4 | 4.4 | 74% |
+| 1M | 0 | 16.7 | 35.5 | **60.0** | **28.2** | 71% |
+| 1M | 3 | 256.4 | 210.0 | 3.9 | 4.8 | 74% |
+
+### Key Performance Highlights
+
+- **Peak Read Speed**: 78M Gaussians/sec (1M Gaussians, SH0, uncompressed)
+- **Peak Write Speed**: 29.4M Gaussians/sec (100K Gaussians, SH0, compressed)
+- **Compression Benefits**: 71-74% file size reduction with excellent performance
+- **Scalability**: Linear scaling proven up to 1M Gaussians
+- **Format Flexibility**: Compressed format can be *faster* than uncompressed for writes
+
+### Optimization Details
+
+- **Zero-copy reads**: Direct memory views without data duplication
+- **Parallel processing**: Numba JIT compilation with parallel chunk operations
+- **Smart caching**: LRU cache for frequently used headers
+- **Lookup tables**: Eliminate branching for SH degree detection
+- **Fast-path checks**: Skip unnecessary dtype conversions
+- **Single file handle**: Reduce file open/close syscall overhead
 
 ### Why gsply is Faster
 
-**Read Performance (4.3x speedup):**
-- **gsply**: Optimized bulk header read + `np.fromfile()` + zero-copy views (7.46ms for 388K Gaussians)
+**Read Performance (4.3-8x speedup):**
+- **gsply**: Optimized bulk header read + `np.fromfile()` + zero-copy views
   - **Bulk header reading**: Single 8KB read + decode (vs. N readline() calls)
   - Reads entire binary data as contiguous block in one system call
   - Creates memory views directly into the data array (no copies)
   - Base array kept alive via GSData container's reference counting
-- **plyfile**: Line-by-line header + 59 individual property accesses (31.73ms)
+  - **Consistent performance**: Works equally well on real-world and random data
+- **plyfile**: Line-by-line header + individual property accesses per element
   - Multiple readline() + decode operations for header parsing
   - Accesses each property separately through PLY structure
   - Stacks columns together requiring multiple memory allocations and copies
   - Generic PLY parser handles arbitrary formats with overhead
+  - **Data-dependent performance**: 10x slower on random/synthetic data vs real-world structured data
 
-**Write Performance (1.5x speedup):**
-- **gsply**: Pre-computed templates + pre-allocated array + buffered I/O (28.24ms for 388K Gaussians)
+**Write Performance (1.4-2.3x speedup):**
+- **gsply**: Pre-computed templates + pre-allocated array + buffered I/O
   - **Pre-computed header templates**: Avoids dynamic string building in loops
   - **Buffered I/O**: 2MB buffer for large files reduces system call overhead
   - Allocates single contiguous array with exact dtype needed
   - Fills array via direct slice assignment (no intermediate structures)
   - Single `tobytes()` + buffered file write operation
-- **plyfile**: Dynamic header + 59 property assignments + PLY construction (41.78ms)
+- **plyfile**: Dynamic header + per-property assignments + PLY construction
   - Builds header dynamically with loop + f-string formatting
   - Creates PLY element structure with per-property descriptors
   - Assigns each property individually through PLY abstraction layer

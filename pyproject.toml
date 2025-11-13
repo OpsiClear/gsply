@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gsply"
 version = "0.1.1"
-description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python, zero dependencies"
+description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python with NumPy and Numba"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -33,6 +33,7 @@ classifiers = [
 
 dependencies = [
     "numpy>=1.20.0",
+    "numba>=0.59.0",
 ]
 
 [project.optional-dependencies]
@@ -41,13 +42,12 @@ dev = [
     "pytest-cov",
     "build",
     "twine",
+    "mypy>=1.0",
+    "ruff>=0.1.0",
 ]
 benchmark = [
     "open3d>=0.17.0",
     "plyfile>=0.9.0",
-]
-jit = [
-    "numba>=0.59.0",
 ]
 all = [
     "pytest>=7.0",
@@ -56,7 +56,6 @@ all = [
     "twine",
     "open3d>=0.17.0",
     "plyfile>=0.9.0",
-    "numba>=0.59.0",
 ]
 
 [project.urls]
@@ -102,3 +101,57 @@ exclude_lines = [
 exclude = [
     "benchmarks",
 ]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "PL",   # pylint
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "PLR0913", # too many arguments (common in scientific code)
+    "PLR2004", # magic values (we use meaningful constants)
+    "PLR0912", # too many branches (common in JIT kernels)
+    "PLR0915", # too many statements (common in JIT kernels)
+    "SIM108",  # simplify if-else (sometimes clarity over brevity)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["PLR2004", "N802"]  # Allow magic values and non-snake-case in tests
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Gradually enable
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+strict_concatenate = true
+
+[[tool.mypy.overrides]]
+module = "numba.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "open3d.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "plyfile.*"
+ignore_missing_imports = true

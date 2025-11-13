@@ -71,3 +71,41 @@ CI_CD_VERIFICATION.md
 COMMIT_SUMMARY.md
 READY_FOR_COMMIT.md
 VERIFICATION_REPORT.md
+
+# Numba JIT compiled cache
+*.nbc
+*.nbi
+
+# Windows artifacts
+nul
+
+# Temporary development documentation (root level)
+/*SUMMARY*.md
+/*REPORT*.md
+/*PLAN*.md
+/*ANALYSIS*.md
+/*VERIFICATION*.md
+/*RESULTS*.md
+/*ACTION*.md
+/api_*.md
+/optimization_*.md
+/performance_*.md
+/BOTTLENECK_*.md
+/DECOMPRESSION_*.md
+/DOCUMENTATION_*.md
+/REFACTORING_*.md
+/RELEASE_*.md
+/RELEASE_*.txt
+/benchmark_*.txt
+
+# Temporary development scripts (root level only)
+/benchmark_*.py
+/profile_*.py
+/debug_*.py
+/examples_*.py
+/validate_*.py
+/verify_*.py
+/test_*.py
+!/tests/test_*.py
+!/benchmarks/benchmark_*.py
+benchmarks/test_data/

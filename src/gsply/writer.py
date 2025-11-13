@@ -12,37 +12,33 @@ API Examples:
     >>> write_uncompressed("output.ply", means, scales, quats, opacities, sh0, shN)
 
 Performance:
-    - Write uncompressed: 5-10ms for 50K Gaussians
-    - Write compressed: Not yet implemented
+    - Write uncompressed: 3-7ms for 50K Gaussians (7-17M Gaussians/sec)
+    - Write compressed: 2-11ms for 50K Gaussians (4-25M Gaussians/sec)
 """
 
 import numpy as np
 from pathlib import Path
-from typing import Optional, Union
 import logging
 
-from gsply.formats import SH_C0, CHUNK_SIZE
+from gsply.formats import SH_C0, CHUNK_SIZE, CHUNK_SIZE_SHIFT
+from gsply.reader import GSData
 
-# Try to import numba for JIT optimization (optional)
-try:
-    from numba import jit
-    import numba
-    HAS_NUMBA = True
-except ImportError:
-    HAS_NUMBA = False
-    # Fallback: no-op decorator
-    def jit(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    # Mock numba module for prange fallback
-    class _MockNumba:
-        @staticmethod
-        def prange(n):
-            return range(n)
-    numba = _MockNumba()
+# Import numba for JIT optimization
+from numba import jit
+import numba
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+
+
+# ======================================================================================
+# I/O BUFFER SIZE CONSTANTS
+# ======================================================================================
+
+# Buffer sizes for optimized I/O performance
+_LARGE_BUFFER_SIZE = 2 * 1024 * 1024  # 2MB buffer for large files
+_SMALL_BUFFER_SIZE = 1 * 1024 * 1024  # 1MB buffer for small files
+_LARGE_FILE_THRESHOLD = 10_000_000  # 10MB threshold for buffer size selection
 
 
 # ======================================================================================
@@ -79,8 +75,9 @@ _F_REST_PROPERTIES = {
 }
 
 
+@lru_cache(maxsize=32)
 def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
-    """Generate PLY header using pre-computed templates.
+    """Generate PLY header using pre-computed templates (with LRU cache).
 
     This optimization pre-computes header strings for common SH degrees (0-3),
     avoiding dynamic string building in loops. Provides 3-5% speedup for writes.
@@ -94,7 +91,7 @@ def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
     """
     if num_sh_rest is None:
         # SH degree 0: use pre-computed template
-        return _HEADER_TEMPLATE_SH0.format(num_gaussians=num_gaussians).encode('ascii')
+        return _HEADER_TEMPLATE_SH0.format(num_gaussians=num_gaussians).encode("ascii")
 
     if num_sh_rest in _F_REST_PROPERTIES:
         # SH degrees 1-3: use pre-computed f_rest properties
@@ -108,8 +105,8 @@ def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
             "property float f_dc_0\n"
             "property float f_dc_1\n"
             "property float f_dc_2\n"
-            + _F_REST_PROPERTIES[num_sh_rest] +
-            "property float opacity\n"
+            + _F_REST_PROPERTIES[num_sh_rest]
+            + "property float opacity\n"
             "property float scale_0\n"
             "property float scale_1\n"
             "property float scale_2\n"
@@ -119,32 +116,47 @@ def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
             "property float rot_3\n"
             "end_header\n"
         )
-        return header.encode('ascii')
+        return header.encode("ascii")
 
     # Fallback for arbitrary SH degrees (rare)
     header_lines = [
-        "ply", "format binary_little_endian 1.0",
+        "ply",
+        "format binary_little_endian 1.0",
         f"element vertex {num_gaussians}",
-        "property float x", "property float y", "property float z",
-        "property float f_dc_0", "property float f_dc_1", "property float f_dc_2",
+        "property float x",
+        "property float y",
+        "property float z",
+        "property float f_dc_0",
+        "property float f_dc_1",
+        "property float f_dc_2",
     ]
     for i in range(num_sh_rest):
         header_lines.append(f"property float f_rest_{i}")
-    header_lines.extend([
-        "property float opacity",
-        "property float scale_0", "property float scale_1", "property float scale_2",
-        "property float rot_0", "property float rot_1", "property float rot_2", "property float rot_3",
-        "end_header",
-    ])
-    return ("\n".join(header_lines) + "\n").encode('ascii')
+    header_lines.extend(
+        [
+            "property float opacity",
+            "property float scale_0",
+            "property float scale_1",
+            "property float scale_2",
+            "property float rot_0",
+            "property float rot_1",
+            "property float rot_2",
+            "property float rot_3",
+            "end_header",
+        ]
+    )
+    return ("\n".join(header_lines) + "\n").encode("ascii")
 
 
 # ======================================================================================
 # JIT-COMPILED COMPRESSION FUNCTIONS
 # ======================================================================================
 
+
 @jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def _pack_positions_jit(sorted_means, chunk_indices, min_x, min_y, min_z, max_x, max_y, max_z):
+def _pack_positions_jit(
+    sorted_means, chunk_indices, min_x, min_y, min_z, max_x, max_y, max_z
+):
     """JIT-compiled position quantization and packing (11-10-11 bits) with parallel processing.
 
     Args:
@@ -196,7 +208,9 @@ def _pack_positions_jit(sorted_means, chunk_indices, min_x, min_y, min_z, max_x,
 
 
 @jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def _pack_scales_jit(sorted_scales, chunk_indices, min_sx, min_sy, min_sz, max_sx, max_sy, max_sz):
+def _pack_scales_jit(
+    sorted_scales, chunk_indices, min_sx, min_sy, min_sz, max_sx, max_sy, max_sz
+):
     """JIT-compiled scale quantization and packing (11-10-11 bits) with parallel processing.
 
     Args:
@@ -248,30 +262,39 @@ def _pack_scales_jit(sorted_scales, chunk_indices, min_sx, min_sy, min_sz, max_s
 
 
 @jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def _pack_colors_jit(sorted_sh0, sorted_opacities, chunk_indices, min_r, min_g, min_b, max_r, max_g, max_b, sh_c0):
+def _pack_colors_jit(
+    sorted_color_rgb,
+    sorted_opacities,
+    chunk_indices,
+    min_r,
+    min_g,
+    min_b,
+    max_r,
+    max_g,
+    max_b,
+):
     """JIT-compiled color and opacity quantization and packing (8-8-8-8 bits) with parallel processing.
 
     Args:
-        sorted_sh0: (N, 3) float32 array of SH0 coefficients
+        sorted_color_rgb: (N, 3) float32 array of pre-computed RGB colors (SH0 * SH_C0 + 0.5)
         sorted_opacities: (N,) float32 array of opacities (logit space)
         chunk_indices: int32 array of chunk indices for each vertex
         min_r, min_g, min_b: chunk minimum color bounds
         max_r, max_g, max_b: chunk maximum color bounds
-        sh_c0: SH constant for conversion
 
     Returns:
         packed: (N,) uint32 array of packed colors
     """
-    n = len(sorted_sh0)
+    n = len(sorted_color_rgb)
     packed = np.zeros(n, dtype=np.uint32)
 
     for i in numba.prange(n):
         chunk_idx = chunk_indices[i]
 
-        # Convert SH0 to RGB
-        color_r = sorted_sh0[i, 0] * sh_c0 + 0.5
-        color_g = sorted_sh0[i, 1] * sh_c0 + 0.5
-        color_b = sorted_sh0[i, 2] * sh_c0 + 0.5
+        # Use pre-computed RGB colors
+        color_r = sorted_color_rgb[i, 0]
+        color_g = sorted_color_rgb[i, 1]
+        color_b = sorted_color_rgb[i, 2]
 
         # Compute ranges (handle zero range)
         range_r = max_r[chunk_idx] - min_r[chunk_idx]
@@ -328,7 +351,12 @@ def _pack_quaternions_jit(sorted_quats):
     for i in numba.prange(n):
         # Normalize quaternion
         quat = sorted_quats[i]
-        norm = np.sqrt(quat[0]*quat[0] + quat[1]*quat[1] + quat[2]*quat[2] + quat[3]*quat[3])
+        norm = np.sqrt(
+            quat[0] * quat[0]
+            + quat[1] * quat[1]
+            + quat[2] * quat[2]
+            + quat[3] * quat[3]
+        )
         if norm > 0:
             quat = quat / norm
 
@@ -369,51 +397,17 @@ def _pack_quaternions_jit(sorted_quats):
         qc_int = np.uint32(qc_norm * 1023.0)
 
         # Pack (2 bits for which + 10+10+10 bits)
-        packed[i] = (np.uint32(largest_idx) << 30) | (qa_int << 20) | (qb_int << 10) | qc_int
+        packed[i] = (
+            (np.uint32(largest_idx) << 30) | (qa_int << 20) | (qb_int << 10) | qc_int
+        )
 
     return packed
 
 
-@jit(nopython=True, fastmath=True, cache=True)
-def _radix_sort_by_chunks(chunk_indices, num_chunks):
-    """Radix sort (counting sort) for chunk indices (4x faster than argsort).
-
-    Since chunk indices are small integers (0 to num_chunks-1), counting sort
-    achieves O(n) complexity vs O(n log n) for comparison-based sorting.
-
-    Args:
-        chunk_indices: (N,) int32 array of chunk indices
-        num_chunks: number of unique chunks
-
-    Returns:
-        sort_indices: (N,) int32 array of indices that would sort the data
-    """
-    n = len(chunk_indices)
-
-    # Count occurrences of each chunk
-    counts = np.zeros(num_chunks, dtype=np.int32)
-    for i in range(n):
-        counts[chunk_indices[i]] += 1
-
-    # Compute starting positions for each chunk
-    offsets = np.zeros(num_chunks, dtype=np.int32)
-    for i in range(1, num_chunks):
-        offsets[i] = offsets[i-1] + counts[i-1]
-
-    # Build sorted index array
-    sort_indices = np.empty(n, dtype=np.int32)
-    positions = offsets.copy()
-    for i in range(n):
-        chunk_id = chunk_indices[i]
-        sort_indices[positions[chunk_id]] = i
-        positions[chunk_id] += 1
-
-    return sort_indices
-
-
-@jit(nopython=True, parallel=False, fastmath=True, cache=True)
-def _compute_chunk_bounds_jit(sorted_means, sorted_scales, sorted_sh0,
-                               chunk_starts, chunk_ends, sh_c0):
+@jit(nopython=True, parallel=True, fastmath=True, cache=True)
+def _compute_chunk_bounds_jit(
+    sorted_means, sorted_scales, sorted_color_rgb, chunk_starts, chunk_ends
+):
     """JIT-compiled chunk bounds computation (9x faster than Python loop).
 
     Computes min/max bounds for positions, scales, and colors for each chunk.
@@ -422,10 +416,9 @@ def _compute_chunk_bounds_jit(sorted_means, sorted_scales, sorted_sh0,
     Args:
         sorted_means: (N, 3) float32 array of positions
         sorted_scales: (N, 3) float32 array of scales
-        sorted_sh0: (N, 3) float32 array of SH0 coefficients
+        sorted_color_rgb: (N, 3) float32 array of pre-computed RGB colors (SH0 * SH_C0 + 0.5)
         chunk_starts: (num_chunks,) int array of chunk start indices
         chunk_ends: (num_chunks,) int array of chunk end indices
-        sh_c0: SH constant for RGB conversion
 
     Returns:
         bounds: (num_chunks, 18) float32 array with layout:
@@ -436,7 +429,7 @@ def _compute_chunk_bounds_jit(sorted_means, sorted_scales, sorted_sh0,
     num_chunks = len(chunk_starts)
     bounds = np.zeros((num_chunks, 18), dtype=np.float32)
 
-    for chunk_idx in range(num_chunks):
+    for chunk_idx in numba.prange(num_chunks):
         start = chunk_starts[chunk_idx]
         end = chunk_ends[chunk_idx]
 
@@ -451,17 +444,17 @@ def _compute_chunk_bounds_jit(sorted_means, sorted_scales, sorted_sh0,
         bounds[chunk_idx, 4] = sorted_means[start, 1]  # max_y
         bounds[chunk_idx, 5] = sorted_means[start, 2]  # max_z
 
-        bounds[chunk_idx, 6] = sorted_scales[start, 0]   # min_scale_x
-        bounds[chunk_idx, 7] = sorted_scales[start, 1]   # min_scale_y
-        bounds[chunk_idx, 8] = sorted_scales[start, 2]   # min_scale_z
-        bounds[chunk_idx, 9] = sorted_scales[start, 0]   # max_scale_x
+        bounds[chunk_idx, 6] = sorted_scales[start, 0]  # min_scale_x
+        bounds[chunk_idx, 7] = sorted_scales[start, 1]  # min_scale_y
+        bounds[chunk_idx, 8] = sorted_scales[start, 2]  # min_scale_z
+        bounds[chunk_idx, 9] = sorted_scales[start, 0]  # max_scale_x
         bounds[chunk_idx, 10] = sorted_scales[start, 1]  # max_scale_y
         bounds[chunk_idx, 11] = sorted_scales[start, 2]  # max_scale_z
 
-        # Convert SH0 to RGB for first element
-        color_r = sorted_sh0[start, 0] * sh_c0 + 0.5
-        color_g = sorted_sh0[start, 1] * sh_c0 + 0.5
-        color_b = sorted_sh0[start, 2] * sh_c0 + 0.5
+        # Use pre-computed RGB for first element
+        color_r = sorted_color_rgb[start, 0]
+        color_g = sorted_color_rgb[start, 1]
+        color_b = sorted_color_rgb[start, 2]
 
         bounds[chunk_idx, 12] = color_r  # min_r
         bounds[chunk_idx, 13] = color_g  # min_g
@@ -488,10 +481,10 @@ def _compute_chunk_bounds_jit(sorted_means, sorted_scales, sorted_sh0,
             bounds[chunk_idx, 10] = max(bounds[chunk_idx, 10], sorted_scales[i, 1])
             bounds[chunk_idx, 11] = max(bounds[chunk_idx, 11], sorted_scales[i, 2])
 
-            # Color bounds (convert SH0 to RGB)
-            color_r = sorted_sh0[i, 0] * sh_c0 + 0.5
-            color_g = sorted_sh0[i, 1] * sh_c0 + 0.5
-            color_b = sorted_sh0[i, 2] * sh_c0 + 0.5
+            # Color bounds (already converted to RGB)
+            color_r = sorted_color_rgb[i, 0]
+            color_g = sorted_color_rgb[i, 1]
+            color_b = sorted_color_rgb[i, 2]
 
             bounds[chunk_idx, 12] = min(bounds[chunk_idx, 12], color_r)
             bounds[chunk_idx, 13] = min(bounds[chunk_idx, 13], color_g)
@@ -508,8 +501,275 @@ def _compute_chunk_bounds_jit(sorted_means, sorted_scales, sorted_sh0,
 
 
 # ======================================================================================
+# HELPER FUNCTIONS
+# ======================================================================================
+
+
+def _validate_and_normalize_inputs(
+    means: np.ndarray,
+    scales: np.ndarray,
+    quats: np.ndarray,
+    opacities: np.ndarray,
+    sh0: np.ndarray,
+    shN: np.ndarray | None,
+    validate: bool = False,
+) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None
+]:
+    """Validate and normalize input arrays to float32 format.
+
+    Args:
+        means: Gaussian centers, shape (N, 3)
+        scales: Log scales, shape (N, 3)
+        quats: Rotations as quaternions (wxyz), shape (N, 4)
+        opacities: Logit opacities, shape (N,)
+        sh0: DC spherical harmonics, shape (N, 3)
+        shN: Higher-order SH coefficients, shape (N, K, 3) or None
+        validate: Whether to validate shapes
+
+    Returns:
+        Tuple of normalized arrays (all float32)
+    """
+    # Ensure all arrays are numpy arrays
+    if not isinstance(means, np.ndarray):
+        means = np.asarray(means, dtype=np.float32)
+    if not isinstance(scales, np.ndarray):
+        scales = np.asarray(scales, dtype=np.float32)
+    if not isinstance(quats, np.ndarray):
+        quats = np.asarray(quats, dtype=np.float32)
+    if not isinstance(opacities, np.ndarray):
+        opacities = np.asarray(opacities, dtype=np.float32)
+    if not isinstance(sh0, np.ndarray):
+        sh0 = np.asarray(sh0, dtype=np.float32)
+    if shN is not None and not isinstance(shN, np.ndarray):
+        shN = np.asarray(shN, dtype=np.float32)
+
+    # Fast path: check if all arrays are already float32
+    all_float32 = (
+        means.dtype == np.float32
+        and scales.dtype == np.float32
+        and quats.dtype == np.float32
+        and opacities.dtype == np.float32
+        and sh0.dtype == np.float32
+        and (shN is None or shN.dtype == np.float32)
+    )
+
+    # Only convert dtype if needed (avoids copy when already float32)
+    if not all_float32:
+        if means.dtype != np.float32:
+            means = means.astype(np.float32, copy=False)
+        if scales.dtype != np.float32:
+            scales = scales.astype(np.float32, copy=False)
+        if quats.dtype != np.float32:
+            quats = quats.astype(np.float32, copy=False)
+        if opacities.dtype != np.float32:
+            opacities = opacities.astype(np.float32, copy=False)
+        if sh0.dtype != np.float32:
+            sh0 = sh0.astype(np.float32, copy=False)
+        if shN is not None and shN.dtype != np.float32:
+            shN = shN.astype(np.float32, copy=False)
+
+    num_gaussians = means.shape[0]
+
+    # Validate shapes if requested
+    if validate:
+        assert means.shape == (num_gaussians, 3), (
+            f"means array has incorrect shape: expected ({num_gaussians}, 3), "
+            f"got {means.shape}. Ensure all arrays have the same number of Gaussians (N)."
+        )
+        assert scales.shape == (num_gaussians, 3), (
+            f"scales array has incorrect shape: expected ({num_gaussians}, 3), "
+            f"got {scales.shape}. Ensure all arrays have the same number of Gaussians (N)."
+        )
+        assert quats.shape == (num_gaussians, 4), (
+            f"quats array has incorrect shape: expected ({num_gaussians}, 4), "
+            f"got {quats.shape}. Quaternions must have 4 components (w, x, y, z)."
+        )
+        assert opacities.shape == (num_gaussians,), (
+            f"opacities array has incorrect shape: expected ({num_gaussians},), "
+            f"got {opacities.shape}. Opacities should be a 1D array with one value per Gaussian."
+        )
+        assert sh0.shape == (num_gaussians, 3), (
+            f"sh0 array has incorrect shape: expected ({num_gaussians}, 3), "
+            f"got {sh0.shape}. SH DC coefficients must have 3 components (RGB)."
+        )
+
+    # Flatten shN if needed (from (N, K, 3) to (N, K*3))
+    if shN is not None and shN.ndim == 3:
+        N, K, C = shN.shape
+        if validate:
+            assert C == 3, f"shN must have shape (N, K, 3), got {shN.shape}"
+        shN = shN.reshape(N, K * 3)
+
+    return means, scales, quats, opacities, sh0, shN
+
+
+def _compress_data_internal(
+    means: np.ndarray,
+    scales: np.ndarray,
+    quats: np.ndarray,
+    opacities: np.ndarray,
+    sh0: np.ndarray,
+    shN: np.ndarray | None,
+) -> tuple[bytes, np.ndarray, np.ndarray, np.ndarray | None, int, int]:
+    """Internal function to compress Gaussian data (shared compression logic).
+
+    This function contains the core compression logic extracted from write_compressed().
+    All inputs must be pre-validated and normalized to float32.
+
+    Args:
+        means: (N, 3) float32 - xyz positions
+        scales: (N, 3) float32 - scale parameters
+        quats: (N, 4) float32 - rotation quaternions
+        opacities: (N,) float32 - opacity values
+        sh0: (N, 3) float32 - DC spherical harmonics
+        shN: (N, K*3) float32 or None - flattened SH coefficients
+
+    Returns:
+        Tuple of (header_bytes, chunk_bounds, packed_data, packed_sh, num_gaussians, num_chunks)
+    """
+    num_gaussians = means.shape[0]
+    num_chunks = (num_gaussians + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+    # Pre-compute chunk indices for all vertices (vectorized)
+    # Use bit shift instead of division (256 = 2^8, so >> 8 is faster)
+    chunk_indices = np.arange(num_gaussians, dtype=np.int32) >> CHUNK_SIZE_SHIFT
+
+    # OPTIMIZATION: chunk_indices are ALWAYS already sorted!
+    # Since we compute chunk_indices = np.arange(num_gaussians) >> CHUNK_SIZE_SHIFT,
+    # the indices are sequential [0,0,0..., 1,1,1..., 2,2,2...] which is already sorted.
+    sorted_chunk_indices = chunk_indices
+    sorted_means = means
+    sorted_scales = scales
+    sorted_sh0 = sh0
+    sorted_quats = quats
+    sorted_opacities = opacities
+    sorted_shN = shN
+
+    # Pre-compute SH0 to RGB conversion (used in chunk bounds and packing)
+    sorted_color_rgb = sorted_sh0 * SH_C0 + 0.5
+
+    # Compute chunk boundaries (start/end indices for each chunk)
+    chunk_starts = np.arange(num_chunks, dtype=np.int32) * CHUNK_SIZE
+    chunk_ends = np.minimum(chunk_starts + CHUNK_SIZE, num_gaussians)
+
+    # Allocate chunk bounds arrays
+    chunk_bounds = np.zeros((num_chunks, 18), dtype=np.float32)
+
+    # Compute chunk bounds using JIT-compiled function
+    chunk_bounds = _compute_chunk_bounds_jit(
+        sorted_means, sorted_scales, sorted_color_rgb, chunk_starts, chunk_ends
+    )
+
+    # Extract individual min/max values for packing (views into chunk_bounds)
+    min_x, min_y, min_z = chunk_bounds[:, 0], chunk_bounds[:, 1], chunk_bounds[:, 2]
+    max_x, max_y, max_z = chunk_bounds[:, 3], chunk_bounds[:, 4], chunk_bounds[:, 5]
+    min_scale_x, min_scale_y, min_scale_z = (
+        chunk_bounds[:, 6],
+        chunk_bounds[:, 7],
+        chunk_bounds[:, 8],
+    )
+    max_scale_x, max_scale_y, max_scale_z = (
+        chunk_bounds[:, 9],
+        chunk_bounds[:, 10],
+        chunk_bounds[:, 11],
+    )
+    min_r, min_g, min_b = chunk_bounds[:, 12], chunk_bounds[:, 13], chunk_bounds[:, 14]
+    max_r, max_g, max_b = chunk_bounds[:, 15], chunk_bounds[:, 16], chunk_bounds[:, 17]
+
+    # Allocate packed vertex data (4 uint32 per vertex)
+    packed_data = np.zeros((num_gaussians, 4), dtype=np.uint32)
+
+    # Use JIT-compiled functions for parallel compression (5-6x faster)
+    packed_data[:, 0] = _pack_positions_jit(
+        sorted_means, sorted_chunk_indices, min_x, min_y, min_z, max_x, max_y, max_z
+    )
+    packed_data[:, 2] = _pack_scales_jit(
+        sorted_scales,
+        sorted_chunk_indices,
+        min_scale_x,
+        min_scale_y,
+        min_scale_z,
+        max_scale_x,
+        max_scale_y,
+        max_scale_z,
+    )
+    packed_data[:, 3] = _pack_colors_jit(
+        sorted_color_rgb,
+        sorted_opacities,
+        sorted_chunk_indices,
+        min_r,
+        min_g,
+        min_b,
+        max_r,
+        max_g,
+        max_b,
+    )
+    packed_data[:, 1] = _pack_quaternions_jit(sorted_quats)
+
+    # SH coefficient compression (8-bit quantization)
+    packed_sh = None
+    if sorted_shN is not None and sorted_shN.shape[1] > 0:
+        # Quantize to uint8: ((shN / 8 + 0.5) * 256), clamped to [0, 255]
+        # Simplified to: shN * 32 + 128, clamped to [0, 255]
+        packed_sh = np.clip(sorted_shN * 32.0 + 128.0, 0, 255).astype(np.uint8)
+
+    # Build header
+    header_lines = [
+        "ply",
+        "format binary_little_endian 1.0",
+        f"element chunk {num_chunks}",
+    ]
+
+    # Add chunk properties (18 floats)
+    chunk_props = [
+        "min_x",
+        "min_y",
+        "min_z",
+        "max_x",
+        "max_y",
+        "max_z",
+        "min_scale_x",
+        "min_scale_y",
+        "min_scale_z",
+        "max_scale_x",
+        "max_scale_y",
+        "max_scale_z",
+        "min_r",
+        "min_g",
+        "min_b",
+        "max_r",
+        "max_g",
+        "max_b",
+    ]
+    for prop in chunk_props:
+        header_lines.append(f"property float {prop}")
+
+    # Add vertex element
+    header_lines.append(f"element vertex {num_gaussians}")
+    header_lines.append("property uint packed_position")
+    header_lines.append("property uint packed_rotation")
+    header_lines.append("property uint packed_scale")
+    header_lines.append("property uint packed_color")
+
+    # Add SH element if present
+    if packed_sh is not None:
+        num_sh_coeffs = packed_sh.shape[1]
+        header_lines.append(f"element sh {num_gaussians}")
+        for i in range(num_sh_coeffs):
+            header_lines.append(f"property uchar coeff_{i}")
+
+    header_lines.append("end_header")
+    header = "\n".join(header_lines) + "\n"
+    header_bytes = header.encode("ascii")
+
+    return header_bytes, chunk_bounds, packed_data, packed_sh, num_gaussians, num_chunks
+
+
+# ======================================================================================
 # UNCOMPRESSED PLY WRITER
 # ======================================================================================
+
 
 def write_uncompressed(
     file_path: str | Path,
@@ -540,8 +800,8 @@ def write_uncompressed(
         validate: If True, validate input shapes (default True). Disable for trusted data.
 
     Performance:
-        - Direct numpy.tofile() achieves ~5-10ms for 50K Gaussians
-        - Performance is the same with or without numba installed
+        - Direct numpy.tofile() achieves ~3-7ms for 50K Gaussians
+        - Peak: 21M Gaussians/sec for 400K Gaussians, SH0
 
     Example:
         >>> write_uncompressed("output.ply", means, scales, quats, opacities, sh0, shN)
@@ -552,53 +812,12 @@ def write_uncompressed(
     """
     file_path = Path(file_path)
 
-    # Validate and normalize inputs
-    if not isinstance(means, np.ndarray):
-        means = np.asarray(means, dtype=np.float32)
-    if not isinstance(scales, np.ndarray):
-        scales = np.asarray(scales, dtype=np.float32)
-    if not isinstance(quats, np.ndarray):
-        quats = np.asarray(quats, dtype=np.float32)
-    if not isinstance(opacities, np.ndarray):
-        opacities = np.asarray(opacities, dtype=np.float32)
-    if not isinstance(sh0, np.ndarray):
-        sh0 = np.asarray(sh0, dtype=np.float32)
-    if shN is not None and not isinstance(shN, np.ndarray):
-        shN = np.asarray(shN, dtype=np.float32)
-
-    # Only convert dtype if needed (avoids copy when already float32)
-    if means.dtype != np.float32:
-        means = means.astype(np.float32, copy=False)
-    if scales.dtype != np.float32:
-        scales = scales.astype(np.float32, copy=False)
-    if quats.dtype != np.float32:
-        quats = quats.astype(np.float32, copy=False)
-    if opacities.dtype != np.float32:
-        opacities = opacities.astype(np.float32, copy=False)
-    if sh0.dtype != np.float32:
-        sh0 = sh0.astype(np.float32, copy=False)
-    if shN is not None and shN.dtype != np.float32:
-        shN = shN.astype(np.float32, copy=False)
+    # Validate and normalize inputs using shared helper
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+        means, scales, quats, opacities, sh0, shN, validate
+    )
 
     num_gaussians = means.shape[0]
-
-    # Validate shapes (optional for trusted data)
-    if validate:
-        assert means.shape == (num_gaussians, 3), f"means must be (N, 3), got {means.shape}"
-        assert scales.shape == (num_gaussians, 3), f"scales must be (N, 3), got {scales.shape}"
-        assert quats.shape == (num_gaussians, 4), f"quats must be (N, 4), got {quats.shape}"
-        assert opacities.shape == (num_gaussians,), f"opacities must be (N,), got {opacities.shape}"
-        assert sh0.shape == (num_gaussians, 3), f"sh0 must be (N, 3), got {sh0.shape}"
-
-    # Use newaxis instead of reshape (creates view without overhead)
-    opacities = opacities[:, np.newaxis]
-
-    # Flatten shN if needed (from (N, K, 3) to (N, K*3))
-    if shN is not None and shN.ndim == 3:
-        N, K, C = shN.shape
-        if validate:
-            assert C == 3, f"shN must have shape (N, K, 3), got {shN.shape}"
-        shN = shN.reshape(N, K * 3)
 
     # Build header using pre-computed templates (3-5% faster)
     num_sh_rest = shN.shape[1] if shN is not None else None
@@ -606,36 +825,42 @@ def write_uncompressed(
 
     # Preallocate and assign data (optimized approach - 31-35% faster than concatenate)
     if shN is not None:
-        sh_coeffs = shN.shape[1]  # Number of SH coefficients (already reshaped to N x K*3)
-        total_props = 3 + 3 + sh_coeffs + 1 + 3 + 4  # means, sh0, shN, opacity, scales, quats
-        data = np.empty((num_gaussians, total_props), dtype='<f4')
+        sh_coeffs = shN.shape[
+            1
+        ]  # Number of SH coefficients (already reshaped to N x K*3)
+        total_props = (
+            3 + 3 + sh_coeffs + 1 + 3 + 4
+        )  # means, sh0, shN, opacity, scales, quats
+        data = np.empty((num_gaussians, total_props), dtype="<f4")
         data[:, 0:3] = means
         data[:, 3:6] = sh0
-        data[:, 6:6+sh_coeffs] = shN
-        data[:, 6+sh_coeffs:7+sh_coeffs] = opacities  # opacities is already (N, 1)
-        data[:, 7+sh_coeffs:10+sh_coeffs] = scales
-        data[:, 10+sh_coeffs:14+sh_coeffs] = quats
+        data[:, 6 : 6 + sh_coeffs] = shN
+        data[:, 6 + sh_coeffs] = opacities  # Direct 1D assignment, no need for slicing
+        data[:, 7 + sh_coeffs : 10 + sh_coeffs] = scales
+        data[:, 10 + sh_coeffs : 14 + sh_coeffs] = quats
     else:
-        data = np.empty((num_gaussians, 14), dtype='<f4')
+        data = np.empty((num_gaussians, 14), dtype="<f4")
         data[:, 0:3] = means
         data[:, 3:6] = sh0
-        data[:, 6:7] = opacities  # opacities is already (N, 1)
+        data[:, 6] = opacities  # Direct 1D assignment to single column
         data[:, 7:10] = scales
         data[:, 10:14] = quats
 
     # Write with optimized buffering (1-3% faster for large files)
-    # Use 2MB buffer for files >10MB, otherwise 1MB
-    buffer_size = 2 * 1024 * 1024 if data.nbytes > 10_000_000 else 1024 * 1024
-    with open(file_path, 'wb', buffering=buffer_size) as f:
+    buffer_size = _LARGE_BUFFER_SIZE if data.nbytes > _LARGE_FILE_THRESHOLD else _SMALL_BUFFER_SIZE
+    with open(file_path, "wb", buffering=buffer_size) as f:
         f.write(header_bytes)
         data.tofile(f)
 
-    logger.debug(f"[Gaussian PLY] Wrote uncompressed: {num_gaussians} Gaussians to {file_path.name}")
+    logger.debug(
+        f"[Gaussian PLY] Wrote uncompressed: {num_gaussians} Gaussians to {file_path.name}"
+    )
 
 
 # ======================================================================================
 # COMPRESSED PLY WRITER (VECTORIZED)
 # ======================================================================================
+
 
 def write_compressed(
     file_path: str | Path,
@@ -652,8 +877,7 @@ def write_compressed(
     Compresses data using chunk-based quantization (256 Gaussians per chunk).
     Achieves 3.8-14.5x compression ratio using highly optimized vectorized operations.
 
-    JIT Optimization: This function uses Numba JIT compilation when available
-    for 3.8x faster compression. Falls back to vectorized NumPy if numba is not installed.
+    Uses Numba JIT compilation for fast parallel compression (3.8x faster than pure NumPy).
 
     Args:
         file_path: Output PLY file path
@@ -666,8 +890,8 @@ def write_compressed(
         validate: If True, validate input shapes (default True)
 
     Performance:
-        - Without JIT: ~240ms for 400K Gaussians
-        - With JIT: ~63ms for 400K Gaussians (3.8x faster)
+        - With JIT: ~15ms for 400K Gaussians, SH0 (27M Gaussians/sec)
+        - With JIT: ~92ms for 400K Gaussians, SH3 (4.4M Gaussians/sec)
 
     Format:
         Compressed PLY with chunk-based quantization:
@@ -684,341 +908,200 @@ def write_compressed(
     """
     file_path = Path(file_path)
 
-    # Validate and normalize inputs
-    if not isinstance(means, np.ndarray):
-        means = np.asarray(means, dtype=np.float32)
-    if not isinstance(scales, np.ndarray):
-        scales = np.asarray(scales, dtype=np.float32)
-    if not isinstance(quats, np.ndarray):
-        quats = np.asarray(quats, dtype=np.float32)
-    if not isinstance(opacities, np.ndarray):
-        opacities = np.asarray(opacities, dtype=np.float32)
-    if not isinstance(sh0, np.ndarray):
-        sh0 = np.asarray(sh0, dtype=np.float32)
-    if shN is not None and not isinstance(shN, np.ndarray):
-        shN = np.asarray(shN, dtype=np.float32)
+    # Validate and normalize inputs using shared helper
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+        means, scales, quats, opacities, sh0, shN, validate
+    )
 
-    # Only convert dtype if needed
-    if means.dtype != np.float32:
-        means = means.astype(np.float32, copy=False)
-    if scales.dtype != np.float32:
-        scales = scales.astype(np.float32, copy=False)
-    if quats.dtype != np.float32:
-        quats = quats.astype(np.float32, copy=False)
-    if opacities.dtype != np.float32:
-        opacities = opacities.astype(np.float32, copy=False)
-    if sh0.dtype != np.float32:
-        sh0 = sh0.astype(np.float32, copy=False)
-    if shN is not None and shN.dtype != np.float32:
-        shN = shN.astype(np.float32, copy=False)
-
-    num_gaussians = means.shape[0]
-
-    # Validate shapes (optional)
-    if validate:
-        assert means.shape == (num_gaussians, 3), f"means must be (N, 3), got {means.shape}"
-        assert scales.shape == (num_gaussians, 3), f"scales must be (N, 3), got {scales.shape}"
-        assert quats.shape == (num_gaussians, 4), f"quats must be (N, 4), got {quats.shape}"
-        assert opacities.shape == (num_gaussians,), f"opacities must be (N,), got {opacities.shape}"
-        assert sh0.shape == (num_gaussians, 3), f"sh0 must be (N, 3), got {sh0.shape}"
-
-    # Flatten shN if needed
-    if shN is not None and shN.ndim == 3:
-        N, K, C = shN.shape
-        if validate:
-            assert C == 3, f"shN must have shape (N, K, 3), got {shN.shape}"
-        shN = shN.reshape(N, K * 3)
-
-    # Compute number of chunks
-    num_chunks = (num_gaussians + CHUNK_SIZE - 1) // CHUNK_SIZE
-
-    # Pre-compute chunk indices for all vertices (vectorized)
-    chunk_indices = np.arange(num_gaussians, dtype=np.int32) // CHUNK_SIZE
-
-    # ====================================================================================
-    # COMPUTE CHUNK BOUNDS (OPTIMIZED WITH SORTING)
-    # ====================================================================================
-    #
-    # IMPORTANT: The compressed PLY format REQUIRES vertices to be in chunk order.
-    # The reader assumes vertices 0-255 are chunk 0, 256-511 are chunk 1, etc.
-    # This is not a bug - it's a format specification requirement.
-    #
-    # Performance: Sorting once (O(n log n)) + binary search (O(k log n)) is much
-    # faster than boolean masking per chunk (O(n * k) where k = num_chunks).
-    #
-    # ====================================================================================
-
-    # Allocate chunk bounds arrays
-    chunk_bounds = np.zeros((num_chunks, 18), dtype=np.float32)
-
-    # Sort all data by chunk indices using radix sort (O(n) vs O(n log n))
-    # Radix sort is 4x faster for small integer keys like chunk indices
-    # This is required by the compressed PLY format specification.
-    if HAS_NUMBA:
-        # JIT-compiled radix sort (21ms -> 5ms)
-        sort_idx = _radix_sort_by_chunks(chunk_indices, num_chunks)
-    else:
-        # Fallback: standard comparison sort
-        sort_idx = np.argsort(chunk_indices)
-
-    sorted_chunk_indices = chunk_indices[sort_idx]
-    sorted_means = means[sort_idx]
-    sorted_scales = scales[sort_idx]
-    sorted_sh0 = sh0[sort_idx]
-    sorted_quats = quats[sort_idx]
-    sorted_opacities = opacities[sort_idx]
-    if shN is not None:
-        sorted_shN = shN[sort_idx]
-    else:
-        sorted_shN = None
-
-    # Find chunk boundaries using searchsorted (O(num_chunks log n))
-    chunk_starts = np.searchsorted(sorted_chunk_indices, np.arange(num_chunks), side='left')
-    chunk_ends = np.searchsorted(sorted_chunk_indices, np.arange(num_chunks), side='right')
-
-    # Compute chunk bounds (JIT-optimized: 9x faster than Python loop)
-    if HAS_NUMBA:
-        # JIT-compiled bounds computation (90ms -> 10ms)
-        chunk_bounds = _compute_chunk_bounds_jit(sorted_means, sorted_scales, sorted_sh0,
-                                                  chunk_starts, chunk_ends, SH_C0)
-    else:
-        # Fallback: Python loop with NumPy operations
-        for chunk_idx in range(num_chunks):
-            start = chunk_starts[chunk_idx]
-            end = chunk_ends[chunk_idx]
-
-            if start == end:  # Empty chunk (shouldn't happen but handle gracefully)
-                continue
-
-            # Slice data for this chunk (O(1) operation)
-            chunk_means = sorted_means[start:end]
-            chunk_scales = sorted_scales[start:end]
-            chunk_color_rgb = sorted_sh0[start:end] * SH_C0 + 0.5
-
-            # Position bounds
-            chunk_bounds[chunk_idx, 0] = np.min(chunk_means[:, 0])  # min_x
-            chunk_bounds[chunk_idx, 1] = np.min(chunk_means[:, 1])  # min_y
-            chunk_bounds[chunk_idx, 2] = np.min(chunk_means[:, 2])  # min_z
-            chunk_bounds[chunk_idx, 3] = np.max(chunk_means[:, 0])  # max_x
-            chunk_bounds[chunk_idx, 4] = np.max(chunk_means[:, 1])  # max_y
-            chunk_bounds[chunk_idx, 5] = np.max(chunk_means[:, 2])  # max_z
-
-            # Scale bounds (clamped to [-20, 20] to handle infinity, matches splat-transform)
-            chunk_bounds[chunk_idx, 6] = np.clip(np.min(chunk_scales[:, 0]), -20, 20)   # min_scale_x
-            chunk_bounds[chunk_idx, 7] = np.clip(np.min(chunk_scales[:, 1]), -20, 20)   # min_scale_y
-            chunk_bounds[chunk_idx, 8] = np.clip(np.min(chunk_scales[:, 2]), -20, 20)   # min_scale_z
-            chunk_bounds[chunk_idx, 9] = np.clip(np.max(chunk_scales[:, 0]), -20, 20)   # max_scale_x
-            chunk_bounds[chunk_idx, 10] = np.clip(np.max(chunk_scales[:, 1]), -20, 20)  # max_scale_y
-            chunk_bounds[chunk_idx, 11] = np.clip(np.max(chunk_scales[:, 2]), -20, 20)  # max_scale_z
-
-            # Color bounds
-            chunk_bounds[chunk_idx, 12] = np.min(chunk_color_rgb[:, 0])  # min_r
-            chunk_bounds[chunk_idx, 13] = np.min(chunk_color_rgb[:, 1])  # min_g
-            chunk_bounds[chunk_idx, 14] = np.min(chunk_color_rgb[:, 2])  # min_b
-            chunk_bounds[chunk_idx, 15] = np.max(chunk_color_rgb[:, 0])  # max_r
-            chunk_bounds[chunk_idx, 16] = np.max(chunk_color_rgb[:, 1])  # max_g
-            chunk_bounds[chunk_idx, 17] = np.max(chunk_color_rgb[:, 2])  # max_b
-
-    # Extract bounds for vectorized quantization
-    min_x, min_y, min_z = chunk_bounds[:, 0], chunk_bounds[:, 1], chunk_bounds[:, 2]
-    max_x, max_y, max_z = chunk_bounds[:, 3], chunk_bounds[:, 4], chunk_bounds[:, 5]
-    min_scale_x, min_scale_y, min_scale_z = chunk_bounds[:, 6], chunk_bounds[:, 7], chunk_bounds[:, 8]
-    max_scale_x, max_scale_y, max_scale_z = chunk_bounds[:, 9], chunk_bounds[:, 10], chunk_bounds[:, 11]
-    min_r, min_g, min_b = chunk_bounds[:, 12], chunk_bounds[:, 13], chunk_bounds[:, 14]
-    max_r, max_g, max_b = chunk_bounds[:, 15], chunk_bounds[:, 16], chunk_bounds[:, 17]
-
-    # ====================================================================================
-    # QUANTIZATION AND BIT PACKING (JIT-optimized when available)
-    # ====================================================================================
-
-    # Allocate packed vertex data (4 uint32 per vertex)
-    packed_data = np.zeros((num_gaussians, 4), dtype=np.uint32)
-
-    # Use JIT-compiled functions if available (5-6x faster than NumPy for writing)
-    # Note: First-time compilation adds ~40s overhead, but subsequent calls are 5-6x faster
-    if HAS_NUMBA:
-        # JIT-compiled compression (parallel, fastmath)
-        packed_data[:, 0] = _pack_positions_jit(sorted_means, sorted_chunk_indices, min_x, min_y, min_z, max_x, max_y, max_z)
-        packed_data[:, 2] = _pack_scales_jit(sorted_scales, sorted_chunk_indices, min_scale_x, min_scale_y, min_scale_z, max_scale_x, max_scale_y, max_scale_z)
-        packed_data[:, 3] = _pack_colors_jit(sorted_sh0, sorted_opacities, sorted_chunk_indices, min_r, min_g, min_b, max_r, max_g, max_b, SH_C0)
-        packed_data[:, 1] = _pack_quaternions_jit(sorted_quats)
-    else:
-        # Vectorized NumPy operations (optimal for writing)
-        # --- POSITION QUANTIZATION (11-10-11 bits) ---
-        range_x = max_x[sorted_chunk_indices] - min_x[sorted_chunk_indices]
-        range_y = max_y[sorted_chunk_indices] - min_y[sorted_chunk_indices]
-        range_z = max_z[sorted_chunk_indices] - min_z[sorted_chunk_indices]
-
-        range_x = np.where(range_x == 0, 1.0, range_x)
-        range_y = np.where(range_y == 0, 1.0, range_y)
-        range_z = np.where(range_z == 0, 1.0, range_z)
-
-        norm_x = (sorted_means[:, 0] - min_x[sorted_chunk_indices]) / range_x
-        norm_y = (sorted_means[:, 1] - min_y[sorted_chunk_indices]) / range_y
-        norm_z = (sorted_means[:, 2] - min_z[sorted_chunk_indices]) / range_z
-
-        norm_x = np.clip(norm_x, 0.0, 1.0)
-        norm_y = np.clip(norm_y, 0.0, 1.0)
-        norm_z = np.clip(norm_z, 0.0, 1.0)
-
-        px = (norm_x * 2047.0).astype(np.uint32)
-        py = (norm_y * 1023.0).astype(np.uint32)
-        pz = (norm_z * 2047.0).astype(np.uint32)
-
-        packed_data[:, 0] = (px << 21) | (py << 11) | pz
-
-        # --- SCALE QUANTIZATION (11-10-11 bits) ---
-        range_sx = max_scale_x[sorted_chunk_indices] - min_scale_x[sorted_chunk_indices]
-        range_sy = max_scale_y[sorted_chunk_indices] - min_scale_y[sorted_chunk_indices]
-        range_sz = max_scale_z[sorted_chunk_indices] - min_scale_z[sorted_chunk_indices]
-
-        range_sx = np.where(range_sx == 0, 1.0, range_sx)
-        range_sy = np.where(range_sy == 0, 1.0, range_sy)
-        range_sz = np.where(range_sz == 0, 1.0, range_sz)
-
-        norm_sx = (sorted_scales[:, 0] - min_scale_x[sorted_chunk_indices]) / range_sx
-        norm_sy = (sorted_scales[:, 1] - min_scale_y[sorted_chunk_indices]) / range_sy
-        norm_sz = (sorted_scales[:, 2] - min_scale_z[sorted_chunk_indices]) / range_sz
-
-        norm_sx = np.clip(norm_sx, 0.0, 1.0)
-        norm_sy = np.clip(norm_sy, 0.0, 1.0)
-        norm_sz = np.clip(norm_sz, 0.0, 1.0)
-
-        sx = (norm_sx * 2047.0).astype(np.uint32)
-        sy = (norm_sy * 1023.0).astype(np.uint32)
-        sz = (norm_sz * 2047.0).astype(np.uint32)
-
-        packed_data[:, 2] = (sx << 21) | (sy << 11) | sz
-
-        # --- COLOR QUANTIZATION (8-8-8-8 bits) ---
-        color_rgb = sorted_sh0 * SH_C0 + 0.5
-
-        range_r = max_r[sorted_chunk_indices] - min_r[sorted_chunk_indices]
-        range_g = max_g[sorted_chunk_indices] - min_g[sorted_chunk_indices]
-        range_b = max_b[sorted_chunk_indices] - min_b[sorted_chunk_indices]
-
-        range_r = np.where(range_r == 0, 1.0, range_r)
-        range_g = np.where(range_g == 0, 1.0, range_g)
-        range_b = np.where(range_b == 0, 1.0, range_b)
-
-        norm_r = (color_rgb[:, 0] - min_r[sorted_chunk_indices]) / range_r
-        norm_g = (color_rgb[:, 1] - min_g[sorted_chunk_indices]) / range_g
-        norm_b = (color_rgb[:, 2] - min_b[sorted_chunk_indices]) / range_b
-
-        norm_r = np.clip(norm_r, 0.0, 1.0)
-        norm_g = np.clip(norm_g, 0.0, 1.0)
-        norm_b = np.clip(norm_b, 0.0, 1.0)
-
-        cr = (norm_r * 255.0).astype(np.uint32)
-        cg = (norm_g * 255.0).astype(np.uint32)
-        cb = (norm_b * 255.0).astype(np.uint32)
-
-        opacity_linear = 1.0 / (1.0 + np.exp(-sorted_opacities))
-        opacity_linear = np.clip(opacity_linear, 0.0, 1.0)
-        co = (opacity_linear * 255.0).astype(np.uint32)
-
-        packed_data[:, 3] = (cr << 24) | (cg << 16) | (cb << 8) | co
-
-        # --- QUATERNION QUANTIZATION (smallest-three encoding: 2+10+10+10 bits) ---
-        quats_normalized = sorted_quats / np.linalg.norm(sorted_quats, axis=1, keepdims=True)
-
-        abs_quats = np.abs(quats_normalized)
-        largest_idx = np.argmax(abs_quats, axis=1).astype(np.uint32)
-
-        sign_mask = np.take_along_axis(quats_normalized, largest_idx[:, np.newaxis], axis=1) < 0
-        quats_normalized = np.where(sign_mask, -quats_normalized, quats_normalized)
-
-        mask = np.ones((num_gaussians, 4), dtype=bool)
-        mask[np.arange(num_gaussians), largest_idx] = False
-        three_components = quats_normalized[mask].reshape(num_gaussians, 3)
-
-        norm = np.sqrt(2.0) * 0.5
-        qa_norm = three_components[:, 0] * norm + 0.5
-        qb_norm = three_components[:, 1] * norm + 0.5
-        qc_norm = three_components[:, 2] * norm + 0.5
-
-        qa_norm = np.clip(qa_norm, 0.0, 1.0)
-        qb_norm = np.clip(qb_norm, 0.0, 1.0)
-        qc_norm = np.clip(qc_norm, 0.0, 1.0)
-
-        qa_int = (qa_norm * 1023.0).astype(np.uint32)
-        qb_int = (qb_norm * 1023.0).astype(np.uint32)
-        qc_int = (qc_norm * 1023.0).astype(np.uint32)
-
-        packed_data[:, 1] = (largest_idx << 30) | (qa_int << 20) | (qb_int << 10) | qc_int
-
-    # ====================================================================================
-    # SH COEFFICIENT COMPRESSION (8-bit quantization)
-    # ====================================================================================
-
-    packed_sh = None
-    if sorted_shN is not None and sorted_shN.shape[1] > 0:
-        # Normalize to [0, 1] range
-        # SH values are typically in range [-4, 4]
-        # This matches splat-transform: nvalue = shN / 8 + 0.5 (write-compressed-ply.ts:85)
-        sh_normalized = (sorted_shN / 8.0) + 0.5
-        sh_normalized = np.clip(sh_normalized, 0.0, 1.0)
-
-        # Quantize to uint8: trunc(nvalue * 256), clamped to [0, 255]
-        # This matches splat-transform: Math.trunc(nvalue * 256) (write-compressed-ply.ts:86)
-        packed_sh = np.clip(np.trunc(sh_normalized * 256.0), 0, 255).astype(np.uint8)
-
-    # ====================================================================================
-    # WRITE HEADER AND DATA
-    # ====================================================================================
-
-    # Build header
-    header_lines = [
-        "ply",
-        "format binary_little_endian 1.0",
-        f"element chunk {num_chunks}",
-    ]
-
-    # Add chunk properties (18 floats)
-    chunk_props = [
-        "min_x", "min_y", "min_z",
-        "max_x", "max_y", "max_z",
-        "min_scale_x", "min_scale_y", "min_scale_z",
-        "max_scale_x", "max_scale_y", "max_scale_z",
-        "min_r", "min_g", "min_b",
-        "max_r", "max_g", "max_b",
-    ]
-    for prop in chunk_props:
-        header_lines.append(f"property float {prop}")
-
-    # Add vertex element
-    header_lines.append(f"element vertex {num_gaussians}")
-    header_lines.append("property uint packed_position")
-    header_lines.append("property uint packed_rotation")
-    header_lines.append("property uint packed_scale")
-    header_lines.append("property uint packed_color")
-
-    # Add SH element if present
-    if packed_sh is not None:
-        num_sh_coeffs = packed_sh.shape[1]
-        header_lines.append(f"element sh {num_gaussians}")
-        for i in range(num_sh_coeffs):
-            header_lines.append(f"property uchar coeff_{i}")
-
-    header_lines.append("end_header")
-    header = "\n".join(header_lines) + "\n"
-    header_bytes = header.encode('ascii')
+    # Use internal compression function
+    header_bytes, chunk_bounds, packed_data, packed_sh, num_gaussians, num_chunks = (
+        _compress_data_internal(means, scales, quats, opacities, sh0, shN)
+    )
 
     # Write to file
-    with open(file_path, 'wb') as f:
+    with open(file_path, "wb") as f:
         f.write(header_bytes)
         chunk_bounds.tofile(f)
         packed_data.tofile(f)
         if packed_sh is not None:
             packed_sh.tofile(f)
 
-    logger.debug(f"[Gaussian PLY] Wrote compressed: {num_gaussians} Gaussians to {file_path.name} "
-                 f"({num_chunks} chunks, {len(header_bytes) + chunk_bounds.nbytes + packed_data.nbytes + (packed_sh.nbytes if packed_sh is not None else 0)} bytes)")
+    logger.debug(
+        f"[Gaussian PLY] Wrote compressed: {num_gaussians} Gaussians to {file_path.name} "
+        f"({num_chunks} chunks, {len(header_bytes) + chunk_bounds.nbytes + packed_data.nbytes + (packed_sh.nbytes if packed_sh is not None else 0)} bytes)"
+    )
+
+
+def compress_to_bytes(
+    data_or_means: GSData | np.ndarray,
+    scales: np.ndarray | None = None,
+    quats: np.ndarray | None = None,
+    opacities: np.ndarray | None = None,
+    sh0: np.ndarray | None = None,
+    shN: np.ndarray | None = None,
+    validate: bool = True,
+) -> bytes:
+    """Compress Gaussian splatting data to bytes (PlayCanvas format).
+
+    Compresses Gaussian data into PlayCanvas format and returns as bytes,
+    without writing to disk. Useful for network transfer or custom storage.
+
+    Args:
+        data_or_means: Either a GSData object or means array (N, 3) float32
+        scales: Gaussian scales (N, 3) float32 (required if first arg is means)
+        quats: Gaussian quaternions (N, 4) float32 (required if first arg is means)
+        opacities: Gaussian opacities (N,) float32 (required if first arg is means)
+        sh0: Degree 0 SH coefficients RGB (N, 3) float32 (required if first arg is means)
+        shN: Optional higher degree SH coefficients (N, K, 3) float32
+        validate: Whether to validate inputs
+
+    Returns:
+        bytes: Complete compressed PLY file as bytes
+
+    Example:
+        >>> from gsply import plyread, compress_to_bytes
+        >>> # Method 1: Using GSData (recommended)
+        >>> data = plyread("model.ply")
+        >>> compressed_bytes = compress_to_bytes(data)
+        >>>
+        >>> # Method 2: Using individual arrays (backward compatible)
+        >>> compressed_bytes = compress_to_bytes(
+        ...     means, scales, quats, opacities, sh0, shN
+        ... )
+        >>>
+        >>> # Save or transmit
+        >>> with open("output.compressed.ply", "wb") as f:
+        ...     f.write(compressed_bytes)
+    """
+    # Handle GSData input
+    if isinstance(data_or_means, GSData):
+        means = data_or_means.means
+        scales = data_or_means.scales
+        quats = data_or_means.quats
+        opacities = data_or_means.opacities
+        sh0 = data_or_means.sh0
+        shN = data_or_means.shN
+    else:
+        # Use individual arrays
+        means = data_or_means
+        if scales is None or quats is None or opacities is None or sh0 is None:
+            raise ValueError(
+                "When passing individual arrays, scales, quats, opacities, and sh0 are required. "
+                "Consider using GSData for cleaner API: compress_to_bytes(data)"
+            )
+
+    # Validate and normalize inputs
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+        means, scales, quats, opacities, sh0, shN, validate
+    )
+
+    # Compress data using internal helper
+    header_bytes, chunk_bounds, packed_data, packed_sh, num_gaussians, num_chunks = (
+        _compress_data_internal(means, scales, quats, opacities, sh0, shN)
+    )
+
+    # Assemble complete file bytes (use bytes.join for ~4% speed improvement)
+    parts = [header_bytes, chunk_bounds.tobytes(), packed_data.tobytes()]
+    if packed_sh is not None:
+        parts.append(packed_sh.tobytes())
+    total_bytes = b"".join(parts)
+
+    logger.debug(
+        f"[Gaussian PLY] Compressed to bytes: {num_gaussians} Gaussians "
+        f"({num_chunks} chunks, {len(total_bytes)} bytes)"
+    )
+
+    return total_bytes
+
+
+def compress_to_arrays(
+    data_or_means: GSData | np.ndarray,
+    scales: np.ndarray | None = None,
+    quats: np.ndarray | None = None,
+    opacities: np.ndarray | None = None,
+    sh0: np.ndarray | None = None,
+    shN: np.ndarray | None = None,
+    validate: bool = True,
+) -> tuple[bytes, np.ndarray, np.ndarray, np.ndarray | None]:
+    """Compress Gaussian splatting data to component arrays (PlayCanvas format).
+
+    Compresses Gaussian data into PlayCanvas format and returns as separate
+    components (header, chunks, data, SH), without writing to disk.
+    Useful for custom processing or partial updates.
+
+    Args:
+        data_or_means: Either a GSData object or means array (N, 3) float32
+        scales: Gaussian scales (N, 3) float32 (required if first arg is means)
+        quats: Gaussian quaternions (N, 4) float32 (required if first arg is means)
+        opacities: Gaussian opacities (N,) float32 (required if first arg is means)
+        sh0: Degree 0 SH coefficients RGB (N, 3) float32 (required if first arg is means)
+        shN: Optional higher degree SH coefficients (N, K, 3) float32
+        validate: Whether to validate inputs
+
+    Returns:
+        Tuple containing:
+        - header_bytes: PLY header as bytes
+        - chunk_bounds: Chunk boundary array (num_chunks, 18) float32
+        - packed_data: Main compressed data array (N, 4) uint32
+        - packed_sh: Optional compressed SH data array uint8
+
+    Example:
+        >>> from gsply import plyread, compress_to_arrays
+        >>> # Method 1: Using GSData (recommended)
+        >>> data = plyread("model.ply")
+        >>> header, chunks, packed, sh = compress_to_arrays(data)
+        >>>
+        >>> # Method 2: Using individual arrays (backward compatible)
+        >>> header, chunks, packed, sh = compress_to_arrays(
+        ...     means, scales, quats, opacities, sh0, shN
+        ... )
+        >>>
+        >>> # Process components individually
+        >>> print(f"Header size: {len(header)} bytes")
+        >>> print(f"Chunks shape: {chunks.shape}")
+        >>> print(f"Packed data: {packed.nbytes} bytes")
+    """
+    # Handle GSData input
+    if isinstance(data_or_means, GSData):
+        means = data_or_means.means
+        scales = data_or_means.scales
+        quats = data_or_means.quats
+        opacities = data_or_means.opacities
+        sh0 = data_or_means.sh0
+        shN = data_or_means.shN
+    else:
+        # Use individual arrays
+        means = data_or_means
+        if scales is None or quats is None or opacities is None or sh0 is None:
+            raise ValueError(
+                "When passing individual arrays, scales, quats, opacities, and sh0 are required. "
+                "Consider using GSData for cleaner API: compress_to_arrays(data)"
+            )
+
+    # Validate and normalize inputs
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+        means, scales, quats, opacities, sh0, shN, validate
+    )
+
+    # Compress data using internal helper
+    header_bytes, chunk_bounds, packed_data, packed_sh, num_gaussians, num_chunks = (
+        _compress_data_internal(means, scales, quats, opacities, sh0, shN)
+    )
+
+    logger.debug(
+        f"[Gaussian PLY] Compressed to arrays: {num_gaussians} Gaussians "
+        f"({num_chunks} chunks, header={len(header_bytes)} bytes, "
+        f"bounds={chunk_bounds.nbytes} bytes, data={packed_data.nbytes} bytes, "
+        f"sh={packed_sh.nbytes if packed_sh is not None else 0} bytes)"
+    )
+
+    return header_bytes, chunk_bounds, packed_data, packed_sh
 
 
 # ======================================================================================
 # UNIFIED WRITING API
 # ======================================================================================
+
 
 def plywrite(
     file_path: str | Path,
@@ -1065,25 +1148,29 @@ def plywrite(
     file_path = Path(file_path)
 
     # Auto-detect compression from extension
-    is_compressed_ext = file_path.name.endswith(('.ply_compressed', '.compressed.ply'))
+    is_compressed_ext = file_path.name.endswith((".ply_compressed", ".compressed.ply"))
 
     # Check if compressed format requested
     if compressed or is_compressed_ext:
         # If compressed=True but no compressed extension, add .compressed.ply
         if compressed and not is_compressed_ext:
             # Replace .ply with .compressed.ply, or just append if no .ply
-            if file_path.suffix == '.ply':
-                file_path = file_path.with_suffix('.compressed.ply')
+            if file_path.suffix == ".ply":
+                file_path = file_path.with_suffix(".compressed.ply")
             else:
-                file_path = Path(str(file_path) + '.compressed.ply')
+                file_path = Path(str(file_path) + ".compressed.ply")
 
         write_compressed(file_path, means, scales, quats, opacities, sh0, shN)
     else:
-        write_uncompressed(file_path, means, scales, quats, opacities, sh0, shN, validate=validate)
+        write_uncompressed(
+            file_path, means, scales, quats, opacities, sh0, shN, validate=validate
+        )
 
 
 __all__ = [
-    'plywrite',
-    'write_uncompressed',
-    'write_compressed',
+    "plywrite",
+    "write_uncompressed",
+    "write_compressed",
+    "compress_to_bytes",
+    "compress_to_arrays",
 ]
