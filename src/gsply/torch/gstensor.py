@@ -78,9 +78,9 @@ class GSTensor:
         sh_bands = self.shN.shape[1]
         if sh_bands == 3:  # SH1: 3 bands
             return 1
-        elif sh_bands == 8:  # SH2: 8 bands
+        if sh_bands == 8:  # SH2: 8 bands
             return 2
-        elif sh_bands == 15:  # SH3: 15 bands
+        if sh_bands == 15:  # SH3: 15 bands
             return 3
         return 0
 
@@ -526,7 +526,7 @@ class GSTensor:
             )
 
         # Handle boolean tensor masking
-        elif isinstance(key, torch.Tensor) and key.dtype == torch.bool:
+        if isinstance(key, torch.Tensor) and key.dtype == torch.bool:
             if len(key) != len(self):
                 raise ValueError(f"Boolean mask length {len(key)} doesn't match data length {len(self)}")
 
@@ -549,7 +549,7 @@ class GSTensor:
             )
 
         # Handle integer tensor/array indexing
-        elif isinstance(key, (torch.Tensor, list, np.ndarray)):
+        if isinstance(key, (torch.Tensor, list, np.ndarray)):
             if isinstance(key, (list, np.ndarray)):
                 key = torch.as_tensor(key, dtype=torch.long, device=self.device)
 
@@ -571,8 +571,7 @@ class GSTensor:
                 _base=None,
             )
 
-        else:
-            raise TypeError(f"Invalid index type: {type(key)}")
+        raise TypeError(f"Invalid index type: {type(key)}")
 
     def get_gaussian(self, index: int) -> GSTensor:
         """Get a single Gaussian as a GSTensor object.
@@ -655,8 +654,7 @@ class GSTensor:
         """
         if include_shN:
             return (self.means, self.scales, self.quats, self.opacities, self.sh0, self.shN)
-        else:
-            return (self.means, self.scales, self.quats, self.opacities, self.sh0)
+        return (self.means, self.scales, self.quats, self.opacities, self.sh0)
 
     def to_dict(self) -> dict:
         """Convert Gaussian data to dictionary.

@@ -28,15 +28,15 @@ import numpy as np
 # Import numba for JIT optimization
 from numba import jit
 
-# Import GSData from separate module
-from gsply.gsdata import GSData
-
 from gsply.formats import (
     EXPECTED_PROPERTIES_BY_SH_DEGREE,
     SH_C0,
     detect_format,
     get_sh_degree_from_property_count,
 )
+
+# Import GSData from separate module
+from gsply.gsdata import GSData
 
 logger = logging.getLogger(__name__)
 

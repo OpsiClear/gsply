@@ -55,11 +55,22 @@ __version__ = "0.2.0"
 __all__ = ["plyread", "GSData", "plywrite", "compress_to_bytes",
            "compress_to_arrays", "decompress_from_bytes", "detect_format",
            "sh2rgb", "rgb2sh", "SH_C0", "__version__"]
+# Note: GSTensor is available via lazy import but not in __all__ (it's optional)
 
-# Optional PyTorch integration (only available if torch is installed)
-try:
-    from gsply.torch import GSTensor
-    __all__.append("GSTensor")
-except ImportError:
-    # PyTorch not installed, GSTensor not available
-    pass
+
+def __getattr__(name):
+    """Lazy import for optional PyTorch integration.
+
+    This avoids importing torch when just importing gsply, which prevents
+    torch-related errors in CI environments where torch may have issues.
+    """
+    if name == "GSTensor":
+        try:
+            from gsply.torch import GSTensor
+            return GSTensor
+        except ImportError as e:
+            raise ImportError(
+                "GSTensor requires PyTorch to be installed.\n"
+                "Install with: pip install torch"
+            ) from e
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

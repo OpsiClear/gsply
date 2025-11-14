@@ -182,11 +182,16 @@ masks:     (N,)   - boolean mask (initialized to all True)
 
 ### PyTorch Integration
 
-- PyTorch is **optional** (soft dependency)
-- Use `try/except ImportError` for torch imports
+- PyTorch is **optional** (soft dependency via lazy import)
+- **GSTensor uses lazy import** via `__getattr__` in `__init__.py`
+  - This prevents torch from loading when just importing gsply
+  - Avoids torch-related errors in CI when torch isn't needed
+  - Only imports torch when `gsply.GSTensor` is accessed
+- Use `try/except ImportError` for torch imports in modules
 - Tests use `pytest.importorskip("torch")` to skip when unavailable
 - GSTensor features only work if user installs PyTorch separately
 - **Never add PyTorch to dependencies** in pyproject.toml
+- **Python 3.13 not supported** by PyTorch yet - exclude from torch test matrix
 
 ### Numba JIT Acceleration
 

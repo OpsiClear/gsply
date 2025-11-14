@@ -124,11 +124,16 @@ ignore = [
     "PLR2004", # magic values (we use meaningful constants)
     "PLR0912", # too many branches (common in JIT kernels)
     "PLR0915", # too many statements (common in JIT kernels)
+    "PLR0911", # too many returns (common in dispatching methods like __getitem__)
     "SIM108",  # simplify if-else (sometimes clarity over brevity)
+    "SIM116",  # use dict for if-elif (not always clearer)
+    "PLC0415", # import at top level (lazy imports for optional dependencies)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["PLR2004", "N802"]  # Allow magic values and non-snake-case in tests
+"src/gsply/gsdata.py" = ["N803"]  # Allow include_shN parameter (scientific naming)
+"src/gsply/torch/gstensor.py" = ["N803", "N806", "N815"]  # Allow shN naming (scientific convention)
 
 [tool.mypy]
 python_version = "3.10"

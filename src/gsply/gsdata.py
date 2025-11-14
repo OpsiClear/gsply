@@ -156,8 +156,7 @@ class GSData:
         """
         if include_shN:
             return (self.means, self.scales, self.quats, self.opacities, self.sh0, self.shN)
-        else:
-            return (self.means, self.scales, self.quats, self.opacities, self.sh0)
+        return (self.means, self.scales, self.quats, self.opacities, self.sh0)
 
     def to_dict(self) -> dict:
         """Convert Gaussian data to dictionary.
@@ -208,10 +207,9 @@ class GSData:
             if key.dtype == bool:
                 # Boolean mask - __getitem__ uses np.compress which returns copy
                 return self[key]
-            else:
-                # Fancy indexing - __getitem__ already returns copy
-                return self[key]
-        elif isinstance(key, list):
+            # Fancy indexing - __getitem__ already returns copy
+            return self[key]
+        if isinstance(key, list):
             # List indexing - __getitem__ already returns copy
             return self[key]
 
@@ -257,8 +255,7 @@ class GSData:
                 _base=None
             )
 
-        else:
-            raise TypeError(f"Invalid index type: {type(key)}")
+        raise TypeError(f"Invalid index type: {type(key)}")
 
     def __iter__(self):
         """Iterate over Gaussians, yielding tuples."""
@@ -444,7 +441,7 @@ class GSData:
             )
 
         # Handle boolean array masking
-        elif isinstance(key, np.ndarray) and key.dtype == bool:
+        if isinstance(key, np.ndarray) and key.dtype == bool:
             if len(key) != len(self):
                 raise ValueError(f"Boolean mask length {len(key)} doesn't match data length {len(self)}")
 
@@ -466,7 +463,7 @@ class GSData:
             )
 
         # Handle integer array indexing
-        elif isinstance(key, (np.ndarray, list)):
+        if isinstance(key, (np.ndarray, list)):
             indices = np.asarray(key, dtype=np.intp)
             # Check bounds
             if np.any(indices < -len(self)) or np.any(indices >= len(self)):
@@ -492,5 +489,4 @@ class GSData:
                 _base=None
             )
 
-        else:
-            raise TypeError(f"Invalid index type: {type(key)}")
+        raise TypeError(f"Invalid index type: {type(key)}")
