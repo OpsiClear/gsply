@@ -12,8 +12,6 @@ Basic Usage:
     >>> positions = data.means
     >>> colors = data.sh0
     >>>
-    >>> # Or unpack if needed
-    >>> means, scales, quats, opacities, sh0, shN = data[:6]
     >>>
     >>> # Write uncompressed PLY file
     >>> gsply.plywrite("output.ply", data.means, data.scales, data.quats,
@@ -47,12 +45,21 @@ Performance (400K Gaussians):
     - Write compressed: ~63ms (JIT-accelerated)
 """
 
-from gsply.reader import plyread, GSData, decompress_from_bytes
-from gsply.writer import plywrite, compress_to_bytes, compress_to_arrays
 from gsply.formats import detect_format
-from gsply.utils import sh2rgb, rgb2sh, SH_C0
+from gsply.gsdata import GSData
+from gsply.reader import decompress_from_bytes, plyread
+from gsply.utils import SH_C0, rgb2sh, sh2rgb
+from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 __all__ = ["plyread", "GSData", "plywrite", "compress_to_bytes",
            "compress_to_arrays", "decompress_from_bytes", "detect_format",
            "sh2rgb", "rgb2sh", "SH_C0", "__version__"]
+
+# Optional PyTorch integration (only available if torch is installed)
+try:
+    from gsply.torch import GSTensor
+    __all__.append("GSTensor")
+except ImportError:
+    # PyTorch not installed, GSTensor not available
+    pass

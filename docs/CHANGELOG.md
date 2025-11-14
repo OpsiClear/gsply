@@ -1,11 +1,98 @@
 # Release Notes
 
-## v0.1.0 (Current - Optimized Release)
+## v0.2.0 (Current - Breaking Changes & New Features)
+
+### Breaking Changes
+- **GSData is now a regular dataclass** (was NamedTuple)
+- **Removed tuple unpacking compatibility** - Use direct attribute access only
+  - Before: `means, scales, quats, opacities, sh0, shN = data[:6]`
+  - After: Access via `data.means`, `data.scales`, etc.
+- **GSData constructor requires keyword arguments**
+  - Before: `GSData(means, scales, quats, opacities, sh0, shN, _base)`
+  - After: `GSData(means=means, scales=scales, ...)`
+
+### New Features
+- **Mutable fields**: All GSData fields can now be modified after creation
+  - `data.means[0, 0] = 999.0`  # Now works!
+  - `data.scales *= 2.0`  # In-place operations supported
+  - `data.means = new_array`  # Complete array replacement
+- **New `masks` attribute**: Boolean mask for filtering Gaussians
+  - Initialized to all `True` when reading files
+  - `data.masks[100:200] = False`  # Mark Gaussians for filtering
+  - Use for filtering: `filtered_means = data.means[data.masks]`
+  - Not persisted to PLY files (runtime-only)
+- **`len(data)` returns number of Gaussians**: More intuitive API
+  - `print(f"Loaded {len(data)} Gaussians")`  # Natural usage
+  - Returns `data.means.shape[0]`
+- **Efficient slicing with `data[slice]`**: Pythonic data access
+  - `data[0]` - Single Gaussian
+  - `data[100:200]` - Range of Gaussians
+  - `data[::10]` - Every 10th Gaussian
+  - `data[mask]` - Boolean mask selection
+  - Optimized with `_base` array slicing (up to 25x faster for masks)
+
+### Performance Improvements
+- **Peak read performance**: 93M Gaussians/sec (up from 78M)
+- **Real-world average**: 75.5M Gaussians/sec on 90 test files
+- Dataclass implementation faster than NamedTuple
+
+### Migration Guide
+```python
+# Old (v0.1.x)
+means, scales, quats, opacities, sh0, shN = data[:6]
+data = GSData(means, scales, quats, opacities, sh0, shN, _base=None)
+
+# New (v0.2.0)
+means = data.means
+scales = data.scales
+# ... or use attributes directly
+data = GSData(
+    means=means,
+    scales=scales,
+    quats=quats,
+    opacities=opacities,
+    sh0=sh0,
+    shN=shN,
+    masks=None,  # Optional
+    _base=None
+)
+```
+
+## v0.1.1 (Performance & Code Quality)
+
+### Performance Improvements
+- **Peak Performance**: 78M Gaussians/sec read, 29.4M Gaussians/sec write
+- **Zero-copy reads**: Always enabled for maximum performance
+- **Fast-path dtype checks**: Skip unnecessary float32 conversions
+- **LRU header caching**: Cache frequently generated PLY headers
+- **Single file handle**: Reduce file open/close syscalls
+- **Lookup tables**: Eliminate SH degree branching
+- **Direct array operations**: Optimize opacity column assignment
+
+### Code Quality Improvements
+- **Type Safety**: Complete type hints with mypy configuration
+- **Documentation**: Enhanced docstrings with algorithm details and bit-packing format
+- **Error Messages**: Improved validation errors with actionable context
+- **Code Organization**: Extracted magic numbers to named constants, eliminated code duplication
+- **Development Tools**: Configured ruff linter and mypy for CI/CD integration
+- **Testing**: Added edge case tests (92 tests passing)
+
+### Benchmarks (1M Gaussians, SH0)
+- Uncompressed Read: 12.8ms (78M/sec)
+- Compressed Write: 35.5ms (28.2M/sec)
+- Compression: 71% file size reduction
+
+### Testing
+- All 92 tests passing
+- Zero regressions
+- Full backward compatibility
+
+## v0.1.0 (Initial - Optimized Release)
 
 ### Features
 - Ultra-fast Gaussian Splatting PLY I/O library
-- Pure Python + numpy (zero C++ dependencies)
-- Optional numba JIT for parallel processing (graceful fallback without numba)
+- Pure Python + numpy + numba (no C++ compilation required)
+- Numba JIT for parallel processing and fast compressed I/O
 - Support for SH degrees 0-3 (14, 23, 38, 59 properties)
 - Auto-format detection (uncompressed vs compressed)
 - Full compressed format support (PlayCanvas compatible) - read AND write
@@ -41,7 +128,7 @@ Tested on 90 files, 36M Gaussians total, SH degree 0:
 
 #### Phase 3: Radix Sort + Parallel Processing
 - O(n) radix sort for chunk sorting (vs O(n log n) comparison sort)
-- Parallel JIT processing with numba for bit packing/unpacking
+- Parallel JIT processing with Numba for bit packing/unpacking
 - Performance: 10.4x write, 15.3x read vs baseline
 
 **Combined Impact**: Production-ready performance with 60+ FPS capability
@@ -51,7 +138,7 @@ Tested on 90 files, 36M Gaussians total, SH degree 0:
 ```python
 import gsply
 
-# Read PLY file (auto-detects format, returns GSData namedtuple)
+# Read PLY file (auto-detects format, returns GSData dataclass)
 data = gsply.plyread("scene.ply")  # Uses fast zero-copy by default
 data = gsply.plyread("scene.ply", fast=False)  # Safe copies
 
@@ -60,7 +147,7 @@ positions = data.means
 colors = data.sh0
 
 # Or unpack if needed
-means, scales, quats, opacities, sh0, shN = data[:6]
+means, scales, quats, opacities, sh0, shN = data.unpack()
 
 # Write uncompressed PLY
 gsply.plywrite("output.ply", data.means, data.scales, data.quats,
@@ -94,13 +181,11 @@ is_compressed, sh_degree = gsply.detect_format("scene.ply")
 - Works on Linux, macOS, Windows
 - No platform-specific compilation required
 - PEP 561 type hints marker included
-- Optional dependency: numba (for parallel processing)
 
 ### Known Limitations
 - Requires Python 3.10+
 - ASCII PLY format not supported (binary little-endian only)
 - Compressed format is lossy (chunk-based quantization)
-- Parallel processing requires numba (graceful fallback provided)
 
 ### Installation
 
@@ -108,19 +193,15 @@ is_compressed, sh_degree = gsply.detect_format("scene.ply")
 # Basic installation
 pip install gsply
 
-# With optional JIT optimization
-pip install gsply[jit]
-
 # Development installation
 pip install -e .[dev]
 
-# All optional dependencies
+# All optional dependencies (dev + benchmark)
 pip install -e .[all]
 ```
 
 ### Dependencies
-- **Required**: numpy>=1.20.0
-- **Optional**: numba>=0.59.0 (for parallel processing)
+- **Required**: numpy>=1.20.0, numba>=0.59.0
 - **Dev**: pytest, pytest-cov, build, twine
 - **Benchmark**: open3d, plyfile
 
@@ -152,7 +233,6 @@ MIT License
 
 ### Phase 4: Parallel Optimization (Current)
 - O(n) radix sort for chunk sorting
-- Parallel JIT processing with numba
-- Graceful fallback for environments without numba
+- Parallel JIT processing with Numba
 - 10.4x write, 15.3x read speedup vs baseline
 - Production-ready performance (60+ FPS capable)

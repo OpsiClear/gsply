@@ -1,16 +1,18 @@
 """Test for new compressed data APIs."""
 
+import tempfile
+from io import BytesIO
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
-import tempfile
 
 from gsply import (
+    GSData,
+    compress_to_arrays,
+    compress_to_bytes,
     plyread,
     plywrite,
-    compress_to_bytes,
-    compress_to_arrays,
-    GSData,
 )
 
 
@@ -29,9 +31,9 @@ def create_test_data(n_gaussians=100, sh_degree=0):
     # Create higher degree SH if needed
     if sh_degree > 0:
         n_sh_coeffs = {1: 9, 2: 24, 3: 45}[sh_degree]
-        shN = np.random.rand(n_gaussians, n_sh_coeffs, 3).astype(np.float32)
+        shN = np.random.rand(n_gaussians, n_sh_coeffs, 3).astype(np.float32)  # noqa: N806
     else:
-        shN = None
+        shN = None  # noqa: N806
 
     return means, scales, quats, opacities, sh0, shN
 
@@ -41,7 +43,7 @@ class TestCompressToBytes:
 
     def test_basic_compression(self):
         """Test basic compression to bytes."""
-        means, scales, quats, opacities, sh0, shN = create_test_data(100)
+        means, scales, quats, opacities, sh0, shN = create_test_data(100)  # noqa: N806
 
         # Compress to bytes
         compressed_bytes = compress_to_bytes(
@@ -53,7 +55,7 @@ class TestCompressToBytes:
 
     def test_roundtrip_with_file(self):
         """Test that compressed bytes match file output."""
-        means, scales, quats, opacities, sh0, shN = create_test_data(256)
+        means, scales, quats, opacities, sh0, shN = create_test_data(256)  # noqa: N806
 
         # Get compressed bytes
         compressed_bytes = compress_to_bytes(
@@ -80,7 +82,7 @@ class TestCompressToBytes:
 
     def test_can_write_and_read_bytes(self):
         """Test that compressed bytes can be written and read back."""
-        means, scales, quats, opacities, sh0, shN = create_test_data(512, sh_degree=1)
+        means, scales, quats, opacities, sh0, shN = create_test_data(512, sh_degree=1)  # noqa: N806
 
         # Compress to bytes
         compressed_bytes = compress_to_bytes(
@@ -111,7 +113,7 @@ class TestCompressToBytes:
     def test_various_sizes(self):
         """Test compression with various data sizes."""
         for n_gaussians in [1, 10, 100, 256, 257, 512, 1000]:
-            means, scales, quats, opacities, sh0, shN = create_test_data(n_gaussians)
+            means, scales, quats, opacities, sh0, shN = create_test_data(n_gaussians)  # noqa: N806
 
             compressed_bytes = compress_to_bytes(
                 means, scales, quats, opacities, sh0, shN
@@ -123,7 +125,7 @@ class TestCompressToBytes:
     def test_with_sh_degrees(self):
         """Test compression with different SH degrees."""
         for sh_degree in [0, 1, 2, 3]:
-            means, scales, quats, opacities, sh0, shN = create_test_data(256, sh_degree)
+            means, scales, quats, opacities, sh0, shN = create_test_data(256, sh_degree)  # noqa: N806
 
             compressed_bytes = compress_to_bytes(
                 means, scales, quats, opacities, sh0, shN
@@ -138,7 +140,7 @@ class TestCompressToArrays:
 
     def test_basic_compression(self):
         """Test basic compression to arrays."""
-        means, scales, quats, opacities, sh0, shN = create_test_data(100)
+        means, scales, quats, opacities, sh0, shN = create_test_data(100)  # noqa: N806
 
         # Compress to arrays
         header_bytes, chunk_bounds, packed_data, packed_sh = compress_to_arrays(
@@ -155,7 +157,7 @@ class TestCompressToArrays:
 
     def test_with_sh_data(self):
         """Test compression with SH data."""
-        means, scales, quats, opacities, sh0, shN = create_test_data(256, sh_degree=2)
+        means, scales, quats, opacities, sh0, shN = create_test_data(256, sh_degree=2)  # noqa: N806
 
         # Compress to arrays
         header_bytes, chunk_bounds, packed_data, packed_sh = compress_to_arrays(
@@ -171,9 +173,9 @@ class TestCompressToArrays:
 
     def test_arrays_match_bytes(self):
         """Test that arrays can be assembled to match bytes output."""
-        from io import BytesIO
-
-        means, scales, quats, opacities, sh0, shN = create_test_data(512, sh_degree=1)
+        means, scales, quats, opacities, sh0, shN = create_test_data(  # noqa: N806
+            512, sh_degree=1
+        )
 
         # Get both outputs
         compressed_bytes = compress_to_bytes(
@@ -200,7 +202,7 @@ class TestCompressToArrays:
     def test_chunk_bounds_shape(self):
         """Test that chunk bounds have correct shape."""
         for n_gaussians in [100, 256, 257, 512, 1000]:
-            means, scales, quats, opacities, sh0, shN = create_test_data(n_gaussians)
+            means, scales, quats, opacities, sh0, shN = create_test_data(n_gaussians)  # noqa: N806
 
             header_bytes, chunk_bounds, packed_data, packed_sh = compress_to_arrays(
                 means, scales, quats, opacities, sh0, shN
@@ -215,7 +217,7 @@ class TestCompressToArrays:
     def test_packed_data_size(self):
         """Test that packed data has correct size."""
         n_gaussians = 512
-        means, scales, quats, opacities, sh0, shN = create_test_data(n_gaussians)
+        means, scales, quats, opacities, sh0, shN = create_test_data(n_gaussians)  # noqa: N806
 
         header_bytes, chunk_bounds, packed_data, packed_sh = compress_to_arrays(
             means, scales, quats, opacities, sh0, shN
@@ -232,8 +234,17 @@ class TestIntegration:
     def test_gsdata_input(self):
         """Test that GSData can be used directly."""
         # Create test data and wrap in GSData
-        means, scales, quats, opacities, sh0, shN = create_test_data(256)
-        data = GSData(means, scales, quats, opacities, sh0, shN, base=None)
+        means, scales, quats, opacities, sh0, shN = create_test_data(256)  # noqa: N806
+        data = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            masks=None,
+            _base=None
+        )
 
         # Test new clean API: pass GSData directly
         compressed_bytes = compress_to_bytes(data)
@@ -252,7 +263,7 @@ class TestIntegration:
 
     def test_validation(self):
         """Test input validation."""
-        means, scales, quats, opacities, sh0, shN = create_test_data(100)
+        means, scales, quats, opacities, sh0, shN = create_test_data(100)  # noqa: N806
 
         # Should work with validation enabled (default)
         compressed_bytes = compress_to_bytes(
@@ -270,7 +281,7 @@ class TestIntegration:
     def test_network_transfer_workflow(self):
         """Test simulated network transfer workflow."""
         # Create data on "sender" side
-        means, scales, quats, opacities, sh0, shN = create_test_data(512, sh_degree=2)
+        means, scales, quats, opacities, sh0, shN = create_test_data(512, sh_degree=2)  # noqa: N806
 
         # Compress to bytes for transfer
         compressed_bytes = compress_to_bytes(
@@ -302,7 +313,7 @@ class TestIntegration:
 
     def test_custom_processing_workflow(self):
         """Test workflow for custom processing of compressed components."""
-        means, scales, quats, opacities, sh0, shN = create_test_data(768, sh_degree=1)
+        means, scales, quats, opacities, sh0, shN = create_test_data(768, sh_degree=1)  # noqa: N806
 
         # Get compressed components
         header_bytes, chunk_bounds, packed_data, packed_sh = compress_to_arrays(

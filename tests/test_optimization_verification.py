@@ -7,8 +7,9 @@ This test suite specifically verifies the correctness of:
 """
 
 import numpy as np
-from gsply.writer import write_compressed, CHUNK_SIZE
+
 from gsply.reader import read_compressed
+from gsply.writer import CHUNK_SIZE, write_compressed
 
 
 class TestQuaternionVectorization:

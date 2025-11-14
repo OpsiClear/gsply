@@ -1,14 +1,16 @@
 """Tests for gsply.formats module."""
 
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+
 from gsply.formats import (
+    CHUNK_SIZE,
+    EXPECTED_PROPERTIES_BY_SH_DEGREE,
+    PROPERTY_COUNTS_BY_SH_DEGREE,
+    SH_C0,
     detect_format,
     get_sh_degree_from_property_count,
-    PROPERTY_COUNTS_BY_SH_DEGREE,
-    EXPECTED_PROPERTIES_BY_SH_DEGREE,
-    CHUNK_SIZE,
-    SH_C0,
 )
 
 

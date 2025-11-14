@@ -1,9 +1,10 @@
 """Tests for gsply.reader module."""
 
-import pytest
+
 import numpy as np
-from pathlib import Path
-from gsply.reader import plyread, read_uncompressed, read_compressed
+import pytest
+
+from gsply.reader import plyread, read_compressed, read_uncompressed
 
 
 class TestReadUncompressed:

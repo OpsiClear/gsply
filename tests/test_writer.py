@@ -1,10 +1,12 @@
 """Tests for gsply.writer module."""
 
-import pytest
-import numpy as np
 from pathlib import Path
-from gsply.writer import plywrite, write_uncompressed, write_compressed
-from gsply.reader import plyread
+
+import numpy as np
+import pytest
+
+from gsply.reader import plyread, read_compressed
+from gsply.writer import plywrite, write_compressed, write_uncompressed
 
 
 class TestWriteUncompressed:
@@ -21,7 +23,7 @@ class TestWriteUncompressed:
         quats = np.random.randn(num_gaussians, 4).astype(np.float32)
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
-        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
+        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
         # Write
         write_uncompressed(output_file, means, scales, quats, opacities, sh0, shN)
@@ -58,7 +60,7 @@ class TestWriteUncompressed:
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
 
         # Flattened shN (N, K*3)
-        shN_flat = np.random.randn(num_gaussians, 45).astype(np.float32)
+        shN_flat = np.random.randn(num_gaussians, 45).astype(np.float32)  # noqa: N806
 
         write_uncompressed(output_file, means, scales, quats, opacities, sh0, shN_flat)
 
@@ -115,7 +117,7 @@ class TestWriteCompressed:
 
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
-        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
+        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
         write_compressed(output_file, means, scales, quats, opacities, sh0, shN)
 
@@ -136,7 +138,7 @@ class TestPlywrite:
         quats = np.random.randn(num_gaussians, 4).astype(np.float32)
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
-        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
+        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
         plywrite(output_file, means, scales, quats, opacities, sh0, shN, compressed=False)
 
@@ -156,7 +158,7 @@ class TestPlywrite:
 
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
-        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
+        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
         plywrite(output_file, means, scales, quats, opacities, sh0, shN, compressed=True)
 
@@ -195,7 +197,7 @@ class TestRoundTrip:
         quats_orig = np.random.randn(num_gaussians, 4).astype(np.float32)
         opacities_orig = np.random.randn(num_gaussians).astype(np.float32)
         sh0_orig = np.random.randn(num_gaussians, 3).astype(np.float32)
-        shN_orig = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
+        shN_orig = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
         # Write
         plywrite(output_file, means_orig, scales_orig, quats_orig, opacities_orig, sh0_orig, shN_orig)
@@ -264,7 +266,6 @@ class TestRoundTrip:
         # Note: Compression ratio is higher with SH coefficients (~14x for SH3)
 
         # Verify compressed file can be read
-        from gsply.reader import read_compressed
         result = read_compressed(compressed_file)
         assert result is not None, "Failed to read compressed file"
 
@@ -286,7 +287,7 @@ class TestRoundTrip:
         quats = quats / np.linalg.norm(quats, axis=1, keepdims=True)
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
-        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)
+        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
         # Write compressed with SH
         write_compressed(output_file, means, scales, quats, opacities, sh0, shN)
@@ -295,7 +296,6 @@ class TestRoundTrip:
         assert output_file.stat().st_size > 0
 
         # Verify can be read back
-        from gsply.reader import read_compressed
         result = read_compressed(output_file)
         assert result is not None
 

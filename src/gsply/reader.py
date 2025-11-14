@@ -19,23 +19,24 @@ Performance:
     - Read compressed: 3-16ms for 50K Gaussians (3-16M Gaussians/sec)
 """
 
-import numpy as np
-from pathlib import Path
-from typing import NamedTuple
 import logging
+from pathlib import Path
 
-from gsply.formats import (
-    detect_format,
-    get_sh_degree_from_property_count,
-    EXPECTED_PROPERTIES_BY_SH_DEGREE,
-    CHUNK_SIZE,
-    CHUNK_SIZE_SHIFT,
-    SH_C0,
-)
+import numba
+import numpy as np
 
 # Import numba for JIT optimization
 from numba import jit
-import numba
+
+# Import GSData from separate module
+from gsply.gsdata import GSData
+
+from gsply.formats import (
+    EXPECTED_PROPERTIES_BY_SH_DEGREE,
+    SH_C0,
+    detect_format,
+    get_sh_degree_from_property_count,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 # Quantization constants (pre-computed for multiplication instead of division)
 _INV_2047 = 1.0 / 2047.0  # 11-bit unpacking
 _INV_1023 = 1.0 / 1023.0  # 10-bit unpacking
-_INV_255 = 1.0 / 255.0    # 8-bit unpacking
+_INV_255 = 1.0 / 255.0  # 8-bit unpacking
 
 # Quaternion norm constant
 _QUAT_NORM = 1.4142135623730951  # 1.0 / (sqrt(2) * 0.5) = sqrt(2)
@@ -111,47 +112,6 @@ _SLICE_INDICES = {
 
 
 # ======================================================================================
-# ZERO-COPY DATA CONTAINER
-# ======================================================================================
-
-
-class GSData(NamedTuple):
-    """Gaussian Splatting data container.
-
-    This container holds Gaussian parameters, either as separate arrays
-    or as zero-copy views into a single base array for maximum performance.
-
-    Attributes:
-        means: (N, 3) - xyz positions
-        scales: (N, 3) - scale parameters
-        quats: (N, 4) - rotation quaternions
-        opacities: (N,) - opacity values
-        sh0: (N, 3) - DC spherical harmonics
-        shN: (N, K, 3) - Higher-order SH coefficients (K bands)
-        base: (N, P) - Base array (keeps memory alive for views, None otherwise)
-
-    Performance:
-        - Zero-copy reads provide maximum performance
-        - No memory overhead (views share memory with base)
-
-    Example:
-        >>> data = plyread("scene.ply")
-        >>> print(f"Loaded {data.means.shape[0]} Gaussians")
-        >>> # Access via attributes
-        >>> positions = data.means
-        >>> colors = data.sh0
-    """
-
-    means: np.ndarray
-    scales: np.ndarray
-    quats: np.ndarray
-    opacities: np.ndarray
-    sh0: np.ndarray
-    shN: np.ndarray
-    base: np.ndarray  # Keeps base array alive for zero-copy views
-
-
-# ======================================================================================
 # OPTIMIZED HEADER READING
 # ======================================================================================
 
@@ -193,9 +153,7 @@ def _read_header_fast(f) -> tuple[list[str], int] | None:
         # Fast path: decode entire header at once
         header_bytes = chunk[: end_idx + len(end_marker)]
         header_text = header_bytes.decode("ascii")
-        header_lines = [
-            line.strip() for line in header_text.split("\n") if line.strip()
-        ]
+        header_lines = [line.strip() for line in header_text.split("\n") if line.strip()]
         data_offset = len(header_bytes)
 
         return header_lines, data_offset
@@ -370,7 +328,7 @@ def _unpack_all_jit(
 
 
 @jit(nopython=True, parallel=True, fastmath=True, cache=True, nogil=True, boundscheck=False)
-def _unpack_sh_jit(shN_data):
+def _unpack_sh_jit(shN_data):  # noqa: N803
     """JIT-compiled SH coefficient decompression with parallel processing.
 
     Dequantizes higher-order spherical harmonics from compressed format.
@@ -409,7 +367,7 @@ def _unpack_sh_jit(shN_data):
 # ======================================================================================
 
 
-def read_uncompressed(file_path: str | Path) -> GSData | None:
+def read_uncompressed(file_path: str | Path) -> GSData | None:  # noqa: PLR0911
     """Read uncompressed Gaussian splatting PLY file with zero-copy optimization.
 
     Uses zero-copy views into a single base array for maximum performance.
@@ -498,11 +456,11 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:
 
         # Handle SH coefficients (special case for degree 0)
         if sh_degree == 0:
-            shN = np.zeros((vertex_count, 0, 3), dtype=np.float32)
+            shN = np.zeros((vertex_count, 0, 3), dtype=np.float32)  # noqa: N806
         else:
-            shN_flat = data[:, indices["shN_start"] : indices["shN_end"]]
+            shN_flat = data[:, indices["shN_start"] : indices["shN_end"]]  # noqa: N806
             num_sh_coeffs = shN_flat.shape[1]
-            shN = shN_flat.reshape(vertex_count, num_sh_coeffs // 3, 3)
+            shN = shN_flat.reshape(vertex_count, num_sh_coeffs // 3, 3)  # noqa: N806
 
         # Extract remaining properties using lookup indices
         opacities = data[:, indices["opacity"]]
@@ -513,6 +471,10 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:
             f"[Gaussian PLY] Read uncompressed (fast): {vertex_count} Gaussians, SH degree {sh_degree}"
         )
 
+        # Initialize masks to all True
+        num_gaussians = means.shape[0]
+        masks = np.ones(num_gaussians, dtype=bool)
+
         # Return GSData with base array to keep views alive
         return GSData(
             means=means,
@@ -521,10 +483,11 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:
             opacities=opacities,
             sh0=sh0,
             shN=shN,
-            base=data,  # Keep alive for zero-copy views
+            masks=masks,
+            _base=data,  # Keep alive for zero-copy views
         )
 
-    except (OSError, ValueError, IOError):
+    except (OSError, ValueError):
         return None
 
 
@@ -584,7 +547,7 @@ def _is_compressed_format(header_lines: list) -> bool:
         "packed_scale",
         "packed_color",
     ]
-    for (_, prop_name), expected_name in zip(vertex_props, expected_vertex):
+    for (_, prop_name), expected_name in zip(vertex_props, expected_vertex, strict=False):
         if prop_name != expected_name:
             return False
 
@@ -594,7 +557,7 @@ def _is_compressed_format(header_lines: list) -> bool:
 def _decompress_data_internal(
     chunk_data: np.ndarray,
     vertex_data: np.ndarray,
-    shN_data: np.ndarray | None,
+    shN_data: np.ndarray | None,  # noqa: N803
     num_vertices: int,
     num_chunks: int,
 ) -> GSData:
@@ -683,15 +646,17 @@ def _decompress_data_internal(
         sh_flat = _unpack_sh_jit(shN_data)
 
         # Reshape to (N, num_bands, 3)
-        shN = sh_flat.reshape(num_vertices, num_sh_bands, 3)
+        shN = sh_flat.reshape(num_vertices, num_sh_bands, 3)  # noqa: N806
     else:
-        shN = np.zeros((num_vertices, 0, 3), dtype=np.float32)
+        shN = np.zeros((num_vertices, 0, 3), dtype=np.float32)  # noqa: N806
 
-    logger.debug(
-        f"[Gaussian PLY] Decompressed: {num_vertices} Gaussians, SH bands {shN.shape[1]}"
-    )
+    logger.debug(f"[Gaussian PLY] Decompressed: {num_vertices} Gaussians, SH bands {shN.shape[1]}")
 
-    # Return GSData container (base=None since decompressed data is separate)
+    # Initialize masks to all True
+    num_gaussians = means.shape[0]
+    masks = np.ones(num_gaussians, dtype=bool)
+
+    # Return GSData container (_base=None since decompressed data is separate)
     return GSData(
         means=means,
         scales=scales,
@@ -699,7 +664,8 @@ def _decompress_data_internal(
         opacities=opacities,
         sh0=sh0,
         shN=shN,
-        base=None,
+        masks=masks,
+        _base=None,
     )
 
 
@@ -793,13 +759,11 @@ def read_compressed(file_path: str | Path) -> GSData | None:
             vertex_data = np.fromfile(f, dtype=np.uint32, count=num_vertices * 4)
             vertex_data = vertex_data.reshape(num_vertices, 4)
 
-            shN_data = None
+            shN_data = None  # noqa: N806
             if "sh" in elements:
                 num_sh_coeffs = len(elements["sh"]["properties"])
-                shN_data = np.fromfile(
-                    f, dtype=np.uint8, count=num_vertices * num_sh_coeffs
-                )
-                shN_data = shN_data.reshape(num_vertices, num_sh_coeffs)
+                shN_data = np.fromfile(f, dtype=np.uint8, count=num_vertices * num_sh_coeffs)  # noqa: N806
+                shN_data = shN_data.reshape(num_vertices, num_sh_coeffs)  # noqa: N806
 
         # Decompress using shared internal function
         return _decompress_data_internal(
@@ -841,31 +805,23 @@ def decompress_from_bytes(compressed_bytes: bytes) -> GSData:
     num_chunks = elements["chunk"]["count"]
     offset = data_offset
 
-    chunk_bytes = compressed_bytes[
-        offset : offset + num_chunks * 72
-    ]  # 18 floats * 4 bytes
+    chunk_bytes = compressed_bytes[offset : offset + num_chunks * 72]  # 18 floats * 4 bytes
     chunk_data = np.frombuffer(chunk_bytes, dtype=np.float32).reshape(num_chunks, 18)
     offset += num_chunks * 72
 
     num_vertices = elements["vertex"]["count"]
-    vertex_bytes = compressed_bytes[
-        offset : offset + num_vertices * 16
-    ]  # 4 uint32 * 4 bytes
+    vertex_bytes = compressed_bytes[offset : offset + num_vertices * 16]  # 4 uint32 * 4 bytes
     vertex_data = np.frombuffer(vertex_bytes, dtype=np.uint32).reshape(num_vertices, 4)
     offset += num_vertices * 16
 
-    shN_data = None
+    shN_data = None  # noqa: N806
     if "sh" in elements:
         num_sh_coeffs = len(elements["sh"]["properties"])
         sh_bytes = compressed_bytes[offset : offset + num_vertices * num_sh_coeffs]
-        shN_data = np.frombuffer(sh_bytes, dtype=np.uint8).reshape(
-            num_vertices, num_sh_coeffs
-        )
+        shN_data = np.frombuffer(sh_bytes, dtype=np.uint8).reshape(num_vertices, num_sh_coeffs)  # noqa: N806
 
     # Decompress using shared internal function (SAME as read_compressed!)
-    return _decompress_data_internal(
-        chunk_data, vertex_data, shN_data, num_vertices, num_chunks
-    )
+    return _decompress_data_internal(chunk_data, vertex_data, shN_data, num_vertices, num_chunks)
 
 
 # ======================================================================================
@@ -901,8 +857,8 @@ def plyread(file_path: str | Path) -> GSData:
         >>> positions = data.means
         >>> colors = data.sh0
         >>>
-        >>> # Can unpack if needed
-        >>> means, scales, quats, opacities, sh0, shN = data[:6]
+        >>> # Unpack for standard GS workflows
+        >>> means, scales, quats, opacities, sh0, shN = data.unpack()
     """
     file_path = Path(file_path)
 

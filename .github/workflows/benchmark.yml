@@ -19,16 +19,16 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+        cache: 'pip'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[benchmark,jit]"
+        pip install -e ".[benchmark]"
 
     - name: Verify numba installation
       run: |
         python -c "import numba; print(f'numba version: {numba.__version__}')"
-        python -c "import gsply.writer as w; import gsply.reader as r; print(f'HAS_NUMBA: writer={w.HAS_NUMBA}, reader={r.HAS_NUMBA}')"
 
     - name: Create test data
       run: |

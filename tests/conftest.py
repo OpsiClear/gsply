@@ -1,9 +1,10 @@
 """Pytest configuration for gsply tests."""
 
 import os
-import pytest
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import pytest
 
 
 @pytest.fixture
@@ -12,7 +13,7 @@ def sample_gaussian_data():
     np.random.seed(42)  # For reproducibility
 
     num_gaussians = 100
-    data = {
+    return {
         'means': np.random.randn(num_gaussians, 3).astype(np.float32),
         'scales': np.random.randn(num_gaussians, 3).astype(np.float32),
         'quats': np.random.randn(num_gaussians, 4).astype(np.float32),
@@ -21,7 +22,6 @@ def sample_gaussian_data():
         'shN': np.random.randn(num_gaussians, 15, 3).astype(np.float32),
     }
 
-    return data
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def sample_sh0_data():
     np.random.seed(42)
 
     num_gaussians = 50
-    data = {
+    return {
         'means': np.random.randn(num_gaussians, 3).astype(np.float32),
         'scales': np.random.randn(num_gaussians, 3).astype(np.float32),
         'quats': np.random.randn(num_gaussians, 4).astype(np.float32),
@@ -38,15 +38,13 @@ def sample_sh0_data():
         'sh0': np.random.randn(num_gaussians, 3).astype(np.float32),
     }
 
-    return data
 
 
 @pytest.fixture(scope="session")
 def test_data_dir():
     """Get test data directory from environment or default."""
     data_dir_str = os.getenv("GSPLY_TEST_DATA_DIR", r"D:\4D\all_plys")
-    data_dir = Path(data_dir_str)
-    return data_dir
+    return Path(data_dir_str)
 
 
 @pytest.fixture

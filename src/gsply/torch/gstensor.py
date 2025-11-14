@@ -1,0 +1,742 @@
+"""PyTorch GPU-accelerated Gaussian Splatting data container."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import numpy as np
+import torch
+
+if TYPE_CHECKING:
+    from gsply.gsdata import GSData
+
+
+@dataclass
+class GSTensor:
+    """GPU-accelerated Gaussian Splatting data container using PyTorch tensors.
+
+    This container holds Gaussian parameters as PyTorch tensors, supporting both
+    CPU and GPU devices. Designed for efficient GPU operations and training workflows.
+
+    Attributes:
+        means: (N, 3) - xyz positions [torch.Tensor]
+        scales: (N, 3) - scale parameters [torch.Tensor]
+        quats: (N, 4) - rotation quaternions [torch.Tensor]
+        opacities: (N,) - opacity values [torch.Tensor]
+        sh0: (N, 3) - DC spherical harmonics [torch.Tensor]
+        shN: (N, K, 3) - Higher-order SH coefficients (K bands) [torch.Tensor or None]
+        masks: (N,) - Boolean mask [torch.Tensor or None]
+        _base: (N, P) - Private base tensor (keeps memory alive for views) [torch.Tensor or None]
+
+    Performance:
+        - Zero-copy GPU transfers when using _base (11x faster)
+        - GPU slicing is free (views have zero memory cost)
+        - Single tensor transfer vs multiple separate transfers
+
+    Example:
+        >>> import gsply
+        >>> data = gsply.plyread("scene.ply")  # GSData on CPU
+        >>> gstensor = data.to_tensor(device='cuda')  # GSTensor on GPU
+        >>> positions_gpu = gstensor.means  # (N, 3) tensor on GPU
+        >>> subset = gstensor[100:200]  # Slice (returns view)
+        >>> data_cpu = gstensor.to_gsdata()  # Convert back to GSData
+    """
+
+    means: torch.Tensor
+    scales: torch.Tensor
+    quats: torch.Tensor
+    opacities: torch.Tensor
+    sh0: torch.Tensor
+    shN: torch.Tensor | None = None
+    masks: torch.Tensor | None = None
+    _base: torch.Tensor | None = None
+
+    def __len__(self) -> int:
+        """Return the number of Gaussians."""
+        return self.means.shape[0]
+
+    @property
+    def device(self) -> torch.device:
+        """Return device of the tensors."""
+        return self.means.device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Return dtype of the tensors."""
+        return self.means.dtype
+
+    def get_sh_degree(self) -> int:
+        """Get SH degree from shN shape.
+
+        Returns:
+            SH degree (0-3)
+        """
+        if self.shN is None or self.shN.shape[1] == 0:
+            return 0
+        # shN.shape[1] is number of bands (K)
+        sh_bands = self.shN.shape[1]
+        if sh_bands == 3:  # SH1: 3 bands
+            return 1
+        elif sh_bands == 8:  # SH2: 8 bands
+            return 2
+        elif sh_bands == 15:  # SH3: 15 bands
+            return 3
+        return 0
+
+    def has_high_order_sh(self) -> bool:
+        """Check if data has higher-order SH coefficients.
+
+        Returns:
+            True if SH degree > 0
+        """
+        return self.shN is not None and self.shN.shape[1] > 0
+
+    # ==========================================================================
+    # Conversion Methods (GSData <-> GSTensor)
+    # ==========================================================================
+
+    @classmethod
+    def from_gsdata(
+        cls,
+        data: GSData,
+        device: str | torch.device = "cuda",
+        dtype: torch.dtype | None = None,
+        requires_grad: bool = False,
+    ) -> GSTensor:
+        """Convert GSData to GSTensor efficiently.
+
+        Uses _base optimization when available for 11x faster transfer:
+        - With _base: Single tensor transfer (zero CPU copy overhead)
+        - Without _base: Stack arrays then transfer (one CPU copy + transfer)
+
+        Args:
+            data: GSData object to convert
+            device: Target device ('cuda', 'cpu', or torch.device)
+            dtype: Target dtype (default: float32)
+            requires_grad: Enable gradient tracking (default: False)
+
+        Returns:
+            GSTensor on specified device
+
+        Example:
+            >>> data = gsply.plyread("scene.ply")
+            >>> # Fast path (data has _base from plyread)
+            >>> gstensor = GSTensor.from_gsdata(data, device='cuda')
+            >>> # Or with gradients for training
+            >>> gstensor = GSTensor.from_gsdata(data, device='cuda', requires_grad=True)
+        """
+        if dtype is None:
+            dtype = torch.float32
+
+        device_obj = torch.device(device)
+
+        # Fast path: Use _base if available (11x faster)
+        if data._base is not None:
+            # Ensure array is contiguous (handles sliced data edge case)
+            base_array = np.ascontiguousarray(data._base)
+
+            # Single tensor transfer (zero CPU copy if already contiguous)
+            base_tensor = torch.from_numpy(base_array).to(device=device_obj, dtype=dtype)
+            base_tensor.requires_grad_(requires_grad)
+
+            # Transfer masks separately if present
+            masks_tensor = None
+            if data.masks is not None:
+                masks_array = np.ascontiguousarray(data.masks)
+                masks_tensor = torch.from_numpy(masks_array).to(device=device_obj)
+
+            # Recreate GSTensor from base tensor
+            return cls._recreate_from_base(base_tensor, masks_tensor)
+
+        # Fallback: Stack arrays on CPU then transfer (2x faster than separate transfers)
+        n = len(data)
+
+        # Determine property count based on SH degree
+        # Layout: means(3) + sh0(3) + shN(K*3) + opacity(1) + scales(3) + quats(4)
+        # Total: 14 + K*3 where K=0/9/24/45
+        if data.shN is not None and data.shN.shape[1] > 0:
+            sh_coeffs = data.shN.shape[1]  # K = 9, 24, 45
+            n_props = 14 + sh_coeffs * 3  # Total properties
+        else:
+            sh_coeffs = 0
+            n_props = 14  # SH0
+
+        # Stack all arrays into single base array on CPU
+        base_cpu = np.empty((n, n_props), dtype=np.float32)
+        base_cpu[:, 0:3] = data.means
+        base_cpu[:, 3:6] = data.sh0
+
+        if sh_coeffs > 0:
+            shN_flat = data.shN.reshape(n, sh_coeffs * 3)
+            base_cpu[:, 6 : 6 + sh_coeffs * 3] = shN_flat
+            opacity_idx = 6 + sh_coeffs * 3
+        else:
+            opacity_idx = 6
+
+        base_cpu[:, opacity_idx] = data.opacities
+        base_cpu[:, opacity_idx + 1 : opacity_idx + 4] = data.scales
+        base_cpu[:, opacity_idx + 4 : opacity_idx + 8] = data.quats
+
+        # Single GPU transfer (2x faster than 5 separate transfers)
+        base_tensor = torch.from_numpy(base_cpu).to(device=device_obj, dtype=dtype)
+        base_tensor.requires_grad_(requires_grad)
+
+        # Transfer masks separately
+        masks_tensor = None
+        if data.masks is not None:
+            masks_array = np.ascontiguousarray(data.masks)
+            masks_tensor = torch.from_numpy(masks_array).to(device=device_obj)
+
+        # Recreate GSTensor from base tensor
+        return cls._recreate_from_base(base_tensor, masks_tensor)
+
+    def to_gsdata(self) -> GSData:
+        """Convert GSTensor back to GSData (CPU NumPy arrays).
+
+        Transfers all tensors to CPU and converts to NumPy arrays.
+
+        Returns:
+            GSData object with NumPy arrays on CPU
+
+        Example:
+            >>> gstensor = data.to_tensor(device='cuda')
+            >>> # ... GPU operations ...
+            >>> data_cpu = gstensor.to_gsdata()  # Back to NumPy on CPU
+        """
+        from gsply.gsdata import GSData
+
+        # Transfer to CPU first
+        cpu_tensor = self.to("cpu")
+
+        # Fast path: Use _base if available
+        if cpu_tensor._base is not None:
+            base_numpy = cpu_tensor._base.detach().numpy()
+            masks_numpy = cpu_tensor.masks.detach().numpy() if cpu_tensor.masks is not None else None
+
+            return GSData._recreate_from_base(base_numpy, masks_numpy)
+
+        # Fallback: Convert each tensor
+        shN_numpy = None
+        if cpu_tensor.shN is not None:
+            shN_numpy = cpu_tensor.shN.detach().numpy()
+
+        masks_numpy = None
+        if cpu_tensor.masks is not None:
+            masks_numpy = cpu_tensor.masks.detach().numpy()
+
+        return GSData(
+            means=cpu_tensor.means.detach().numpy(),
+            scales=cpu_tensor.scales.detach().numpy(),
+            quats=cpu_tensor.quats.detach().numpy(),
+            opacities=cpu_tensor.opacities.detach().numpy(),
+            sh0=cpu_tensor.sh0.detach().numpy(),
+            shN=shN_numpy,
+            masks=masks_numpy,
+            _base=None,
+        )
+
+    # ==========================================================================
+    # Device Management
+    # ==========================================================================
+
+    def to(
+        self,
+        device: str | torch.device | None = None,
+        dtype: torch.dtype | None = None,
+        non_blocking: bool = False,
+    ) -> GSTensor:
+        """Move tensors to specified device and/or dtype.
+
+        Args:
+            device: Target device ('cuda', 'cpu', or torch.device)
+            dtype: Target dtype
+            non_blocking: If True, asynchronous transfer (default: False)
+
+        Returns:
+            New GSTensor on target device/dtype
+
+        Example:
+            >>> gstensor_gpu = gstensor.to('cuda')
+            >>> gstensor_half = gstensor.to(dtype=torch.float16)
+            >>> gstensor_gpu_half = gstensor.to('cuda', dtype=torch.float16)
+        """
+        # If no changes requested, return self
+        if device is None and dtype is None:
+            return self
+
+        # Determine target device and dtype
+        target_device = torch.device(device) if device is not None else self.device
+        target_dtype = dtype if dtype is not None else self.dtype
+
+        # If already on target device and dtype, return self
+        if target_device == self.device and target_dtype == self.dtype:
+            return self
+
+        # Fast path: Use _base if available
+        if self._base is not None:
+            new_base = self._base.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
+            new_masks = None
+            if self.masks is not None:
+                new_masks = self.masks.to(device=target_device, non_blocking=non_blocking)
+
+            return self._recreate_from_base(new_base, new_masks)
+
+        # Fallback: Move each tensor
+        new_shN = None
+        if self.shN is not None:
+            new_shN = self.shN.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
+
+        new_masks = None
+        if self.masks is not None:
+            new_masks = self.masks.to(device=target_device, non_blocking=non_blocking)
+
+        return GSTensor(
+            means=self.means.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
+            scales=self.scales.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
+            quats=self.quats.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
+            opacities=self.opacities.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
+            sh0=self.sh0.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
+            shN=new_shN,
+            masks=new_masks,
+            _base=None,
+        )
+
+    def cpu(self) -> GSTensor:
+        """Move tensors to CPU.
+
+        Returns:
+            New GSTensor on CPU
+        """
+        return self.to("cpu")
+
+    def cuda(self, device: int | None = None) -> GSTensor:
+        """Move tensors to CUDA device.
+
+        Args:
+            device: CUDA device index (default: current device)
+
+        Returns:
+            New GSTensor on CUDA
+        """
+        if device is None:
+            return self.to("cuda")
+        return self.to(f"cuda:{device}")
+
+    # ==========================================================================
+    # _base Optimization (25x Faster Slicing)
+    # ==========================================================================
+
+    def consolidate(self) -> GSTensor:
+        """Consolidate separate tensors into a single base tensor.
+
+        Creates a _base tensor from separate tensors, improving performance for
+        slicing operations (25x faster boolean masking on GPU).
+
+        Returns:
+            New GSTensor with _base tensor, or self if already consolidated
+
+        Example:
+            >>> gstensor = gstensor.consolidate()  # Create _base
+            >>> subset = gstensor[mask]  # 25x faster with _base
+        """
+        if self._base is not None:
+            return self  # Already consolidated
+
+        # Determine property count based on SH degree
+        n_gaussians = len(self)
+
+        # Layout: means(3) + sh0(3) + shN(K*3) + opacity(1) + scales(3) + quats(4)
+        # Total: 14 + K*3 where K=0/9/24/45
+        if self.shN is not None and self.shN.shape[1] > 0:
+            sh_coeffs = self.shN.shape[1]
+            n_props = 14 + sh_coeffs * 3  # SH1: 41, SH2: 86, SH3: 149
+        else:
+            n_props = 14  # SH0
+
+        # Create base tensor
+        new_base = torch.empty((n_gaussians, n_props), dtype=self.dtype, device=self.device)
+        new_base[:, 0:3] = self.means
+        new_base[:, 3:6] = self.sh0
+
+        # Handle shN if present
+        if self.shN is not None and self.shN.shape[1] > 0:
+            sh_coeffs = self.shN.shape[1]
+            shN_flat = self.shN.reshape(n_gaussians, sh_coeffs * 3)
+            new_base[:, 6 : 6 + sh_coeffs * 3] = shN_flat
+            opacity_idx = 6 + sh_coeffs * 3
+        else:
+            opacity_idx = 6
+
+        new_base[:, opacity_idx] = self.opacities
+        new_base[:, opacity_idx + 1 : opacity_idx + 4] = self.scales
+        new_base[:, opacity_idx + 4 : opacity_idx + 8] = self.quats
+
+        # Copy masks if present
+        new_masks = self.masks.clone() if self.masks is not None else None
+
+        # Recreate GSTensor with new base
+        return self._recreate_from_base(new_base, new_masks)
+
+    @classmethod
+    def _recreate_from_base(cls, base_tensor: torch.Tensor, masks_tensor: torch.Tensor | None = None) -> GSTensor | None:
+        """Helper to recreate GSTensor from a base tensor.
+
+        Args:
+            base_tensor: Base tensor (N, P) where P is property count
+            masks_tensor: Optional masks tensor (N,)
+
+        Returns:
+            New GSTensor with views into base_tensor, or None if unknown format
+        """
+        n_gaussians = base_tensor.shape[0]
+        n_props = base_tensor.shape[1]
+
+        # Map property count to SH degree
+        # Layout: means(3) + sh0(3) + shN(K*3) + opacity(1) + scales(3) + quats(4)
+        # Total: 14 + K*3 where K is number of bands
+        # Note: shN.shape = (N, K, 3) where K is the number of bands
+        if n_props == 14:  # SH0: no shN
+            sh_coeffs = 0
+        elif n_props == 23:  # SH1: 14 + 3*3, K=3 bands
+            sh_coeffs = 3
+        elif n_props == 38:  # SH2: 14 + 8*3, K=8 bands
+            sh_coeffs = 8
+        elif n_props == 59:  # SH3: 14 + 15*3, K=15 bands
+            sh_coeffs = 15
+        else:
+            return None  # Unknown format
+
+        # Create views into the base tensor
+        means = base_tensor[:, 0:3]
+        sh0 = base_tensor[:, 3:6]
+
+        if sh_coeffs > 0:
+            shN_flat = base_tensor[:, 6 : 6 + sh_coeffs * 3]
+            shN = shN_flat.reshape(n_gaussians, sh_coeffs, 3)
+            opacity_idx = 6 + sh_coeffs * 3
+        else:
+            shN = None
+            opacity_idx = 6
+
+        opacities = base_tensor[:, opacity_idx]
+        scales = base_tensor[:, opacity_idx + 1 : opacity_idx + 4]
+        quats = base_tensor[:, opacity_idx + 4 : opacity_idx + 8]
+
+        return cls(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            masks=masks_tensor,
+            _base=base_tensor,
+        )
+
+    def _slice_from_base(self, indices_or_mask):
+        """Efficiently slice data when _base tensor exists.
+
+        Args:
+            indices_or_mask: Slice, boolean mask, or integer indices
+
+        Returns:
+            New GSTensor with sliced data, or None if no _base
+        """
+        if self._base is None:
+            return None
+
+        # Slice the base tensor
+        base_subset = self._base[indices_or_mask]
+
+        # Handle masks if present
+        if self.masks is not None:
+            masks_subset = self.masks[indices_or_mask]
+        else:
+            masks_subset = None
+
+        # Recreate from sliced base
+        return self._recreate_from_base(base_subset, masks_subset)
+
+    # ==========================================================================
+    # Slicing and Indexing
+    # ==========================================================================
+
+    def __getitem__(self, key):
+        """Support efficient slicing and indexing.
+
+        Following PyTorch conventions:
+        - Continuous slice: Returns GSTensor view (shares memory)
+        - Boolean mask: Returns GSTensor copy (independent data)
+        - Fancy indexing: Returns GSTensor copy
+        - Single index: Returns tuple of values
+
+        When _base exists, slicing is up to 25x faster for boolean masks.
+
+        Examples:
+            >>> gstensor[0]         # Single Gaussian (tuple)
+            >>> gstensor[10:20]     # Slice (VIEW)
+            >>> gstensor[::10]      # Step slice (VIEW)
+            >>> gstensor[mask]      # Boolean mask (COPY)
+            >>> gstensor[[0,1,2]]   # Fancy indexing (COPY)
+
+        Args:
+            key: Slice, index, boolean mask, or index array
+
+        Returns:
+            Single Gaussian (tuple) or new GSTensor
+        """
+        # Handle single index - return tuple
+        if isinstance(key, int):
+            # Convert negative index
+            if key < 0:
+                key = len(self) + key
+            if key < 0 or key >= len(self):
+                raise IndexError(f"Index {key} out of range for {len(self)} Gaussians")
+
+            # Return tuple of values
+            return (
+                self.means[key],
+                self.scales[key],
+                self.quats[key],
+                self.opacities[key],
+                self.sh0[key],
+                self.shN[key] if self.shN is not None else None,
+                self.masks[key] if self.masks is not None else None,
+            )
+
+        # Handle slice
+        if isinstance(key, slice):
+            # Try fast path with _base
+            if self._base is not None:
+                result = self._slice_from_base(key)
+                if result is not None:
+                    return result
+
+            # Fallback: Slice individual tensors
+            return GSTensor(
+                means=self.means[key],
+                scales=self.scales[key],
+                quats=self.quats[key],
+                opacities=self.opacities[key],
+                sh0=self.sh0[key],
+                shN=self.shN[key] if self.shN is not None else None,
+                masks=self.masks[key] if self.masks is not None else None,
+                _base=None,
+            )
+
+        # Handle boolean tensor masking
+        elif isinstance(key, torch.Tensor) and key.dtype == torch.bool:
+            if len(key) != len(self):
+                raise ValueError(f"Boolean mask length {len(key)} doesn't match data length {len(self)}")
+
+            # Try fast path with _base
+            if self._base is not None:
+                result = self._slice_from_base(key)
+                if result is not None:
+                    return result
+
+            # Fallback: Use boolean indexing on each tensor
+            return GSTensor(
+                means=self.means[key],
+                scales=self.scales[key],
+                quats=self.quats[key],
+                opacities=self.opacities[key],
+                sh0=self.sh0[key],
+                shN=self.shN[key] if self.shN is not None else None,
+                masks=self.masks[key] if self.masks is not None else None,
+                _base=None,
+            )
+
+        # Handle integer tensor/array indexing
+        elif isinstance(key, (torch.Tensor, list, np.ndarray)):
+            if isinstance(key, (list, np.ndarray)):
+                key = torch.as_tensor(key, dtype=torch.long, device=self.device)
+
+            # Try fast path with _base
+            if self._base is not None:
+                result = self._slice_from_base(key)
+                if result is not None:
+                    return result
+
+            # Fallback: Use indexing on each tensor
+            return GSTensor(
+                means=self.means[key],
+                scales=self.scales[key],
+                quats=self.quats[key],
+                opacities=self.opacities[key],
+                sh0=self.sh0[key],
+                shN=self.shN[key] if self.shN is not None else None,
+                masks=self.masks[key] if self.masks is not None else None,
+                _base=None,
+            )
+
+        else:
+            raise TypeError(f"Invalid index type: {type(key)}")
+
+    def get_gaussian(self, index: int) -> GSTensor:
+        """Get a single Gaussian as a GSTensor object.
+
+        Args:
+            index: Index of the Gaussian
+
+        Returns:
+            GSTensor with single Gaussian
+
+        Example:
+            >>> gaussian = gstensor.get_gaussian(0)  # Returns GSTensor
+            >>> values = gstensor[0]  # Returns tuple
+        """
+        if index < 0:
+            index = len(self) + index
+        if index < 0 or index >= len(self):
+            raise IndexError(f"Index {index} out of range for {len(self)} Gaussians")
+
+        # Use slice to get GSTensor
+        return self[index : index + 1]
+
+    # ==========================================================================
+    # Clone and Copy Operations
+    # ==========================================================================
+
+    def clone(self) -> GSTensor:
+        """Create a deep copy of the GSTensor.
+
+        Returns:
+            New GSTensor with cloned tensors (independent data)
+
+        Example:
+            >>> gstensor_copy = gstensor.clone()
+            >>> gstensor_copy.means[0] = 0  # Doesn't affect original
+        """
+        # Optimize: If we have _base, clone it and recreate views (2-3x faster)
+        if self._base is not None:
+            new_base = self._base.clone()
+            masks_clone = self.masks.clone() if self.masks is not None else None
+
+            result = self._recreate_from_base(new_base, masks_clone)
+            if result is not None:
+                return result
+
+        # Fallback: Clone individual tensors
+        return GSTensor(
+            means=self.means.clone(),
+            scales=self.scales.clone(),
+            quats=self.quats.clone(),
+            opacities=self.opacities.clone(),
+            sh0=self.sh0.clone(),
+            shN=self.shN.clone() if self.shN is not None else None,
+            masks=self.masks.clone() if self.masks is not None else None,
+            _base=None,
+        )
+
+    def unpack(self, include_shN: bool = True) -> tuple:
+        """Unpack Gaussian data into tuple of tensors.
+
+        Convenient for standard Gaussian Splatting workflows that expect
+        individual tensors rather than a container object.
+
+        Args:
+            include_shN: If True, include shN in output (default True)
+
+        Returns:
+            If include_shN=True: (means, scales, quats, opacities, sh0, shN)
+            If include_shN=False: (means, scales, quats, opacities, sh0)
+
+        Example:
+            >>> data = plyread("scene.ply")
+            >>> gstensor = GSTensor.from_gsdata(data, device='cuda')
+            >>> means, scales, quats, opacities, sh0, shN = gstensor.unpack()
+            >>> # Use with rendering functions
+            >>> render(means, scales, quats, opacities, sh0)
+            >>>
+            >>> # For SH0 data, exclude shN
+            >>> means, scales, quats, opacities, sh0 = gstensor.unpack(include_shN=False)
+        """
+        if include_shN:
+            return (self.means, self.scales, self.quats, self.opacities, self.sh0, self.shN)
+        else:
+            return (self.means, self.scales, self.quats, self.opacities, self.sh0)
+
+    def to_dict(self) -> dict:
+        """Convert Gaussian data to dictionary.
+
+        Returns:
+            Dictionary with keys: means, scales, quats, opacities, sh0, shN
+
+        Example:
+            >>> gstensor = GSTensor.from_gsdata(data, device='cuda')
+            >>> props = gstensor.to_dict()
+            >>> # Access by key
+            >>> positions = props['means']
+            >>> # Unpack dict values
+            >>> render(**props)
+        """
+        return {
+            'means': self.means,
+            'scales': self.scales,
+            'quats': self.quats,
+            'opacities': self.opacities,
+            'sh0': self.sh0,
+            'shN': self.shN
+        }
+
+    # ==========================================================================
+    # Type Conversions
+    # ==========================================================================
+
+    def to_dtype(self, dtype: torch.dtype) -> GSTensor:
+        """Convert tensors to specified dtype.
+
+        Args:
+            dtype: Target dtype (e.g., torch.float16, torch.float32, torch.float64)
+
+        Returns:
+            New GSTensor with converted dtype
+
+        Example:
+            >>> gstensor_half = gstensor.to_dtype(torch.float16)
+        """
+        return self.to(dtype=dtype)
+
+    def half(self) -> GSTensor:
+        """Convert to float16 (half precision).
+
+        Returns:
+            New GSTensor with float16 dtype
+        """
+        return self.to_dtype(torch.float16)
+
+    def float(self) -> GSTensor:
+        """Convert to float32 (single precision).
+
+        Returns:
+            New GSTensor with float32 dtype
+        """
+        return self.to_dtype(torch.float32)
+
+    def double(self) -> GSTensor:
+        """Convert to float64 (double precision).
+
+        Returns:
+            New GSTensor with float64 dtype
+        """
+        return self.to_dtype(torch.float64)
+
+    # ==========================================================================
+    # Helper Methods
+    # ==========================================================================
+
+    def __repr__(self) -> str:
+        """String representation of GSTensor."""
+        sh_degree = self.get_sh_degree()
+        return (
+            f"GSTensor(\n"
+            f"  Gaussians: {len(self):,}\n"
+            f"  SH degree: {sh_degree}\n"
+            f"  Device: {self.device}\n"
+            f"  Dtype: {self.dtype}\n"
+            f"  Has _base: {self._base is not None}\n"
+            f"  Has masks: {self.masks is not None}\n"
+            f")"
+        )

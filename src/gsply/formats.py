@@ -279,10 +279,7 @@ def _is_compressed_format(elements: dict[str, dict[str, Any]]) -> bool:
     num_vertices = vertex_elem["count"]
     expected_chunks = (num_vertices + CHUNK_SIZE - 1) // CHUNK_SIZE
 
-    if num_chunks != expected_chunks:
-        return False
-
-    return True
+    return num_chunks == expected_chunks
 
 
 def get_sh_degree_from_property_count(property_count: int) -> int | None:

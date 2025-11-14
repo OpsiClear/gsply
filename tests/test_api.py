@@ -1,8 +1,9 @@
 """Tests for gsply main API (__init__.py)."""
 
-import pytest
+
 import numpy as np
-from pathlib import Path
+import pytest
+
 import gsply
 
 
@@ -28,7 +29,7 @@ class TestAPIExports:
         """Test that __version__ is exported."""
         assert hasattr(gsply, '__version__')
         assert isinstance(gsply.__version__, str)
-        assert gsply.__version__ == "0.1.1"
+        assert gsply.__version__ == "0.2.0"
 
     def test_all_contains_expected_exports(self):
         """Test that __all__ contains expected exports."""
@@ -82,22 +83,21 @@ class TestAPIFunctionality:
         assert output_file.exists()
         assert output_file.stat().st_size > 0
 
-    def test_gsdata_can_unpack(self, test_ply_file):
-        """Test that GSData result can be unpacked like a tuple."""
+    def test_gsdata_attributes(self, test_ply_file):
+        """Test that GSData attributes work correctly."""
         if test_ply_file is None:
             pytest.skip("Test file not found")
 
         data = gsply.plyread(test_ply_file)
 
-        # Can unpack first 6 elements (excluding base)
-        means, scales, quats, opacities, sh0, shN = data[:6]
-
-        assert isinstance(means, np.ndarray)
-        assert isinstance(scales, np.ndarray)
-        assert isinstance(quats, np.ndarray)
-        assert isinstance(opacities, np.ndarray)
-        assert isinstance(sh0, np.ndarray)
-        assert isinstance(shN, np.ndarray)
+        # Check all attributes are accessible
+        assert isinstance(data.means, np.ndarray)
+        assert isinstance(data.scales, np.ndarray)
+        assert isinstance(data.quats, np.ndarray)
+        assert isinstance(data.opacities, np.ndarray)
+        assert isinstance(data.sh0, np.ndarray)
+        assert isinstance(data.shN, np.ndarray)
+        assert isinstance(data.masks, np.ndarray)  # Should be initialized to all True
 
 
 class TestEndToEnd:
@@ -243,10 +243,19 @@ class TestCompressionAPIs:
         quats = sample_gaussian_data['quats']
         opacities = sample_gaussian_data['opacities']
         sh0 = sample_gaussian_data['sh0']
-        shN = sample_gaussian_data['shN']
+        shN = sample_gaussian_data['shN']  # noqa: N806
 
         # Create GSData
-        data = gsply.GSData(means, scales, quats, opacities, sh0, shN, base=None)
+        data = gsply.GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            masks=None,
+            _base=None
+        )
 
         # Test clean GSData API
         compressed_bytes = gsply.compress_to_bytes(data)
@@ -328,30 +337,144 @@ class TestEdgeCases:
         assert hasattr(data, 'opacities')
         assert hasattr(data, 'sh0')
         assert hasattr(data, 'shN')
-        assert hasattr(data, 'base')
+        assert hasattr(data, 'masks')  # New masks field
+        assert hasattr(data, '_base')  # Private field
 
-        # Test indexing
-        assert data[0] is data.means
-        assert data[1] is data.scales
-        assert data[2] is data.quats
-        assert data[3] is data.opacities
-        assert data[4] is data.sh0
-        assert data[5] is data.shN
-
-    def test_gsdata_slicing(self, test_ply_file):
-        """Test GSData slicing behavior."""
+    def test_gsdata_mutability(self, test_ply_file):
+        """Test GSData mutability."""
         if test_ply_file is None:
             pytest.skip("Test file not found")
 
         data = gsply.plyread(test_ply_file)
 
-        # Test tuple unpacking via slicing
-        first_six = data[:6]
-        assert len(first_six) == 6
-        assert first_six[0] is data.means
-        assert first_six[5] is data.shN
+        # Test that fields are mutable
+        original_value = data.means[0, 0].copy()
+        data.means[0, 0] = 999.0
+        assert data.means[0, 0] == 999.0
 
-        # Test full unpacking
-        means, scales, quats, opacities, sh0, shN = data[:6]
-        assert means is data.means
-        assert shN is data.shN
+        # Restore original value
+        data.means[0, 0] = original_value
+
+        # Test masks are mutable
+        data.masks[0] = False
+        assert not data.masks[0]
+
+
+class TestGSDataUnpackInterface:
+    """Test GSData unpack and to_dict methods."""
+
+    def test_unpack_with_shN(self, test_ply_file):
+        """Test unpacking with shN included."""
+        if test_ply_file is None:
+            pytest.skip("Test file not found")
+
+        data = gsply.plyread(test_ply_file)
+        means, scales, quats, opacities, sh0, shN = data.unpack()
+
+        # Verify unpacked arrays match original
+        assert np.array_equal(means, data.means)
+        assert np.array_equal(scales, data.scales)
+        assert np.array_equal(quats, data.quats)
+        assert np.array_equal(opacities, data.opacities)
+        assert np.array_equal(sh0, data.sh0)
+        if data.shN is not None:
+            assert np.array_equal(shN, data.shN)
+        else:
+            assert shN is None
+
+    def test_unpack_without_shN(self, test_ply_file):
+        """Test unpacking without shN."""
+        if test_ply_file is None:
+            pytest.skip("Test file not found")
+
+        data = gsply.plyread(test_ply_file)
+        means, scales, quats, opacities, sh0 = data.unpack(include_shN=False)
+
+        # Verify unpacked arrays match original
+        assert np.array_equal(means, data.means)
+        assert np.array_equal(scales, data.scales)
+        assert np.array_equal(quats, data.quats)
+        assert np.array_equal(opacities, data.opacities)
+        assert np.array_equal(sh0, data.sh0)
+
+    def test_unpack_returns_tuple(self, test_ply_file):
+        """Test that unpack returns a tuple."""
+        if test_ply_file is None:
+            pytest.skip("Test file not found")
+
+        data = gsply.plyread(test_ply_file)
+        result = data.unpack()
+
+        assert isinstance(result, tuple)
+        assert len(result) == 6
+
+        result_no_shN = data.unpack(include_shN=False)
+        assert isinstance(result_no_shN, tuple)
+        assert len(result_no_shN) == 5
+
+    def test_to_dict(self, test_ply_file):
+        """Test converting to dictionary."""
+        if test_ply_file is None:
+            pytest.skip("Test file not found")
+
+        data = gsply.plyread(test_ply_file)
+        props = data.to_dict()
+
+        # Verify dict has expected keys
+        assert isinstance(props, dict)
+        expected_keys = {'means', 'scales', 'quats', 'opacities', 'sh0', 'shN'}
+        assert set(props.keys()) == expected_keys
+
+        # Verify values match original
+        assert np.array_equal(props['means'], data.means)
+        assert np.array_equal(props['scales'], data.scales)
+        assert np.array_equal(props['quats'], data.quats)
+        assert np.array_equal(props['opacities'], data.opacities)
+        assert np.array_equal(props['sh0'], data.sh0)
+        if data.shN is not None:
+            assert np.array_equal(props['shN'], data.shN)
+        else:
+            assert props['shN'] is None
+
+    def test_unpack_with_synthetic_data(self):
+        """Test unpack with synthetic data."""
+        n = 100
+        data = gsply.GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.rand(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.random.randn(n, 15, 3).astype(np.float32),
+            masks=np.ones(n, dtype=bool),
+            _base=None
+        )
+
+        means, scales, quats, opacities, sh0, shN = data.unpack()
+
+        assert means.shape == (n, 3)
+        assert scales.shape == (n, 3)
+        assert quats.shape == (n, 4)
+        assert opacities.shape == (n,)
+        assert sh0.shape == (n, 3)
+        assert shN.shape == (n, 15, 3)
+
+    def test_to_dict_with_synthetic_data(self):
+        """Test to_dict with synthetic data."""
+        n = 100
+        data = gsply.GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.rand(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=None,
+            masks=np.ones(n, dtype=bool),
+            _base=None
+        )
+
+        props = data.to_dict()
+
+        assert 'means' in props
+        assert 'shN' in props
+        assert props['shN'] is None

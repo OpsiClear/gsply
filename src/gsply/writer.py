@@ -16,17 +16,18 @@ Performance:
     - Write compressed: 2-11ms for 50K Gaussians (4-25M Gaussians/sec)
 """
 
-import numpy as np
-from pathlib import Path
 import logging
+from functools import lru_cache
+from pathlib import Path
 
-from gsply.formats import SH_C0, CHUNK_SIZE, CHUNK_SIZE_SHIFT
-from gsply.reader import GSData
+import numba
+import numpy as np
 
 # Import numba for JIT optimization
 from numba import jit
-import numba
-from functools import lru_cache
+
+from gsply.formats import CHUNK_SIZE, CHUNK_SIZE_SHIFT, SH_C0
+from gsply.gsdata import GSData
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +105,7 @@ def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
             "property float z\n"
             "property float f_dc_0\n"
             "property float f_dc_1\n"
-            "property float f_dc_2\n"
-            + _F_REST_PROPERTIES[num_sh_rest]
-            + "property float opacity\n"
+            "property float f_dc_2\n" + _F_REST_PROPERTIES[num_sh_rest] + "property float opacity\n"
             "property float scale_0\n"
             "property float scale_1\n"
             "property float scale_2\n"
@@ -154,9 +153,7 @@ def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
 
 
 @jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def _pack_positions_jit(
-    sorted_means, chunk_indices, min_x, min_y, min_z, max_x, max_y, max_z
-):
+def _pack_positions_jit(sorted_means, chunk_indices, min_x, min_y, min_z, max_x, max_y, max_z):
     """JIT-compiled position quantization and packing (11-10-11 bits) with parallel processing.
 
     Args:
@@ -208,9 +205,7 @@ def _pack_positions_jit(
 
 
 @jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def _pack_scales_jit(
-    sorted_scales, chunk_indices, min_sx, min_sy, min_sz, max_sx, max_sy, max_sz
-):
+def _pack_scales_jit(sorted_scales, chunk_indices, min_sx, min_sy, min_sz, max_sx, max_sy, max_sz):
     """JIT-compiled scale quantization and packing (11-10-11 bits) with parallel processing.
 
     Args:
@@ -352,10 +347,7 @@ def _pack_quaternions_jit(sorted_quats):
         # Normalize quaternion
         quat = sorted_quats[i]
         norm = np.sqrt(
-            quat[0] * quat[0]
-            + quat[1] * quat[1]
-            + quat[2] * quat[2]
-            + quat[3] * quat[3]
+            quat[0] * quat[0] + quat[1] * quat[1] + quat[2] * quat[2] + quat[3] * quat[3]
         )
         if norm > 0:
             quat = quat / norm
@@ -397,9 +389,7 @@ def _pack_quaternions_jit(sorted_quats):
         qc_int = np.uint32(qc_norm * 1023.0)
 
         # Pack (2 bits for which + 10+10+10 bits)
-        packed[i] = (
-            (np.uint32(largest_idx) << 30) | (qa_int << 20) | (qb_int << 10) | qc_int
-        )
+        packed[i] = (np.uint32(largest_idx) << 30) | (qa_int << 20) | (qb_int << 10) | qc_int
 
     return packed
 
@@ -511,11 +501,9 @@ def _validate_and_normalize_inputs(
     quats: np.ndarray,
     opacities: np.ndarray,
     sh0: np.ndarray,
-    shN: np.ndarray | None,
+    shN: np.ndarray | None,  # noqa: N803
     validate: bool = False,
-) -> tuple[
-    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None
-]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
     """Validate and normalize input arrays to float32 format.
 
     Args:
@@ -542,7 +530,7 @@ def _validate_and_normalize_inputs(
     if not isinstance(sh0, np.ndarray):
         sh0 = np.asarray(sh0, dtype=np.float32)
     if shN is not None and not isinstance(shN, np.ndarray):
-        shN = np.asarray(shN, dtype=np.float32)
+        shN = np.asarray(shN, dtype=np.float32)  # noqa: N806
 
     # Fast path: check if all arrays are already float32
     all_float32 = (
@@ -567,7 +555,7 @@ def _validate_and_normalize_inputs(
         if sh0.dtype != np.float32:
             sh0 = sh0.astype(np.float32, copy=False)
         if shN is not None and shN.dtype != np.float32:
-            shN = shN.astype(np.float32, copy=False)
+            shN = shN.astype(np.float32, copy=False)  # noqa: N806
 
     num_gaussians = means.shape[0]
 
@@ -596,10 +584,10 @@ def _validate_and_normalize_inputs(
 
     # Flatten shN if needed (from (N, K, 3) to (N, K*3))
     if shN is not None and shN.ndim == 3:
-        N, K, C = shN.shape
+        N, K, C = shN.shape  # noqa: N806
         if validate:
             assert C == 3, f"shN must have shape (N, K, 3), got {shN.shape}"
-        shN = shN.reshape(N, K * 3)
+        shN = shN.reshape(N, K * 3)  # noqa: N806
 
     return means, scales, quats, opacities, sh0, shN
 
@@ -610,7 +598,7 @@ def _compress_data_internal(
     quats: np.ndarray,
     opacities: np.ndarray,
     sh0: np.ndarray,
-    shN: np.ndarray | None,
+    shN: np.ndarray | None,  # noqa: N803
 ) -> tuple[bytes, np.ndarray, np.ndarray, np.ndarray | None, int, int]:
     """Internal function to compress Gaussian data (shared compression logic).
 
@@ -644,7 +632,7 @@ def _compress_data_internal(
     sorted_sh0 = sh0
     sorted_quats = quats
     sorted_opacities = opacities
-    sorted_shN = shN
+    sorted_shN = shN  # noqa: N806
 
     # Pre-compute SH0 to RGB conversion (used in chunk bounds and packing)
     sorted_color_rgb = sorted_sh0 * SH_C0 + 0.5
@@ -778,7 +766,7 @@ def write_uncompressed(
     quats: np.ndarray,
     opacities: np.ndarray,
     sh0: np.ndarray,
-    shN: np.ndarray | None = None,
+    shN: np.ndarray | None = None,  # noqa: N803
     validate: bool = True,
 ) -> None:
     """Write uncompressed Gaussian splatting PLY file.
@@ -813,7 +801,7 @@ def write_uncompressed(
     file_path = Path(file_path)
 
     # Validate and normalize inputs using shared helper
-    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(  # noqa: N806
         means, scales, quats, opacities, sh0, shN, validate
     )
 
@@ -825,12 +813,8 @@ def write_uncompressed(
 
     # Preallocate and assign data (optimized approach - 31-35% faster than concatenate)
     if shN is not None:
-        sh_coeffs = shN.shape[
-            1
-        ]  # Number of SH coefficients (already reshaped to N x K*3)
-        total_props = (
-            3 + 3 + sh_coeffs + 1 + 3 + 4
-        )  # means, sh0, shN, opacity, scales, quats
+        sh_coeffs = shN.shape[1]  # Number of SH coefficients (already reshaped to N x K*3)
+        total_props = 3 + 3 + sh_coeffs + 1 + 3 + 4  # means, sh0, shN, opacity, scales, quats
         data = np.empty((num_gaussians, total_props), dtype="<f4")
         data[:, 0:3] = means
         data[:, 3:6] = sh0
@@ -869,7 +853,7 @@ def write_compressed(
     quats: np.ndarray,
     opacities: np.ndarray,
     sh0: np.ndarray,
-    shN: np.ndarray | None = None,
+    shN: np.ndarray | None = None,  # noqa: N803
     validate: bool = True,
 ) -> None:
     """Write compressed Gaussian splatting PLY file (PlayCanvas format).
@@ -909,7 +893,7 @@ def write_compressed(
     file_path = Path(file_path)
 
     # Validate and normalize inputs using shared helper
-    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(  # noqa: N806
         means, scales, quats, opacities, sh0, shN, validate
     )
 
@@ -938,7 +922,7 @@ def compress_to_bytes(
     quats: np.ndarray | None = None,
     opacities: np.ndarray | None = None,
     sh0: np.ndarray | None = None,
-    shN: np.ndarray | None = None,
+    shN: np.ndarray | None = None,  # noqa: N803
     validate: bool = True,
 ) -> bytes:
     """Compress Gaussian splatting data to bytes (PlayCanvas format).
@@ -980,7 +964,7 @@ def compress_to_bytes(
         quats = data_or_means.quats
         opacities = data_or_means.opacities
         sh0 = data_or_means.sh0
-        shN = data_or_means.shN
+        shN = data_or_means.shN  # noqa: N806
     else:
         # Use individual arrays
         means = data_or_means
@@ -991,7 +975,7 @@ def compress_to_bytes(
             )
 
     # Validate and normalize inputs
-    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(  # noqa: N806
         means, scales, quats, opacities, sh0, shN, validate
     )
 
@@ -1020,7 +1004,7 @@ def compress_to_arrays(
     quats: np.ndarray | None = None,
     opacities: np.ndarray | None = None,
     sh0: np.ndarray | None = None,
-    shN: np.ndarray | None = None,
+    shN: np.ndarray | None = None,  # noqa: N803
     validate: bool = True,
 ) -> tuple[bytes, np.ndarray, np.ndarray, np.ndarray | None]:
     """Compress Gaussian splatting data to component arrays (PlayCanvas format).
@@ -1068,7 +1052,7 @@ def compress_to_arrays(
         quats = data_or_means.quats
         opacities = data_or_means.opacities
         sh0 = data_or_means.sh0
-        shN = data_or_means.shN
+        shN = data_or_means.shN  # noqa: N806
     else:
         # Use individual arrays
         means = data_or_means
@@ -1079,7 +1063,7 @@ def compress_to_arrays(
             )
 
     # Validate and normalize inputs
-    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(
+    means, scales, quats, opacities, sh0, shN = _validate_and_normalize_inputs(  # noqa: N806
         means, scales, quats, opacities, sh0, shN, validate
     )
 
@@ -1110,7 +1094,7 @@ def plywrite(
     quats: np.ndarray,
     opacities: np.ndarray,
     sh0: np.ndarray,
-    shN: np.ndarray | None = None,
+    shN: np.ndarray | None = None,  # noqa: N803
     compressed: bool = False,
     validate: bool = True,
 ) -> None:
@@ -1162,9 +1146,7 @@ def plywrite(
 
         write_compressed(file_path, means, scales, quats, opacities, sh0, shN)
     else:
-        write_uncompressed(
-            file_path, means, scales, quats, opacities, sh0, shN, validate=validate
-        )
+        write_uncompressed(file_path, means, scales, quats, opacities, sh0, shN, validate=validate)
 
 
 __all__ = [

@@ -1,15 +1,17 @@
 """Test the new decompress_from_bytes API."""
 
-import numpy as np
+import sys
 import tempfile
+import traceback
 from pathlib import Path
 
+import numpy as np
+
 from gsply import (
-    plyread,
-    plywrite,
+    GSData,
     compress_to_bytes,
     decompress_from_bytes,
-    GSData,
+    plyread,
 )
 
 
@@ -25,11 +27,20 @@ def create_test_data(n_gaussians=256, sh_degree=1):
 
     if sh_degree > 0:
         n_sh_coeffs = {1: 9, 2: 24, 3: 45}[sh_degree]
-        shN = np.random.rand(n_gaussians, n_sh_coeffs, 3).astype(np.float32)
+        shN = np.random.rand(n_gaussians, n_sh_coeffs, 3).astype(np.float32)  # noqa: N806
     else:
-        shN = None
+        shN = None  # noqa: N806
 
-    return GSData(means, scales, quats, opacities, sh0, shN, base=None)
+    return GSData(
+        means=means,
+        scales=scales,
+        quats=quats,
+        opacities=opacities,
+        sh0=sh0,
+        shN=shN,
+        masks=None,
+        _base=None
+    )
 
 
 def test_basic_round_trip():
@@ -40,9 +51,9 @@ def test_basic_round_trip():
 
     data = create_test_data(256, sh_degree=1)
 
-    print(f"\nOriginal data:")
+    print("\nOriginal data:")
     print(f"  Gaussians: {data.means.shape[0]}")
-    print(f"  SH degree: 1")
+    print("  SH degree: 1")
 
     # Compress
     compressed = compress_to_bytes(data)
@@ -50,7 +61,7 @@ def test_basic_round_trip():
 
     # Decompress
     data_restored = decompress_from_bytes(compressed)
-    print(f"\nRestored:")
+    print("\nRestored:")
     print(f"  Gaussians: {data_restored.means.shape[0]}")
     print(f"  SH bands: {data_restored.shN.shape[1]}")
 
@@ -188,8 +199,8 @@ def test_error_handling():
     try:
         decompress_from_bytes(b"")
         print("  [FAIL] Should have raised ValueError")
-    except ValueError as e:
-        print(f"  [OK] Raised ValueError")
+    except ValueError:
+        print("  [OK] Raised ValueError")
 
     print("\n[OK] Error handling works correctly")
 
@@ -252,7 +263,6 @@ def main():
             results.append((test_func.__name__, True))
         except Exception as e:
             print(f"\n[ERROR] {test_func.__name__} failed: {e}")
-            import traceback
             traceback.print_exc()
             results.append((test_func.__name__, False))
 
@@ -282,4 +292,4 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())
