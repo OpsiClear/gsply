@@ -212,7 +212,9 @@ class GSTensor:
         # Fast path: Use _base if available
         if cpu_tensor._base is not None:
             base_numpy = cpu_tensor._base.detach().numpy()
-            masks_numpy = cpu_tensor.masks.detach().numpy() if cpu_tensor.masks is not None else None
+            masks_numpy = (
+                cpu_tensor.masks.detach().numpy() if cpu_tensor.masks is not None else None
+            )
 
             return GSData._recreate_from_base(base_numpy, masks_numpy)
 
@@ -275,7 +277,9 @@ class GSTensor:
 
         # Fast path: Use _base if available
         if self._base is not None:
-            new_base = self._base.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
+            new_base = self._base.to(
+                device=target_device, dtype=target_dtype, non_blocking=non_blocking
+            )
             new_masks = None
             if self.masks is not None:
                 new_masks = self.masks.to(device=target_device, non_blocking=non_blocking)
@@ -285,17 +289,27 @@ class GSTensor:
         # Fallback: Move each tensor
         new_shN = None
         if self.shN is not None:
-            new_shN = self.shN.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking)
+            new_shN = self.shN.to(
+                device=target_device, dtype=target_dtype, non_blocking=non_blocking
+            )
 
         new_masks = None
         if self.masks is not None:
             new_masks = self.masks.to(device=target_device, non_blocking=non_blocking)
 
         return GSTensor(
-            means=self.means.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
-            scales=self.scales.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
-            quats=self.quats.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
-            opacities=self.opacities.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
+            means=self.means.to(
+                device=target_device, dtype=target_dtype, non_blocking=non_blocking
+            ),
+            scales=self.scales.to(
+                device=target_device, dtype=target_dtype, non_blocking=non_blocking
+            ),
+            quats=self.quats.to(
+                device=target_device, dtype=target_dtype, non_blocking=non_blocking
+            ),
+            opacities=self.opacities.to(
+                device=target_device, dtype=target_dtype, non_blocking=non_blocking
+            ),
             sh0=self.sh0.to(device=target_device, dtype=target_dtype, non_blocking=non_blocking),
             shN=new_shN,
             masks=new_masks,
@@ -379,7 +393,9 @@ class GSTensor:
         return self._recreate_from_base(new_base, new_masks)
 
     @classmethod
-    def _recreate_from_base(cls, base_tensor: torch.Tensor, masks_tensor: torch.Tensor | None = None) -> GSTensor | None:
+    def _recreate_from_base(
+        cls, base_tensor: torch.Tensor, masks_tensor: torch.Tensor | None = None
+    ) -> GSTensor | None:
         """Helper to recreate GSTensor from a base tensor.
 
         Args:
@@ -528,7 +544,9 @@ class GSTensor:
         # Handle boolean tensor masking
         if isinstance(key, torch.Tensor) and key.dtype == torch.bool:
             if len(key) != len(self):
-                raise ValueError(f"Boolean mask length {len(key)} doesn't match data length {len(self)}")
+                raise ValueError(
+                    f"Boolean mask length {len(key)} doesn't match data length {len(self)}"
+                )
 
             # Try fast path with _base
             if self._base is not None:
@@ -671,12 +689,12 @@ class GSTensor:
             >>> render(**props)
         """
         return {
-            'means': self.means,
-            'scales': self.scales,
-            'quats': self.quats,
-            'opacities': self.opacities,
-            'sh0': self.sh0,
-            'shN': self.shN
+            "means": self.means,
+            "scales": self.scales,
+            "quats": self.quats,
+            "opacities": self.opacities,
+            "sh0": self.sh0,
+            "shN": self.shN,
         }
 
     # ==========================================================================

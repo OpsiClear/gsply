@@ -112,7 +112,7 @@ end_header
 
         # Add binary data (1 vertex, 14 floats)
         data = np.random.randn(14).astype(np.float32)
-        with open(test_file, 'ab') as f:
+        with open(test_file, "ab") as f:
             f.write(data.tobytes())
 
         is_compressed, sh_degree = detect_format(test_file)

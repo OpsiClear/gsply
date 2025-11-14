@@ -44,6 +44,7 @@ dev = [
     "twine",
     "mypy>=1.0",
     "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
 ]
 benchmark = [
     "open3d>=0.17.0",
@@ -131,9 +132,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*.py" = ["PLR2004", "N802"]  # Allow magic values and non-snake-case in tests
-"src/gsply/gsdata.py" = ["N803"]  # Allow include_shN parameter (scientific naming)
-"src/gsply/torch/gstensor.py" = ["N803", "N806", "N815"]  # Allow shN naming (scientific convention)
+"tests/*.py" = ["PLR2004", "N802", "N806", "B007", "B023"]  # Allow magic values, non-snake-case, and bugbear checks in tests
+"src/gsply/gsdata.py" = ["N803", "UP038"]  # Allow include_shN parameter (scientific naming), isinstance tuples
+"src/gsply/torch/gstensor.py" = ["N803", "N806", "N815", "UP038"]  # Allow shN naming (scientific convention), isinstance tuples
 
 [tool.mypy]
 python_version = "3.10"
@@ -147,7 +148,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
-strict_concatenate = true
+extra_checks = true
 
 [[tool.mypy.overrides]]
 module = "numba.*"

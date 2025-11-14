@@ -87,19 +87,18 @@ class GSData:
 
         if self.shN is not None and self.shN.shape[1] > 0:
             sh_coeffs = self.shN.shape[1]
-            new_base[:, 6:6 + sh_coeffs * 3] = self.shN.reshape(n_gaussians, sh_coeffs * 3)
+            new_base[:, 6 : 6 + sh_coeffs * 3] = self.shN.reshape(n_gaussians, sh_coeffs * 3)
             opacity_idx = 6 + sh_coeffs * 3
         else:
             opacity_idx = 6
 
         new_base[:, opacity_idx] = self.opacities
-        new_base[:, opacity_idx + 1:opacity_idx + 4] = self.scales
-        new_base[:, opacity_idx + 4:opacity_idx + 8] = self.quats
+        new_base[:, opacity_idx + 1 : opacity_idx + 4] = self.scales
+        new_base[:, opacity_idx + 4 : opacity_idx + 8] = self.quats
 
         # Recreate GSData with new base
         return GSData._recreate_from_base(
-            new_base,
-            masks_array=self.masks.copy() if self.masks is not None else None
+            new_base, masks_array=self.masks.copy() if self.masks is not None else None
         )
 
     def copy(self) -> "GSData":
@@ -129,7 +128,7 @@ class GSData:
             sh0=self.sh0.copy(),
             shN=self.shN.copy() if self.shN is not None else None,
             masks=self.masks.copy() if self.masks is not None else None,
-            _base=None
+            _base=None,
         )
 
     def unpack(self, include_shN: bool = True) -> tuple:
@@ -173,12 +172,12 @@ class GSData:
             >>> render(**props)
         """
         return {
-            'means': self.means,
-            'scales': self.scales,
-            'quats': self.quats,
-            'opacities': self.opacities,
-            'sh0': self.sh0,
-            'shN': self.shN
+            "means": self.means,
+            "scales": self.scales,
+            "quats": self.quats,
+            "opacities": self.opacities,
+            "sh0": self.sh0,
+            "shN": self.shN,
         }
 
     def copy_slice(self, key) -> "GSData":
@@ -222,14 +221,14 @@ class GSData:
 
             # Create single-element copies
             return GSData(
-                means=self.means[key:key + 1].copy(),
-                scales=self.scales[key:key + 1].copy(),
-                quats=self.quats[key:key + 1].copy(),
-                opacities=self.opacities[key:key + 1].copy(),
-                sh0=self.sh0[key:key + 1].copy(),
-                shN=self.shN[key:key + 1].copy() if self.shN is not None else None,
-                masks=self.masks[key:key + 1].copy() if self.masks is not None else None,
-                _base=None
+                means=self.means[key : key + 1].copy(),
+                scales=self.scales[key : key + 1].copy(),
+                quats=self.quats[key : key + 1].copy(),
+                opacities=self.opacities[key : key + 1].copy(),
+                sh0=self.sh0[key : key + 1].copy(),
+                shN=self.shN[key : key + 1].copy() if self.shN is not None else None,
+                masks=self.masks[key : key + 1].copy() if self.masks is not None else None,
+                _base=None,
             )
 
         # For slicing, optimize using base array when available
@@ -252,7 +251,7 @@ class GSData:
                 sh0=self.sh0[key].copy(),
                 shN=self.shN[key].copy() if self.shN is not None else None,
                 masks=self.masks[key].copy() if self.masks is not None else None,
-                _base=None
+                _base=None,
             )
 
         raise TypeError(f"Invalid index type: {type(key)}")
@@ -280,7 +279,7 @@ class GSData:
             raise IndexError(f"Index {index} out of range for {len(self)} Gaussians")
 
         # Use slice to get GSData with single element
-        return self[index:index + 1]
+        return self[index : index + 1]
 
     @staticmethod
     def _recreate_from_base(base_array, masks_array=None) -> "GSData":
@@ -319,7 +318,7 @@ class GSData:
         sh0 = base_array[:, 3:6]
 
         if sh_coeffs > 0:
-            shN_flat = base_array[:, 6:6 + sh_coeffs * 3]  # noqa: N806
+            shN_flat = base_array[:, 6 : 6 + sh_coeffs * 3]  # noqa: N806
             shN = shN_flat.reshape(n_gaussians, sh_coeffs, 3)  # noqa: N806
             opacity_idx = 6 + sh_coeffs * 3
         else:
@@ -327,8 +326,8 @@ class GSData:
             opacity_idx = 6
 
         opacities = base_array[:, opacity_idx]
-        scales = base_array[:, opacity_idx + 1:opacity_idx + 4]
-        quats = base_array[:, opacity_idx + 4:opacity_idx + 8]
+        scales = base_array[:, opacity_idx + 1 : opacity_idx + 4]
+        quats = base_array[:, opacity_idx + 4 : opacity_idx + 8]
 
         return GSData(
             means=means,
@@ -338,7 +337,7 @@ class GSData:
             sh0=sh0,
             shN=shN,
             masks=masks_array,
-            _base=base_array
+            _base=base_array,
         )
 
     def _slice_from_base(self, indices_or_mask):
@@ -414,7 +413,7 @@ class GSData:
                 self.opacities[key],
                 self.sh0[key],
                 self.shN[key] if self.shN is not None else None,
-                self.masks[key] if self.masks is not None else None
+                self.masks[key] if self.masks is not None else None,
             )
 
         # Handle slice
@@ -437,13 +436,15 @@ class GSData:
                 sh0=self.sh0[key],
                 shN=self.shN[key] if self.shN is not None else None,
                 masks=self.masks[key] if self.masks is not None else None,
-                _base=None
+                _base=None,
             )
 
         # Handle boolean array masking
         if isinstance(key, np.ndarray) and key.dtype == bool:
             if len(key) != len(self):
-                raise ValueError(f"Boolean mask length {len(key)} doesn't match data length {len(self)}")
+                raise ValueError(
+                    f"Boolean mask length {len(key)} doesn't match data length {len(self)}"
+                )
 
             # Try fast path with _base array first
             result = self._slice_from_base(key)
@@ -459,7 +460,7 @@ class GSData:
                 sh0=np.compress(key, self.sh0, axis=0),
                 shN=np.compress(key, self.shN, axis=0) if self.shN is not None else None,
                 masks=np.compress(key, self.masks, axis=0) if self.masks is not None else None,
-                _base=None
+                _base=None,
             )
 
         # Handle integer array indexing
@@ -486,7 +487,7 @@ class GSData:
                 sh0=self.sh0[indices],
                 shN=self.shN[indices] if self.shN is not None else None,
                 masks=self.masks[indices] if self.masks is not None else None,
-                _base=None
+                _base=None,
             )
 
         raise TypeError(f"Invalid index type: {type(key)}")

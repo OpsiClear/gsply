@@ -46,9 +46,7 @@ class TestCompressToBytes:
         means, scales, quats, opacities, sh0, shN = create_test_data(100)  # noqa: N806
 
         # Compress to bytes
-        compressed_bytes = compress_to_bytes(
-            means, scales, quats, opacities, sh0, shN
-        )
+        compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
 
         assert isinstance(compressed_bytes, bytes)
         assert len(compressed_bytes) > 0
@@ -58,20 +56,17 @@ class TestCompressToBytes:
         means, scales, quats, opacities, sh0, shN = create_test_data(256)  # noqa: N806
 
         # Get compressed bytes
-        compressed_bytes = compress_to_bytes(
-            means, scales, quats, opacities, sh0, shN
-        )
+        compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
 
         # Write to file using normal API
-        with tempfile.NamedTemporaryFile(suffix='.compressed.ply', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".compressed.ply", delete=False) as tmp:
             tmp_path = Path(tmp.name)
 
         try:
-            plywrite(str(tmp_path), means, scales, quats, opacities, sh0, shN,
-                    compressed=True)
+            plywrite(str(tmp_path), means, scales, quats, opacities, sh0, shN, compressed=True)
 
             # Read file bytes
-            with open(tmp_path, 'rb') as f:
+            with open(tmp_path, "rb") as f:
                 file_bytes = f.read()
 
             # Should be identical
@@ -85,12 +80,10 @@ class TestCompressToBytes:
         means, scales, quats, opacities, sh0, shN = create_test_data(512, sh_degree=1)  # noqa: N806
 
         # Compress to bytes
-        compressed_bytes = compress_to_bytes(
-            means, scales, quats, opacities, sh0, shN
-        )
+        compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
 
         # Write bytes to file
-        with tempfile.NamedTemporaryFile(suffix='.compressed.ply', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".compressed.ply", delete=False) as tmp:
             tmp_path = Path(tmp.name)
             tmp.write(compressed_bytes)
 
@@ -115,9 +108,7 @@ class TestCompressToBytes:
         for n_gaussians in [1, 10, 100, 256, 257, 512, 1000]:
             means, scales, quats, opacities, sh0, shN = create_test_data(n_gaussians)  # noqa: N806
 
-            compressed_bytes = compress_to_bytes(
-                means, scales, quats, opacities, sh0, shN
-            )
+            compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
 
             assert isinstance(compressed_bytes, bytes)
             assert len(compressed_bytes) > 0
@@ -127,9 +118,7 @@ class TestCompressToBytes:
         for sh_degree in [0, 1, 2, 3]:
             means, scales, quats, opacities, sh0, shN = create_test_data(256, sh_degree)  # noqa: N806
 
-            compressed_bytes = compress_to_bytes(
-                means, scales, quats, opacities, sh0, shN
-            )
+            compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
 
             assert isinstance(compressed_bytes, bytes)
             assert len(compressed_bytes) > 0
@@ -178,9 +167,7 @@ class TestCompressToArrays:
         )
 
         # Get both outputs
-        compressed_bytes = compress_to_bytes(
-            means, scales, quats, opacities, sh0, shN
-        )
+        compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
 
         header_bytes, chunk_bounds, packed_data, packed_sh = compress_to_arrays(
             means, scales, quats, opacities, sh0, shN
@@ -243,7 +230,7 @@ class TestIntegration:
             sh0=sh0,
             shN=shN,
             masks=None,
-            _base=None
+            _base=None,
         )
 
         # Test new clean API: pass GSData directly
@@ -256,8 +243,7 @@ class TestIntegration:
 
         # Also test backward compatibility with extracted fields
         compressed_bytes2 = compress_to_bytes(
-            data.means, data.scales, data.quats,
-            data.opacities, data.sh0, data.shN
+            data.means, data.scales, data.quats, data.opacities, data.sh0, data.shN
         )
         assert compressed_bytes == compressed_bytes2  # Should be identical
 
@@ -266,15 +252,12 @@ class TestIntegration:
         means, scales, quats, opacities, sh0, shN = create_test_data(100)  # noqa: N806
 
         # Should work with validation enabled (default)
-        compressed_bytes = compress_to_bytes(
-            means, scales, quats, opacities, sh0, shN
-        )
+        compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
         assert isinstance(compressed_bytes, bytes)
 
         # Should work with validation disabled
         compressed_bytes = compress_to_bytes(
-            means, scales, quats, opacities, sh0, shN,
-            validate=False
+            means, scales, quats, opacities, sh0, shN, validate=False
         )
         assert isinstance(compressed_bytes, bytes)
 
@@ -284,15 +267,13 @@ class TestIntegration:
         means, scales, quats, opacities, sh0, shN = create_test_data(512, sh_degree=2)  # noqa: N806
 
         # Compress to bytes for transfer
-        compressed_bytes = compress_to_bytes(
-            means, scales, quats, opacities, sh0, shN
-        )
+        compressed_bytes = compress_to_bytes(means, scales, quats, opacities, sh0, shN)
 
         # Simulate network transfer (just copy bytes)
         received_bytes = bytes(compressed_bytes)
 
         # On "receiver" side, save and read
-        with tempfile.NamedTemporaryFile(suffix='.compressed.ply', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".compressed.ply", delete=False) as tmp:
             tmp_path = Path(tmp.name)
             tmp.write(received_bytes)
 
@@ -325,10 +306,12 @@ class TestIntegration:
         assert num_chunks == (768 + 255) // 256  # 3 chunks
 
         # Example: check compression ratio
-        original_size = (means.nbytes + scales.nbytes + quats.nbytes +
-                        opacities.nbytes + sh0.nbytes + shN.nbytes)
-        compressed_size = (len(header_bytes) + chunk_bounds.nbytes +
-                          packed_data.nbytes + packed_sh.nbytes)
+        original_size = (
+            means.nbytes + scales.nbytes + quats.nbytes + opacities.nbytes + sh0.nbytes + shN.nbytes
+        )
+        compressed_size = (
+            len(header_bytes) + chunk_bounds.nbytes + packed_data.nbytes + packed_sh.nbytes
+        )
         compression_ratio = original_size / compressed_size
 
         # Should have decent compression
@@ -336,8 +319,8 @@ class TestIntegration:
 
         # Example: modify header (e.g., for custom metadata)
         # This is just to show the components can be processed separately
-        assert b'ply' in header_bytes
-        assert b'format binary_little_endian' in header_bytes
+        assert b"ply" in header_bytes
+        assert b"format binary_little_endian" in header_bytes
 
 
 if __name__ == "__main__":

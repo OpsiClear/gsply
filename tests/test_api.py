@@ -1,6 +1,5 @@
 """Tests for gsply main API (__init__.py)."""
 
-
 import numpy as np
 import pytest
 
@@ -12,33 +11,33 @@ class TestAPIExports:
 
     def test_plyread_exported(self):
         """Test that plyread is exported."""
-        assert hasattr(gsply, 'plyread')
+        assert hasattr(gsply, "plyread")
         assert callable(gsply.plyread)
 
     def test_plywrite_exported(self):
         """Test that plywrite is exported."""
-        assert hasattr(gsply, 'plywrite')
+        assert hasattr(gsply, "plywrite")
         assert callable(gsply.plywrite)
 
     def test_detect_format_exported(self):
         """Test that detect_format is exported."""
-        assert hasattr(gsply, 'detect_format')
+        assert hasattr(gsply, "detect_format")
         assert callable(gsply.detect_format)
 
     def test_version_exported(self):
         """Test that __version__ is exported."""
-        assert hasattr(gsply, '__version__')
+        assert hasattr(gsply, "__version__")
         assert isinstance(gsply.__version__, str)
         assert gsply.__version__ == "0.2.0"
 
     def test_all_contains_expected_exports(self):
         """Test that __all__ contains expected exports."""
-        expected = ['plyread', 'GSData', 'plywrite', 'detect_format', '__version__']
+        expected = ["plyread", "GSData", "plywrite", "detect_format", "__version__"]
         assert all(name in gsply.__all__ for name in expected)
 
     def test_gsdata_exported(self):
         """Test that GSData is exported."""
-        assert hasattr(gsply, 'GSData')
+        assert hasattr(gsply, "GSData")
         # It's a class/type, not a callable function
         assert isinstance(gsply.GSData, type)
 
@@ -125,7 +124,9 @@ class TestEndToEnd:
         means_modified = data.means + np.array([1.0, 2.0, 3.0], dtype=np.float32)
 
         # 4. Write
-        gsply.plywrite(output_file, means_modified, data.scales, data.quats, data.opacities, data.sh0, data.shN)
+        gsply.plywrite(
+            output_file, means_modified, data.scales, data.quats, data.opacities, data.sh0, data.shN
+        )
 
         # 5. Read back and verify
         data_read = gsply.plyread(output_file)
@@ -143,7 +144,9 @@ class TestEndToEnd:
         data = gsply.plyread(test_ply_file)
 
         # Write as SH degree 0 (drop higher-order SH)
-        gsply.plywrite(output_file, data.means, data.scales, data.quats, data.opacities, data.sh0, shN=None)
+        gsply.plywrite(
+            output_file, data.means, data.scales, data.quats, data.opacities, data.sh0, shN=None
+        )
 
         # Read back
         data_read = gsply.plyread(output_file)
@@ -167,7 +170,15 @@ class TestEndToEnd:
             translation = np.array([i * 0.1, i * 0.2, i * 0.3], dtype=np.float32)
             means_modified = data.means + translation
 
-            gsply.plywrite(output_file, means_modified, data.scales, data.quats, data.opacities, data.sh0, data.shN)
+            gsply.plywrite(
+                output_file,
+                means_modified,
+                data.scales,
+                data.quats,
+                data.opacities,
+                data.sh0,
+                data.shN,
+            )
 
             # Verify
             data_read = gsply.plyread(output_file)
@@ -179,12 +190,12 @@ class TestCompressionAPIs:
 
     def test_compress_to_bytes_in_exports(self):
         """Test that compress_to_bytes is exported."""
-        assert hasattr(gsply, 'compress_to_bytes')
+        assert hasattr(gsply, "compress_to_bytes")
         assert callable(gsply.compress_to_bytes)
 
     def test_compress_to_arrays_in_exports(self):
         """Test that compress_to_arrays is exported."""
-        assert hasattr(gsply, 'compress_to_arrays')
+        assert hasattr(gsply, "compress_to_arrays")
         assert callable(gsply.compress_to_arrays)
 
     def test_compress_to_bytes_usage(self, tmp_path):
@@ -199,16 +210,14 @@ class TestCompressionAPIs:
         sh0 = np.random.rand(n_gaussians, 3).astype(np.float32)
 
         # Compress to bytes
-        compressed_bytes = gsply.compress_to_bytes(
-            means, scales, quats, opacities, sh0
-        )
+        compressed_bytes = gsply.compress_to_bytes(means, scales, quats, opacities, sh0)
 
         assert isinstance(compressed_bytes, bytes)
         assert len(compressed_bytes) > 0
 
         # Should be able to save and read
         temp_file = tmp_path / "test.compressed.ply"
-        with open(temp_file, 'wb') as f:
+        with open(temp_file, "wb") as f:
             f.write(compressed_bytes)
 
         data = gsply.plyread(str(temp_file))
@@ -226,9 +235,7 @@ class TestCompressionAPIs:
         sh0 = np.random.rand(n_gaussians, 3).astype(np.float32)
 
         # Compress to arrays
-        header, chunks, packed, sh = gsply.compress_to_arrays(
-            means, scales, quats, opacities, sh0
-        )
+        header, chunks, packed, sh = gsply.compress_to_arrays(means, scales, quats, opacities, sh0)
 
         assert isinstance(header, bytes)
         assert isinstance(chunks, np.ndarray)
@@ -238,12 +245,12 @@ class TestCompressionAPIs:
 
     def test_compress_apis_with_gsdata(self, sample_gaussian_data):
         """Test that compression APIs work with GSData."""
-        means = sample_gaussian_data['means']
-        scales = sample_gaussian_data['scales']
-        quats = sample_gaussian_data['quats']
-        opacities = sample_gaussian_data['opacities']
-        sh0 = sample_gaussian_data['sh0']
-        shN = sample_gaussian_data['shN']  # noqa: N806
+        means = sample_gaussian_data["means"]
+        scales = sample_gaussian_data["scales"]
+        quats = sample_gaussian_data["quats"]
+        opacities = sample_gaussian_data["opacities"]
+        sh0 = sample_gaussian_data["sh0"]
+        shN = sample_gaussian_data["shN"]  # noqa: N806
 
         # Create GSData
         data = gsply.GSData(
@@ -254,7 +261,7 @@ class TestCompressionAPIs:
             sh0=sh0,
             shN=shN,
             masks=None,
-            _base=None
+            _base=None,
         )
 
         # Test clean GSData API
@@ -267,8 +274,7 @@ class TestCompressionAPIs:
 
         # Also verify backward compatibility works
         compressed_bytes2 = gsply.compress_to_bytes(
-            data.means, data.scales, data.quats,
-            data.opacities, data.sh0, data.shN
+            data.means, data.scales, data.quats, data.opacities, data.sh0, data.shN
         )
         assert compressed_bytes == compressed_bytes2
 
@@ -294,7 +300,7 @@ class TestDocstrings:
     def test_module_has_docstring(self):
         """Test that module has docstring."""
         assert gsply.__doc__ is not None
-        assert 'gsply' in gsply.__doc__
+        assert "gsply" in gsply.__doc__
 
 
 class TestEdgeCases:
@@ -331,14 +337,14 @@ class TestEdgeCases:
         data = gsply.plyread(test_ply_file)
 
         # Test attribute access
-        assert hasattr(data, 'means')
-        assert hasattr(data, 'scales')
-        assert hasattr(data, 'quats')
-        assert hasattr(data, 'opacities')
-        assert hasattr(data, 'sh0')
-        assert hasattr(data, 'shN')
-        assert hasattr(data, 'masks')  # New masks field
-        assert hasattr(data, '_base')  # Private field
+        assert hasattr(data, "means")
+        assert hasattr(data, "scales")
+        assert hasattr(data, "quats")
+        assert hasattr(data, "opacities")
+        assert hasattr(data, "sh0")
+        assert hasattr(data, "shN")
+        assert hasattr(data, "masks")  # New masks field
+        assert hasattr(data, "_base")  # Private field
 
     def test_gsdata_mutability(self, test_ply_file):
         """Test GSData mutability."""
@@ -422,19 +428,19 @@ class TestGSDataUnpackInterface:
 
         # Verify dict has expected keys
         assert isinstance(props, dict)
-        expected_keys = {'means', 'scales', 'quats', 'opacities', 'sh0', 'shN'}
+        expected_keys = {"means", "scales", "quats", "opacities", "sh0", "shN"}
         assert set(props.keys()) == expected_keys
 
         # Verify values match original
-        assert np.array_equal(props['means'], data.means)
-        assert np.array_equal(props['scales'], data.scales)
-        assert np.array_equal(props['quats'], data.quats)
-        assert np.array_equal(props['opacities'], data.opacities)
-        assert np.array_equal(props['sh0'], data.sh0)
+        assert np.array_equal(props["means"], data.means)
+        assert np.array_equal(props["scales"], data.scales)
+        assert np.array_equal(props["quats"], data.quats)
+        assert np.array_equal(props["opacities"], data.opacities)
+        assert np.array_equal(props["sh0"], data.sh0)
         if data.shN is not None:
-            assert np.array_equal(props['shN'], data.shN)
+            assert np.array_equal(props["shN"], data.shN)
         else:
-            assert props['shN'] is None
+            assert props["shN"] is None
 
     def test_unpack_with_synthetic_data(self):
         """Test unpack with synthetic data."""
@@ -447,7 +453,7 @@ class TestGSDataUnpackInterface:
             sh0=np.random.randn(n, 3).astype(np.float32),
             shN=np.random.randn(n, 15, 3).astype(np.float32),
             masks=np.ones(n, dtype=bool),
-            _base=None
+            _base=None,
         )
 
         means, scales, quats, opacities, sh0, shN = data.unpack()
@@ -470,11 +476,11 @@ class TestGSDataUnpackInterface:
             sh0=np.random.randn(n, 3).astype(np.float32),
             shN=None,
             masks=np.ones(n, dtype=bool),
-            _base=None
+            _base=None,
         )
 
         props = data.to_dict()
 
-        assert 'means' in props
-        assert 'shN' in props
-        assert props['shN'] is None
+        assert "means" in props
+        assert "shN" in props
+        assert props["shN"] is None

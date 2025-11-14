@@ -14,14 +14,13 @@ def sample_gaussian_data():
 
     num_gaussians = 100
     return {
-        'means': np.random.randn(num_gaussians, 3).astype(np.float32),
-        'scales': np.random.randn(num_gaussians, 3).astype(np.float32),
-        'quats': np.random.randn(num_gaussians, 4).astype(np.float32),
-        'opacities': np.random.randn(num_gaussians).astype(np.float32),
-        'sh0': np.random.randn(num_gaussians, 3).astype(np.float32),
-        'shN': np.random.randn(num_gaussians, 15, 3).astype(np.float32),
+        "means": np.random.randn(num_gaussians, 3).astype(np.float32),
+        "scales": np.random.randn(num_gaussians, 3).astype(np.float32),
+        "quats": np.random.randn(num_gaussians, 4).astype(np.float32),
+        "opacities": np.random.randn(num_gaussians).astype(np.float32),
+        "sh0": np.random.randn(num_gaussians, 3).astype(np.float32),
+        "shN": np.random.randn(num_gaussians, 15, 3).astype(np.float32),
     }
-
 
 
 @pytest.fixture
@@ -31,13 +30,12 @@ def sample_sh0_data():
 
     num_gaussians = 50
     return {
-        'means': np.random.randn(num_gaussians, 3).astype(np.float32),
-        'scales': np.random.randn(num_gaussians, 3).astype(np.float32),
-        'quats': np.random.randn(num_gaussians, 4).astype(np.float32),
-        'opacities': np.random.randn(num_gaussians).astype(np.float32),
-        'sh0': np.random.randn(num_gaussians, 3).astype(np.float32),
+        "means": np.random.randn(num_gaussians, 3).astype(np.float32),
+        "scales": np.random.randn(num_gaussians, 3).astype(np.float32),
+        "quats": np.random.randn(num_gaussians, 4).astype(np.float32),
+        "opacities": np.random.randn(num_gaussians).astype(np.float32),
+        "sh0": np.random.randn(num_gaussians, 3).astype(np.float32),
     }
-
 
 
 @pytest.fixture(scope="session")
@@ -104,6 +102,4 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
-    config.addinivalue_line(
-        "markers", "requires_test_file: marks tests that require test PLY file"
-    )
+    config.addinivalue_line("markers", "requires_test_file: marks tests that require test PLY file")

@@ -52,9 +52,19 @@ from gsply.utils import SH_C0, rgb2sh, sh2rgb
 from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
 __version__ = "0.2.0"
-__all__ = ["plyread", "GSData", "plywrite", "compress_to_bytes",
-           "compress_to_arrays", "decompress_from_bytes", "detect_format",
-           "sh2rgb", "rgb2sh", "SH_C0", "__version__"]
+__all__ = [
+    "plyread",
+    "GSData",
+    "plywrite",
+    "compress_to_bytes",
+    "compress_to_arrays",
+    "decompress_from_bytes",
+    "detect_format",
+    "sh2rgb",
+    "rgb2sh",
+    "SH_C0",
+    "__version__",
+]
 # Note: GSTensor is available via lazy import but not in __all__ (it's optional)
 
 
@@ -67,10 +77,10 @@ def __getattr__(name):
     if name == "GSTensor":
         try:
             from gsply.torch import GSTensor
+
             return GSTensor
         except ImportError as e:
             raise ImportError(
-                "GSTensor requires PyTorch to be installed.\n"
-                "Install with: pip install torch"
+                "GSTensor requires PyTorch to be installed.\n" "Install with: pip install torch"
             ) from e
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

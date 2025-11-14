@@ -1,0 +1,46 @@
+# Pre-commit hooks for gsply
+# See https://pre-commit.com for more information
+# Install: pre-commit install
+# Update: pre-commit autoupdate
+# Run manually: pre-commit run --all-files
+
+repos:
+  # General file fixes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Ruff linter (replaces flake8, isort, etc.)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.0
+    hooks:
+      # Run the linter
+      - id: ruff
+        args: ['--fix']
+      # Run the formatter
+      - id: ruff-format
+
+  # MyPy type checking (non-blocking for pre-existing issues)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - numpy>=1.20.0
+          - numba>=0.59.0
+        args: ['--config-file=pyproject.toml']
+        files: ^src/
+        exclude: ^(tests/|benchmarks/)
+        verbose: true
+        # Allow to pass with warnings until type issues are resolved
+        stages: [manual]

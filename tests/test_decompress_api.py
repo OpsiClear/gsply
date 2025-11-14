@@ -39,15 +39,15 @@ def create_test_data(n_gaussians=256, sh_degree=1):
         sh0=sh0,
         shN=shN,
         masks=None,
-        _base=None
+        _base=None,
     )
 
 
 def test_basic_round_trip():
     """Test basic compress -> decompress round trip."""
-    print("="*60)
+    print("=" * 60)
     print("TEST 1: Basic Round-Trip")
-    print("="*60)
+    print("=" * 60)
 
     data = create_test_data(256, sh_degree=1)
 
@@ -78,9 +78,9 @@ def test_basic_round_trip():
 
 def test_various_sizes():
     """Test with different data sizes."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: Various Data Sizes")
-    print("="*60)
+    print("=" * 60)
 
     sizes = [1, 10, 256, 257, 512, 1000, 10000]
 
@@ -97,9 +97,9 @@ def test_various_sizes():
 
 def test_various_sh_degrees():
     """Test with different SH degrees."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: Various SH Degrees")
-    print("="*60)
+    print("=" * 60)
 
     for sh_degree in [0, 1, 2, 3]:
         data = create_test_data(512, sh_degree=sh_degree)
@@ -116,9 +116,9 @@ def test_various_sh_degrees():
 
 def test_vs_file_based():
     """Test that decompress_from_bytes matches file-based reading."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 4: Compare with File-Based Reading")
-    print("="*60)
+    print("=" * 60)
 
     data = create_test_data(1024, sh_degree=2)
 
@@ -127,7 +127,7 @@ def test_vs_file_based():
     data_from_bytes = decompress_from_bytes(compressed)
 
     # Method 2: Write to file, then read
-    with tempfile.NamedTemporaryFile(suffix='.compressed.ply', delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".compressed.ply", delete=False) as tmp:
         tmp_path = Path(tmp.name)
         tmp.write(compressed)
 
@@ -154,9 +154,9 @@ def test_vs_file_based():
 
 def test_network_transfer_simulation():
     """Simulate network transfer use case."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 5: Network Transfer Simulation")
-    print("="*60)
+    print("=" * 60)
 
     # Sender side
     print("\nSender: Compressing data...")
@@ -182,9 +182,9 @@ def test_network_transfer_simulation():
 
 def test_error_handling():
     """Test error handling for invalid inputs."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 6: Error Handling")
-    print("="*60)
+    print("=" * 60)
 
     # Test with invalid bytes
     print("\nTesting with invalid bytes...")
@@ -207,9 +207,9 @@ def test_error_handling():
 
 def test_api_convenience():
     """Test API convenience and usability."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 7: API Convenience")
-    print("="*60)
+    print("=" * 60)
 
     # Test that decompress_from_bytes is convenient for common use cases
     data = create_test_data(100, sh_degree=1)
@@ -242,9 +242,9 @@ def test_api_convenience():
 
 def main():
     """Run all tests."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print(" " * 20 + "DECOMPRESS API TESTS")
-    print("="*70)
+    print("=" * 70)
 
     tests = [
         test_basic_round_trip,
@@ -267,9 +267,9 @@ def main():
             results.append((test_func.__name__, False))
 
     # Summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print(" " * 28 + "SUMMARY")
-    print("="*70)
+    print("=" * 70)
 
     all_passed = all(passed for _, passed in results)
 

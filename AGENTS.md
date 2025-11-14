@@ -38,7 +38,42 @@ uv run pytest
 
 # Run scripts
 uv run python script.py
+
+# Install pre-commit (for git hooks)
+uv pip install pre-commit
+pre-commit install
 ```
+
+### Pre-commit Hooks
+
+The project uses pre-commit to ensure code quality before commits:
+
+```bash
+# Install hooks (one-time setup)
+pre-commit install
+
+# Run all hooks manually
+pre-commit run --all-files
+
+# Run specific hook
+pre-commit run ruff --all-files
+
+# Run mypy manually (not run automatically due to pre-existing issues)
+pre-commit run --hook-stage manual mypy --all-files
+
+# Update hook versions
+pre-commit autoupdate
+```
+
+**Hooks configured:**
+- Trailing whitespace removal
+- End of file fixing
+- YAML/TOML validation
+- Large file detection
+- Merge conflict detection
+- Line ending normalization (LF)
+- Ruff linter and formatter
+- MyPy type checking (manual stage)
 
 ### Project Structure
 
@@ -203,12 +238,14 @@ masks:     (N,)   - boolean mask (initialized to all True)
 
 ### Before Creating PR
 
-1. **Run full test suite**: `pytest` (all 169 tests must pass)
-2. **Type check**: `mypy src/`
-3. **Lint**: `ruff check .`
+1. **Run pre-commit hooks**: `pre-commit run --all-files` (automatically checks formatting, linting, etc.)
+2. **Run full test suite**: `pytest` (all 169 tests must pass)
+3. **Type check** (optional): `mypy src/` or `pre-commit run --hook-stage manual mypy --all-files`
 4. **Update test count** in README.md if you added/removed tests
 5. **Update CHANGELOG.md** with your changes
 6. **Run benchmark** if performance-critical code changed
+
+Note: Pre-commit hooks will run automatically on commit if installed via `pre-commit install`
 
 ### PR Title Format
 

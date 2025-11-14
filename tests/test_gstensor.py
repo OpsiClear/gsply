@@ -1,6 +1,5 @@
 """Unit tests for GSTensor (PyTorch GPU-accelerated dataclass)."""
 
-import numpy as np
 import pytest
 
 # Check if PyTorch is available
@@ -263,7 +262,10 @@ def test_gstensor_consolidate_sh1(sample_data_sh1):
     gstensor_consolidated = gstensor.consolidate()
 
     assert gstensor_consolidated._base is not None
-    assert gstensor_consolidated._base.shape == (500, 14 + 3 * 3)  # SH1 layout: 23 props (K=3 bands)
+    assert gstensor_consolidated._base.shape == (
+        500,
+        14 + 3 * 3,
+    )  # SH1 layout: 23 props (K=3 bands)
     assert torch.allclose(gstensor_consolidated.means, gstensor.means)
 
 
@@ -403,16 +405,16 @@ def test_gstensor_to_dict(sample_data_sh1):
 
     # Verify dict has expected keys
     assert isinstance(props, dict)
-    expected_keys = {'means', 'scales', 'quats', 'opacities', 'sh0', 'shN'}
+    expected_keys = {"means", "scales", "quats", "opacities", "sh0", "shN"}
     assert set(props.keys()) == expected_keys
 
     # Verify values match original
-    assert torch.equal(props['means'], gstensor.means)
-    assert torch.equal(props['scales'], gstensor.scales)
-    assert torch.equal(props['quats'], gstensor.quats)
-    assert torch.equal(props['opacities'], gstensor.opacities)
-    assert torch.equal(props['sh0'], gstensor.sh0)
-    assert torch.equal(props['shN'], gstensor.shN)
+    assert torch.equal(props["means"], gstensor.means)
+    assert torch.equal(props["scales"], gstensor.scales)
+    assert torch.equal(props["quats"], gstensor.quats)
+    assert torch.equal(props["opacities"], gstensor.opacities)
+    assert torch.equal(props["sh0"], gstensor.sh0)
+    assert torch.equal(props["shN"], gstensor.shN)
 
 
 def test_gstensor_unpack_gpu(sample_data_sh0):
@@ -420,15 +422,15 @@ def test_gstensor_unpack_gpu(sample_data_sh0):
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 
-    gstensor = GSTensor(**sample_data_sh0).to('cuda')
+    gstensor = GSTensor(**sample_data_sh0).to("cuda")
     means, scales, quats, opacities, sh0, shN = gstensor.unpack()
 
     # Verify unpacked tensors are on GPU
-    assert means.device.type == 'cuda'
-    assert scales.device.type == 'cuda'
-    assert quats.device.type == 'cuda'
-    assert opacities.device.type == 'cuda'
-    assert sh0.device.type == 'cuda'
+    assert means.device.type == "cuda"
+    assert scales.device.type == "cuda"
+    assert quats.device.type == "cuda"
+    assert opacities.device.type == "cuda"
+    assert sh0.device.type == "cuda"
 
 
 def test_gstensor_to_dict_preserves_device(sample_data_sh0):
@@ -436,10 +438,10 @@ def test_gstensor_to_dict_preserves_device(sample_data_sh0):
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 
-    gstensor = GSTensor(**sample_data_sh0).to('cuda')
+    gstensor = GSTensor(**sample_data_sh0).to("cuda")
     props = gstensor.to_dict()
 
     # All tensors should be on GPU
     for key, value in props.items():
         if value is not None and isinstance(value, torch.Tensor):
-            assert value.device.type == 'cuda'
+            assert value.device.type == "cuda"

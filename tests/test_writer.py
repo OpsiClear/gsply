@@ -200,7 +200,9 @@ class TestRoundTrip:
         shN_orig = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
         # Write
-        plywrite(output_file, means_orig, scales_orig, quats_orig, opacities_orig, sh0_orig, shN_orig)
+        plywrite(
+            output_file, means_orig, scales_orig, quats_orig, opacities_orig, sh0_orig, shN_orig
+        )
 
         # Read back
         result = plyread(output_file)
@@ -312,7 +314,15 @@ class TestRoundTrip:
         data_orig = plyread(test_ply_file)
 
         # Write
-        plywrite(output_file, data_orig.means, data_orig.scales, data_orig.quats, data_orig.opacities, data_orig.sh0, data_orig.shN)
+        plywrite(
+            output_file,
+            data_orig.means,
+            data_orig.scales,
+            data_orig.quats,
+            data_orig.opacities,
+            data_orig.sh0,
+            data_orig.shN,
+        )
 
         # Read back
         result = plyread(output_file)

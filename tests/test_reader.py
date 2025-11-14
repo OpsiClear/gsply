@@ -1,6 +1,5 @@
 """Tests for gsply.reader module."""
 
-
 import numpy as np
 import pytest
 
@@ -77,7 +76,7 @@ end_header
 
         # Add binary data (100 vertices, 14 floats each)
         data = np.random.randn(100, 14).astype(np.float32)
-        with open(test_file, 'ab') as f:
+        with open(test_file, "ab") as f:
             f.write(data.tobytes())
 
         result = read_uncompressed(test_file)

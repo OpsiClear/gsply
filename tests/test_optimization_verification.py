@@ -19,13 +19,16 @@ class TestQuaternionVectorization:
         """Test that vectorized quaternion extraction matches original loop logic."""
         # Create 5 test quaternions with known properties
         num_quats = 5
-        quats = np.array([
-            [0.9, 0.1, 0.2, 0.3],    # largest: 0 (0.9)
-            [0.1, 0.8, 0.3, 0.2],    # largest: 1 (0.8)
-            [0.2, 0.3, 0.85, 0.15],  # largest: 2 (0.85)
-            [0.1, 0.2, 0.15, 0.9],   # largest: 3 (0.9)
-            [-0.7, 0.1, 0.1, 0.1],   # largest: 0 (-0.7), should flip
-        ], dtype=np.float32)
+        quats = np.array(
+            [
+                [0.9, 0.1, 0.2, 0.3],  # largest: 0 (0.9)
+                [0.1, 0.8, 0.3, 0.2],  # largest: 1 (0.8)
+                [0.2, 0.3, 0.85, 0.15],  # largest: 2 (0.85)
+                [0.1, 0.2, 0.15, 0.9],  # largest: 3 (0.9)
+                [-0.7, 0.1, 0.1, 0.1],  # largest: 0 (-0.7), should flip
+            ],
+            dtype=np.float32,
+        )
 
         # Normalize
         quats_normalized = quats / np.linalg.norm(quats, axis=1, keepdims=True)
@@ -68,11 +71,16 @@ class TestQuaternionVectorization:
         three_components = quats_normalized_vec[mask].reshape(num_quats, 3)
 
         # VERIFY MATCH
-        np.testing.assert_array_equal(largest_idx, largest_idx_orig,
-                                       err_msg="Largest indices do not match")
-        np.testing.assert_allclose(three_components, three_components_orig,
-                                    rtol=1e-6, atol=1e-6,
-                                    err_msg="Three components do not match")
+        np.testing.assert_array_equal(
+            largest_idx, largest_idx_orig, err_msg="Largest indices do not match"
+        )
+        np.testing.assert_allclose(
+            three_components,
+            three_components_orig,
+            rtol=1e-6,
+            atol=1e-6,
+            err_msg="Three components do not match",
+        )
 
         # Print detailed comparison for verification
         print("\n=== Quaternion Extraction Verification ===")
@@ -135,8 +143,13 @@ class TestDataOrderingAfterSorting:
         print(f"Output chunk 1 first 3 means X values: {result.means[CHUNK_SIZE:CHUNK_SIZE+3, 0]}")
 
         # Verify the data matches (within compression tolerance)
-        np.testing.assert_allclose(result.means, means, rtol=1e-2, atol=0.2,
-                                    err_msg="Means do not match after compression round-trip")
+        np.testing.assert_allclose(
+            result.means,
+            means,
+            rtol=1e-2,
+            atol=0.2,
+            err_msg="Means do not match after compression round-trip",
+        )
 
     def test_shuffled_data_order(self, tmp_path):
         """Test that data with varying spatial patterns compresses correctly.
@@ -178,8 +191,13 @@ class TestDataOrderingAfterSorting:
 
         # Writer doesn't reorder data - chunks are based on original index position
         # So output should match input (within compression tolerance)
-        np.testing.assert_allclose(result.means, means_input, rtol=1e-2, atol=0.2,
-                                    err_msg="Compressed data does not match input order")
+        np.testing.assert_allclose(
+            result.means,
+            means_input,
+            rtol=1e-2,
+            atol=0.2,
+            err_msg="Compressed data does not match input order",
+        )
 
 
 class TestChunkBoundsAlignment:
@@ -222,7 +240,9 @@ class TestChunkBoundsAlignment:
         chunk0_scales = result.scales[0:CHUNK_SIZE]
 
         print("\n=== Chunk Bounds Verification ===")
-        print(f"Chunk 0 means X range: [{chunk0_means[:, 0].min():.2f}, {chunk0_means[:, 0].max():.2f}]")
+        print(
+            f"Chunk 0 means X range: [{chunk0_means[:, 0].min():.2f}, {chunk0_means[:, 0].max():.2f}]"
+        )
         print("Expected: [0.00, 10.00]")
         print(f"Chunk 0 scales range: [{chunk0_scales.min():.4f}, {chunk0_scales.max():.4f}]")
         print("Expected: [0.0100, 0.1000]")
@@ -231,7 +251,9 @@ class TestChunkBoundsAlignment:
         chunk1_means = result.means[CHUNK_SIZE:]
         chunk1_scales = result.scales[CHUNK_SIZE:]
 
-        print(f"Chunk 1 means X range: [{chunk1_means[:, 0].min():.2f}, {chunk1_means[:, 0].max():.2f}]")
+        print(
+            f"Chunk 1 means X range: [{chunk1_means[:, 0].min():.2f}, {chunk1_means[:, 0].max():.2f}]"
+        )
         print("Expected: [100.00, 110.00]")
         print(f"Chunk 1 scales range: [{chunk1_scales.min():.4f}, {chunk1_scales.max():.4f}]")
         print("Expected: [1.0000, 2.0000]")
@@ -265,8 +287,15 @@ class TestRoundTripWithRealData:
         sh0_orig = np.random.randn(num_gaussians, 3).astype(np.float32)
 
         # Write compressed (will sort by chunks internally)
-        write_compressed(output_file, means_orig, scales_orig, quats_orig,
-                         opacities_orig, sh0_orig, validate=True)
+        write_compressed(
+            output_file,
+            means_orig,
+            scales_orig,
+            quats_orig,
+            opacities_orig,
+            sh0_orig,
+            validate=True,
+        )
 
         # Read back (data will be in chunk order)
         result = read_compressed(output_file)
@@ -284,7 +313,7 @@ class TestRoundTripWithRealData:
         # maintain their original order. np.argsort() defaults to quicksort which
         # is NOT stable and can produce different orderings on different platforms.
         chunk_indices = np.arange(num_gaussians) // CHUNK_SIZE
-        sort_idx = np.argsort(chunk_indices, kind='stable')  # Stable sort is critical
+        sort_idx = np.argsort(chunk_indices, kind="stable")  # Stable sort is critical
         means_sorted = means_orig[sort_idx]
         scales_sorted = scales_orig[sort_idx]
         quats_sorted = quats_orig[sort_idx]

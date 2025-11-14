@@ -102,7 +102,7 @@ def test_transfer_speedup_comparison(gsdata_large_no_base, gsdata_large_with_bas
 
     speedup = time_without / time_with
 
-    print(f"\n--- GPU Transfer Performance (400K Gaussians) ---")
+    print("\n--- GPU Transfer Performance (400K Gaussians) ---")
     print(f"WITHOUT _base: {time_without:.2f} ms")
     print(f"WITH _base:    {time_with:.2f} ms")
     print(f"Speedup:       {speedup:.2f}x")
@@ -164,7 +164,7 @@ def test_slice_speedup_comparison(gsdata_large_no_base, gsdata_large_with_base):
 
     speedup = time_without / time_with
 
-    print(f"\n--- Slicing Performance (400K Gaussians, ~50% mask) ---")
+    print("\n--- Slicing Performance (400K Gaussians, ~50% mask) ---")
     print(f"WITHOUT _base: {time_without:.2f} ms")
     print(f"WITH _base:    {time_with:.2f} ms")
     print(f"Speedup:       {speedup:.2f}x")
@@ -221,7 +221,7 @@ def test_clone_speedup_comparison(gsdata_large_no_base, gsdata_large_with_base):
 
     speedup = time_without / time_with
 
-    print(f"\n--- Clone Performance (400K Gaussians) ---")
+    print("\n--- Clone Performance (400K Gaussians) ---")
     print(f"WITHOUT _base: {time_without:.2f} ms")
     print(f"WITH _base:    {time_with:.2f} ms")
     print(f"Speedup:       {speedup:.2f}x")

@@ -1,7 +1,6 @@
 """Test dataclass functionality."""
 
 import numpy as np
-import pytest
 
 from gsply import GSData
 
@@ -52,7 +51,7 @@ class TestDataclassRefactoring:
             sh0=np.random.rand(n, 3).astype(np.float32),
             shN=np.random.rand(n, 15, 3).astype(np.float32),
             masks=None,
-            _base=None
+            _base=None,
         )
 
         # len() should return number of Gaussians
@@ -78,7 +77,7 @@ class TestDataclassRefactoring:
             opacities=opacities,
             sh0=sh0,
             shN=shN,
-            _base=None
+            _base=None,
         )
         assert data.masks is None  # Default is None
 
@@ -86,7 +85,6 @@ class TestDataclassRefactoring:
         custom_masks = np.random.rand(n) > 0.5
         data.masks = custom_masks
         assert np.array_equal(data.masks, custom_masks)
-
 
     def test_mutability(self):
         """Test that dataclass fields are mutable."""
@@ -105,7 +103,7 @@ class TestDataclassRefactoring:
             opacities=opacities,
             sh0=sh0,
             shN=shN,
-            _base=None
+            _base=None,
         )
 
         # Test that we can mutate fields
