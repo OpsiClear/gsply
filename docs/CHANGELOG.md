@@ -33,7 +33,14 @@
 
 ### Performance Improvements
 - **Peak read performance**: 93M Gaussians/sec (up from 78M)
+- **Peak write performance**: 57M Gaussians/sec (zero-copy)
 - **Real-world average**: 75.5M Gaussians/sec on 90 test files
+- **Automatic write optimization**: All writes are automatically optimized
+  - Auto-consolidation: 2.6-2.8x faster writes via automatic `_base` construction
+  - Zero-copy path: Additional 2.8x speedup for data from `plyread()` (total 7-8x vs baseline)
+  - Works transparently - no user code changes required!
+  - 400K SH0: 18-22ms (auto-optimized) or 7ms (zero-copy from file)
+  - 400K SH3: 96ms (auto-optimized) or 35ms (zero-copy from file)
 - Dataclass implementation faster than NamedTuple
 
 ### Migration Guide
@@ -46,6 +53,19 @@ data = GSData(means, scales, quats, opacities, sh0, shN, _base=None)
 means = data.means
 scales = data.scales
 # ... or use attributes directly
+
+# Write operations - automatically optimized!
+data = gsply.plyread("input.ply")
+gsply.plywrite("output.ply", data)  # RECOMMENDED - zero-copy (7-8x faster)!
+
+# Creating new data - automatically optimized via consolidation (2.6-2.8x faster)
+data = GSData(means=means, scales=scales, ...)
+gsply.plywrite("output.ply", data)  # Automatically consolidated internally
+
+# Or unpack - still automatically optimized
+gsply.plywrite("output.ply", *data.unpack())  # Auto-consolidated too!
+
+# Creating new GSData
 data = GSData(
     means=means,
     scales=scales,

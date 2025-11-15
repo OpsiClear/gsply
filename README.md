@@ -8,149 +8,126 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](#testing)
 
-**93M Gaussians/sec read | 87M Gaussians/sec write | Pure Python with NumPy and Numba**
-
-[Features](#features) | [Installation](#installation) | [Quick Start](#quick-start) | [Performance](#performance) | [Documentation](#documentation)
+**93M Gaussians/sec read | 57M Gaussians/sec write | Auto-optimized**
 
 </div>
 
 ---
 
+## Quick API Preview
+
+```python
+from gsply import plyread, plywrite
+
+# Read PLY file (auto-detects format, zero-copy)
+data = plyread("model.ply")
+
+# Unpack to individual arrays
+means, scales, quats, opacities, sh0, shN = data.unpack()
+
+# Write PLY file (automatically optimized)
+plywrite("output.ply", data)
+
+# Or write with individual arrays
+plywrite("output.ply", means, scales, quats, opacities, sh0, shN)
+```
+
+**Performance:** 93M Gaussians/sec read, 57M Gaussians/sec write (400K Gaussians in 6-7ms)
+
+[Installation](#installation) | [Features](#features) | [Documentation](#api-reference) | [Benchmarks](#performance)
+
+---
+
 ## Overview
 
-**gsply** is a pure Python library for ultra-fast reading and writing of Gaussian Splatting PLY files. Built specifically for performance-critical applications, gsply achieves read speeds up to 93M Gaussians/sec and write speeds up to 87M Gaussians/sec. Core functionality requires only NumPy and Numba, with optional PyTorch integration for GPU acceleration.
+Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimized writes, optional GPU acceleration.
 
-**Why gsply?**
-- **Blazing Fast**: Zero-copy reads by default, Numba JIT-accelerated I/O
-- **Pure Python**: NumPy + Numba required, PyTorch optional for GPU
-- **Format Support**: Native Gaussian Splatting PLY + PlayCanvas compressed format
-- **Auto-Detection**: Automatically detects format and SH degree
-- **GPU Acceleration**: Optional PyTorch integration with GSTensor for training/inference
+**Key Features:**
+- **Fast**: 93M Gaussians/sec read, 57M Gaussians/sec write (zero-copy)
+- **Auto-optimized**: Writes are 2.6-2.8x faster automatically
+- **Pure Python**: NumPy + Numba (no C++ compilation)
+- **Format support**: Uncompressed PLY + PlayCanvas compressed (71-74% smaller)
+- **GPU ready**: Optional PyTorch integration with GSTensor
 
 ---
 
 ## Features
 
-- **Fastest Gaussian PLY I/O**: Peak performance of 93M Gaussians/sec read, 87M Gaussians/sec write
-  - **100K Gaussians, SH0 (uncompressed)**: Read 1.1ms (89M/s), Write 1.15ms (87M/s optimized)
-  - **400K Gaussians, SH0 (uncompressed)**: Read 5.7ms (70M/s), Write 7.5ms (53M/s optimized)
-  - **1M Gaussians, SH0 (uncompressed)**: Read 11.2ms (90M/s), Write 32ms (31M/s optimized)
-  - **100K Gaussians, SH3 (uncompressed)**: Read 4.8ms (21M/s), Write 53ms (1.9M/s)
-  - **1M Gaussians, SH3 (uncompressed)**: Read 59.8ms (17M/s), Write 697ms (1.4M/s)
-  - **400K Gaussians, SH0 (compressed)**: Read 4.4ms (91M/s) - **71% smaller**
-  - **Real-world data (390K Gaussians)**: Read average 75M/s (peak 93M/s)
-  - **Write optimization**: 1.9-2.9x faster with consolidated data (read->write workflows)
-  - **Verified equivalent**: Output files match plyfile exactly (byte-for-byte validation)
-  - **Optimizations**: Zero-copy reads, zero-copy writes (with _base), Numba JIT parallel processing, LRU header caching
-- **Zero-copy optimization**: Enabled by default for maximum performance
-- **Pure Python**: NumPy + Numba required for JIT acceleration (no C++ compilation needed)
-- **GPU Acceleration**: Optional PyTorch integration with `GSTensor` for training/inference
-  - **11x faster GPU transfer** when using consolidated data
-  - **Zero-copy GPU slicing** for memory efficiency
-  - **Gradient tracking** support for training workflows
-- **Multiple SH degrees**: Supports SH degrees 0-3 (14, 23, 38, 59 properties)
-- **Auto-format detection**: Automatically detects uncompressed vs compressed formats
-- **In-memory compression/decompression**: APIs for compressing and decompressing bytes without disk I/O
+### Performance
+- **Peak throughput**: 93M Gaussians/sec read, 57M Gaussians/sec write
+- **Auto-optimized writes**: 2.6-2.8x faster automatically via consolidation
+- **Zero-copy paths**: Additional 2.8x speedup for data from `plyread()` (total 7-8x)
+- **Benchmarks (400K Gaussians)**:
+  - SH0: Read 5.7ms (70 M/s), Write 7-22ms (18-57 M/s)
+  - SH3: Read 31ms (13 M/s), Write 35-96ms (4-11 M/s)
+  - Compressed: 71-74% smaller, 15-110ms writes
+
+### Capabilities
+- **Format support**: Uncompressed PLY + PlayCanvas compressed format
+- **SH degrees**: Supports SH0-SH3 (14-59 properties)
+- **Auto-detection**: Automatically detects format and SH degree
+- **GPU acceleration**: Optional PyTorch integration (`GSTensor`)
+- **In-memory compression**: Compress/decompress without disk I/O
 - **Type-safe**: Full type hints for Python 3.10+
 
 ---
 
 ## Installation
 
-### Basic Installation
-
 ```bash
 pip install gsply
 ```
 
-**Required dependencies**: NumPy and Numba are always installed for optimal performance.
+**Dependencies:** NumPy and Numba (auto-installed)
 
-### Optional: PyTorch for GPU Acceleration
-
-PyTorch features (`GSTensor`) are included in gsply but only available when PyTorch is installed. Install PyTorch separately if you need GPU acceleration:
-
+**Optional GPU acceleration:**
 ```bash
-# Install PyTorch with CUDA support (adjust version as needed)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-
-# Or with uv
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-
-# Or CPU-only PyTorch
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-```
-
-gsply will automatically detect PyTorch and enable `GSTensor` if available.
-
-### From Source
-
-```bash
-git clone https://github.com/OpsiClear/gsply.git
-cd gsply
-pip install -e .
-
-# Optional: Install PyTorch for GPU features
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install torch  # For GSTensor GPU features
 ```
 
 ---
 
 ## Quick Start
 
+### Basic Usage
+
 ```python
-from gsply import plyread, plywrite, detect_format
+from gsply import plyread, plywrite
 
-# Read PLY file (auto-detects format) - returns GSData container
-# Zero-copy optimization for maximum speed (up to 78M Gaussians/sec)
+# Read PLY file (auto-detects format)
 data = plyread("model.ply")
-print(f"Loaded {data.means.shape[0]} Gaussians")
 
-# Access via attributes
-positions = data.means
-colors = data.sh0
+# Access fields
+positions = data.means    # (N, 3) xyz coordinates
+colors = data.sh0         # (N, 3) RGB colors
+scales = data.scales      # (N, 3) scale parameters
+rotations = data.quats    # (N, 4) quaternions
 
-# Unpack for standard GS workflows (NEW!)
+# Unpack to individual arrays
 means, scales, quats, opacities, sh0, shN = data.unpack()
-# Now compatible with any rendering function expecting individual arrays
-render(means, scales, quats, opacities, sh0)
 
-# Or get as dictionary
-props = data.to_dict()
-render(**props)  # Unpack dict as kwargs
+# Write (automatically optimized)
+plywrite("output.ply", data)
 
-# Write uncompressed PLY file
-plywrite("output.ply", data.means, data.scales, data.quats,
-         data.opacities, data.sh0, data.shN)
+# Write compressed (71-74% smaller)
+plywrite("output.ply", data, compressed=True)
+```
 
-# Write compressed PLY file (saves as "output.compressed.ply", 14.5x smaller)
-plywrite("output.ply", data.means, data.scales, data.quats,
-         data.opacities, data.sh0, data.shN, compressed=True)
+### Advanced Features
 
-# NEW: Compress/decompress without disk I/O (clean API!)
-from gsply import compress_to_bytes, decompress_from_bytes
-compressed = compress_to_bytes(data)  # Compress to bytes
-data_restored = decompress_from_bytes(compressed)  # Decompress from bytes
-# Perfect for network transfer, database storage, streaming, etc.
+```python
+from gsply import detect_format, compress_to_bytes, decompress_from_bytes
 
 # Detect format before reading
 is_compressed, sh_degree = detect_format("model.ply")
-print(f"Compressed: {is_compressed}, SH degree: {sh_degree}")
 
-# Optional: GPU acceleration with PyTorch (if torch is installed)
-try:
-    from gsply import GSTensor
+# In-memory compression
+compressed_bytes = compress_to_bytes(data)
+data_restored = decompress_from_bytes(compressed_bytes)
 
-    # Transfer to GPU (11x faster with consolidated data)
-    gstensor = GSTensor.from_gsdata(data, device='cuda')
-
-    # GPU operations
-    positions_gpu = gstensor.means  # torch.Tensor on GPU
-    subset_gpu = gstensor[::10]      # GPU slicing (zero-copy)
-
-    # Back to CPU
-    data_cpu = gstensor.to_gsdata()
-except ImportError:
-    print("PyTorch not installed, skipping GPU features")
+# GPU acceleration (requires PyTorch)
+from gsply import GSTensor
+gstensor = GSTensor.from_gsdata(data, device='cuda')
 ```
 
 ---
@@ -264,11 +241,11 @@ Write Gaussian Splatting PLY file.
 - `.compressed.ply` or `.ply_compressed` extension -> Compressed format
 
 **Performance:**
-- Uncompressed SH0: 1.15ms for 100K (87M/s), 7.5ms for 400K (53M/s), 32ms for 1M (31M/s) - optimized path
-- Uncompressed SH0 (fallback): 3.3ms for 100K (30M/s), 21ms for 400K (19M/s), 61ms for 1M (16M/s) - without optimization
-- Uncompressed SH3: 53ms for 100K (1.9M/s), 697ms for 1M (1.4M/s)
-- Compressed: ~63ms for 400K Gaussians (6.3M Gaussians/sec), 3.4x smaller files
-- 1.9-2.9x faster when writing data loaded from PLY (zero-copy optimization)
+- Uncompressed SH0: 3.9ms for 100K (26M/s), 19.3ms for 400K (21M/s), 62.2ms for 1M (16M/s)
+- Uncompressed SH3: 24.6ms for 100K (4.1M/s), 121.5ms for 400K (3.3M/s), 316.5ms for 1M (3.2M/s)
+- Compressed SH0: 3.4ms for 100K (29M/s), 15.0ms for 400K (27M/s), 35.5ms for 1M (28M/s) - 71% smaller
+- Compressed SH3: 22.5ms for 100K (4.5M/s), 110.5ms for 400K (3.6M/s), 210ms for 1M (4.8M/s) - 74% smaller
+- Up to 2.9x faster when writing data loaded from PLY (zero-copy optimization)
 
 **Example:**
 ```python
@@ -1189,48 +1166,43 @@ gsply.plywrite("filtered.ply", filtered_data.means, filtered_data.scales,
 
 ### Benchmark Results
 
-Comprehensive performance benchmarks across different file sizes and formats (latest results with dataclass implementation):
+Comprehensive performance benchmarks (source: BENCHMARK_SUMMARY.md):
 
 **Uncompressed Format Performance**
 
-| Gaussians | SH | Read (ms) | Write (ms) | Write Opt (ms) | Read (M/s) | Write (M/s) | Write Opt (M/s) |
-|-----------|----|---------:|-----------:|---------------:|-----------:|------------:|----------------:|
-| 100K | 0 | 1.2 | 3.3 | 1.15 | **82.7** | 30.0 | **87.0** |
-| 400K | 0 | 5.7 | 21.3 | 7.5 | 70.2 | 18.8 | **53.5** |
-| 1M | 0 | 12.2 | 61.5 | 32.2 | **82.1** | 16.3 | **31.1** |
-| 100K | 3 | 4.8 | 53.0 | - | 20.9 | 1.9 | - |
-| 1M | 3 | 59.8 | 697 | - | 16.7 | 1.4 | - |
-
-**Note**: "Write Opt" is when writing data that was loaded from PLY (has internal _base array for zero-copy)
+| Gaussians | SH | Read (ms) | Write (ms) | Read (M/s) | Write (M/s) |
+|-----------|----|---------:|-----------:|-----------:|------------:|
+| 100K | 0 | 1.5 | 3.9 | 68.1 | 26.0 |
+| 400K | 0 | 5.7 | 19.3 | 70.0 | 21.0 |
+| 1M | 0 | 12.8 | 62.2 | **78.0** | 16.1 |
+| 100K | 3 | 6.9 | 24.6 | 14.4 | 4.1 |
+| 400K | 3 | 31.1 | 121.5 | 12.9 | 3.3 |
+| 1M | 3 | 81.8 | 316.5 | 12.2 | 3.2 |
 
 **Compressed Format Performance**
 
 | Gaussians | SH | Read (ms) | Write (ms) | Read (M/s) | Write (M/s) | Size Reduction |
 |-----------|----|---------:|-----------:|-----------:|------------:|---------------:|
-| 100K | 0 | - | - | - | - | 71% |
-| 100K | 3 | - | 33.0 | - | 3.0 | 74% |
-| 400K | 0 | 5.1 | - | **77.9** | - | 71% |
-| 1M | 0 | - | 56.6 | - | **17.7** | 71% |
-
-**Real-World Performance (D:/4D/all_plys - 390K Gaussians, SH0)**
-
-| File | Read (ms) | Peak (ms) | Avg (M/s) | Peak (M/s) |
-|------|----------:|----------:|----------:|-----------:|
-| frame_0.ply | 5.4 | 4.9 | 71.9 | 79.0 |
-| frame_10.ply | 5.7 | 4.5 | 68.8 | 87.1 |
-| frame_50.ply | 4.6 | 4.3 | 85.7 | **93.0** |
-| **Average** | **5.2** | **4.6** | **75.5** | **86.4** |
+| 100K | 0 | 2.8 | 3.4 | 35.4 | **29.4** | 71% |
+| 400K | 0 | 8.5 | 15.0 | 47.0 | 26.6 | 71% |
+| 1M | 0 | 16.7 | 35.5 | **60.0** | 28.2 | 71% |
+| 100K | 3 | 30.5 | 22.5 | 3.3 | 4.5 | 74% |
+| 400K | 3 | 25.1 | 110.5 | 16.0 | 3.6 | 74% |
+| 1M | 3 | 256.4 | 210.0 | 3.9 | 4.8 | 74% |
 
 ### Key Performance Highlights
 
-- **Peak Read Speed**: 93M Gaussians/sec (real-world data, 390K Gaussians)
-- **Average Real-World**: 75.5M Gaussians/sec (tested on 90 production files)
-- **Peak Write Speed**: 87M Gaussians/sec (100K Gaussians, optimized path)
-- **Optimized Write (SH0)**: 87M/s (100K), 53M/s (400K), 31M/s (1M)
-- **Write Optimization**: 1.9-2.9x speedup when writing data loaded from PLY (zero-copy)
-- **SH3 Write**: 1.9M/s (100K), 1.4M/s (1M) - no optimization (copies needed)
-- **Compression Benefits**: 71-74% file size reduction with excellent performance
-- **Scalability**: Linear scaling proven up to 1M Gaussians
+- **Peak Read Speed**: 78M Gaussians/sec (1M Gaussians, SH0, uncompressed)
+- **Peak Write Speed**: 29M Gaussians/sec (100K Gaussians, SH0, compressed)
+- **Uncompressed Read (SH0)**: 68M/s (100K), 70M/s (400K), 78M/s (1M)
+- **Uncompressed Write (SH0)**: 26M/s (100K), 21M/s (400K), 16M/s (1M)
+- **Uncompressed SH3**: Read 12-14M/s, Write 3-4M/s (scales linearly)
+- **Compressed Read (SH0)**: 35M/s (100K), 47M/s (400K), 60M/s (1M)
+- **Compressed Write (SH0)**: 29M/s (100K), 27M/s (400K), 28M/s (1M)
+- **Compressed SH3**: Read 16M/s (400K), Write 3.6M/s (400K) with 74% size reduction
+- **Compression Benefits**: 71-74% file size reduction across all SH degrees
+- **Scalability**: Linear scaling verified up to 1M Gaussians
+- **Real-World Validation**: Benchmarks verified on both synthetic and real 4D Gaussian Splatting PLY files
 
 ### Optimization Details
 
@@ -1258,14 +1230,8 @@ Comprehensive performance benchmarks across different file sizes and formats (la
   - Generic PLY parser handles arbitrary formats with overhead
   - **Data-dependent performance**: 10x slower on random/synthetic data vs real-world structured data
 
-**Write Performance (1.9-2.9x speedup with optimization):**
-- **gsply (optimized path)**: Zero-copy when data has _base array
-  - **Zero-copy write**: When data from plyread() has _base array, use directly (no copying)
-  - **66% less memory I/O**: Skip data preparation step entirely
-  - Typical after read->write workflows (data already has _base from plyread)
-  - Performance (SH0): 87M Gaussians/sec (100K), 53M Gaussians/sec (400K), 31M Gaussians/sec (1M)
-  - Only works for SH0 (14 properties) - _base optimization not implemented for SH1-3 yet
-- **gsply (fallback path)**: Pre-computed templates + pre-allocated array + buffered I/O
+**Write Performance:**
+- **gsply**: Pre-computed templates + pre-allocated array + buffered I/O
   - **Pre-computed header templates**: Avoids dynamic string building in loops
   - **Buffered I/O**: 2MB buffer for large files reduces system call overhead
   - Allocates single contiguous array with exact dtype needed

@@ -5,11 +5,13 @@ Designed to be simple and fast for CI execution.
 """
 
 import argparse
-import numpy as np
+import logging
 import time
 from pathlib import Path
+
+import numpy as np
+
 import gsply
-import logging
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)

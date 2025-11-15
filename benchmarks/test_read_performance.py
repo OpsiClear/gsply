@@ -1,9 +1,11 @@
 """Test real-world read performance with the new dataclass implementation."""
 
+import tempfile
 import time
 from pathlib import Path
-import tempfile
+
 import numpy as np
+
 from gsply import plyread, plywrite
 
 

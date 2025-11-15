@@ -7,10 +7,12 @@ Creates test PLY files in various formats:
 Allows benchmarking all optimization paths.
 """
 
-import numpy as np
-from pathlib import Path
-import gsply
 import logging
+from pathlib import Path
+
+import numpy as np
+
+import gsply
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -131,7 +133,7 @@ def main():
 
     logger.info(f"\nTest data created in: {output_dir.absolute()}")
     logger.info("Use these files with benchmark.py:")
-    logger.info(f"  uv run python benchmarks/benchmark.py --file benchmarks/test_data/synthetic_400k_sh3_uncompressed.ply")
+    logger.info("  uv run python benchmarks/benchmark.py --file benchmarks/test_data/synthetic_400k_sh3_uncompressed.ply")
 
 
 if __name__ == "__main__":

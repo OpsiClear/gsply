@@ -38,11 +38,11 @@ Features:
     - Auto-format detection
     - Numba JIT acceleration (3.8-6x faster compressed I/O)
 
-Performance (400K Gaussians):
-    - Read uncompressed: ~6ms (zero-copy views)
-    - Read compressed: ~15ms (JIT-accelerated)
-    - Write uncompressed: ~23ms
-    - Write compressed: ~63ms (JIT-accelerated)
+Performance (400K Gaussians, SH0):
+    - Read uncompressed: ~6ms (70M/sec, zero-copy views)
+    - Read compressed: ~8.5ms (47M/sec, JIT-accelerated)
+    - Write uncompressed: ~19ms (21M/sec)
+    - Write compressed: ~15ms (27M/sec, JIT-accelerated, 71% smaller)
 """
 
 from gsply.formats import detect_format
@@ -81,6 +81,6 @@ def __getattr__(name):
             return GSTensor
         except ImportError as e:
             raise ImportError(
-                "GSTensor requires PyTorch to be installed.\n" "Install with: pip install torch"
+                "GSTensor requires PyTorch to be installed.\nInstall with: pip install torch"
             ) from e
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

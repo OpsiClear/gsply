@@ -54,32 +54,31 @@ def standard_transfer(data: GSData, device: str, dtype: torch.dtype):
         # Fast path
         base_tensor = torch.from_numpy(data._base).to(device=device_obj, dtype=dtype)
         return base_tensor
+    # Fallback path
+    n = len(data)
+    if data.shN is not None and data.shN.shape[1] > 0:
+        sh_coeffs = data.shN.shape[1]
+        n_props = 14 + sh_coeffs * 3
     else:
-        # Fallback path
-        n = len(data)
-        if data.shN is not None and data.shN.shape[1] > 0:
-            sh_coeffs = data.shN.shape[1]
-            n_props = 14 + sh_coeffs * 3
-        else:
-            n_props = 14
+        n_props = 14
 
-        base_cpu = np.empty((n, n_props), dtype=np.float32)
-        base_cpu[:, 0:3] = data.means
-        base_cpu[:, 3:6] = data.sh0
+    base_cpu = np.empty((n, n_props), dtype=np.float32)
+    base_cpu[:, 0:3] = data.means
+    base_cpu[:, 3:6] = data.sh0
 
-        if data.shN is not None and sh_coeffs > 0:
-            shN_flat = data.shN.reshape(n, sh_coeffs * 3)
-            base_cpu[:, 6:6 + sh_coeffs * 3] = shN_flat
-            opacity_idx = 6 + sh_coeffs * 3
-        else:
-            opacity_idx = 6
+    if data.shN is not None and sh_coeffs > 0:
+        shN_flat = data.shN.reshape(n, sh_coeffs * 3)
+        base_cpu[:, 6:6 + sh_coeffs * 3] = shN_flat
+        opacity_idx = 6 + sh_coeffs * 3
+    else:
+        opacity_idx = 6
 
-        base_cpu[:, opacity_idx] = data.opacities
-        base_cpu[:, opacity_idx + 1:opacity_idx + 4] = data.scales
-        base_cpu[:, opacity_idx + 4:opacity_idx + 8] = data.quats
+    base_cpu[:, opacity_idx] = data.opacities
+    base_cpu[:, opacity_idx + 1:opacity_idx + 4] = data.scales
+    base_cpu[:, opacity_idx + 4:opacity_idx + 8] = data.quats
 
-        base_tensor = torch.from_numpy(base_cpu).to(device=device_obj, dtype=dtype)
-        return base_tensor
+    base_tensor = torch.from_numpy(base_cpu).to(device=device_obj, dtype=dtype)
+    return base_tensor
 
 
 def pinned_transfer(data: GSData, device: str, dtype: torch.dtype):
@@ -96,39 +95,38 @@ def pinned_transfer(data: GSData, device: str, dtype: torch.dtype):
         else:
             base_tensor = torch.from_numpy(data._base).to(device=device_obj, dtype=dtype)
         return base_tensor
+    # Fallback path with pinning
+    n = len(data)
+    if data.shN is not None and data.shN.shape[1] > 0:
+        sh_coeffs = data.shN.shape[1]
+        n_props = 14 + sh_coeffs * 3
     else:
-        # Fallback path with pinning
-        n = len(data)
-        if data.shN is not None and data.shN.shape[1] > 0:
-            sh_coeffs = data.shN.shape[1]
-            n_props = 14 + sh_coeffs * 3
-        else:
-            n_props = 14
+        n_props = 14
 
-        base_cpu = np.empty((n, n_props), dtype=np.float32)
-        base_cpu[:, 0:3] = data.means
-        base_cpu[:, 3:6] = data.sh0
+    base_cpu = np.empty((n, n_props), dtype=np.float32)
+    base_cpu[:, 0:3] = data.means
+    base_cpu[:, 3:6] = data.sh0
 
-        if data.shN is not None and sh_coeffs > 0:
-            shN_flat = data.shN.reshape(n, sh_coeffs * 3)
-            base_cpu[:, 6:6 + sh_coeffs * 3] = shN_flat
-            opacity_idx = 6 + sh_coeffs * 3
-        else:
-            opacity_idx = 6
+    if data.shN is not None and sh_coeffs > 0:
+        shN_flat = data.shN.reshape(n, sh_coeffs * 3)
+        base_cpu[:, 6:6 + sh_coeffs * 3] = shN_flat
+        opacity_idx = 6 + sh_coeffs * 3
+    else:
+        opacity_idx = 6
 
-        base_cpu[:, opacity_idx] = data.opacities
-        base_cpu[:, opacity_idx + 1:opacity_idx + 4] = data.scales
-        base_cpu[:, opacity_idx + 4:opacity_idx + 8] = data.quats
+    base_cpu[:, opacity_idx] = data.opacities
+    base_cpu[:, opacity_idx + 1:opacity_idx + 4] = data.scales
+    base_cpu[:, opacity_idx + 4:opacity_idx + 8] = data.quats
 
-        if device_obj.type == 'cuda':
-            base_cpu_tensor = torch.from_numpy(base_cpu)
-            if base_cpu_tensor.dtype != dtype:
-                base_cpu_tensor = base_cpu_tensor.to(dtype=dtype)
-            base_tensor = base_cpu_tensor.pin_memory().to(device=device_obj, non_blocking=True)
-        else:
-            base_tensor = torch.from_numpy(base_cpu).to(device=device_obj, dtype=dtype)
+    if device_obj.type == 'cuda':
+        base_cpu_tensor = torch.from_numpy(base_cpu)
+        if base_cpu_tensor.dtype != dtype:
+            base_cpu_tensor = base_cpu_tensor.to(dtype=dtype)
+        base_tensor = base_cpu_tensor.pin_memory().to(device=device_obj, non_blocking=True)
+    else:
+        base_tensor = torch.from_numpy(base_cpu).to(device=device_obj, dtype=dtype)
 
-        return base_tensor
+    return base_tensor
 
 
 def benchmark_file(file_path: Path, device: str = 'cuda', n_trials: int = 50):
@@ -160,7 +158,7 @@ def benchmark_file(file_path: Path, device: str = 'cuda', n_trials: int = 50):
 
     # Benchmark fast path (with _base)
     if has_base:
-        print(f"\n--- FAST PATH (with _base) ---")
+        print("\n--- FAST PATH (with _base) ---")
 
         print(f"Running standard transfer ({n_trials} trials)...")
         median_std, std_std, min_std, max_std = median_time_ms(
@@ -174,7 +172,7 @@ def benchmark_file(file_path: Path, device: str = 'cuda', n_trials: int = 50):
             n_trials=n_trials
         )
 
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  Standard:     {median_std:6.2f} ms  (std: {std_std:5.2f}, min: {min_std:6.2f}, max: {max_std:6.2f})")
         print(f"  Pinned:       {median_pin:6.2f} ms  (std: {std_pin:5.2f}, min: {min_pin:6.2f}, max: {max_pin:6.2f})")
 
@@ -191,7 +189,7 @@ def benchmark_file(file_path: Path, device: str = 'cuda', n_trials: int = 50):
         print(f"  Throughput (pinned):   {throughput_pin:.2f} M Gaussians/sec")
 
     # Benchmark fallback path (without _base)
-    print(f"\n--- FALLBACK PATH (without _base) ---")
+    print("\n--- FALLBACK PATH (without _base) ---")
 
     # Create data without _base
     data_no_base = GSData(
@@ -217,7 +215,7 @@ def benchmark_file(file_path: Path, device: str = 'cuda', n_trials: int = 50):
         n_trials=n_trials
     )
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Standard:     {median_std:6.2f} ms  (std: {std_std:5.2f}, min: {min_std:6.2f}, max: {max_std:6.2f})")
     print(f"  Pinned:       {median_pin:6.2f} ms  (std: {std_pin:5.2f}, min: {min_pin:6.2f}, max: {max_pin:6.2f})")
 
@@ -265,14 +263,14 @@ def benchmark_synthetic(sizes: list[int], device: str = 'cuda', n_trials: int = 
         mem_mb = data._base.nbytes / 1024 / 1024
         print(f"  Memory size: {mem_mb:.2f} MB")
 
-        print(f"  Standard transfer...")
+        print("  Standard transfer...")
         median_std, _, _, _ = median_time_ms(
             lambda: standard_transfer(data, device, dtype),
             n_trials=n_trials,
             warmup=3
         )
 
-        print(f"  Pinned transfer...")
+        print("  Pinned transfer...")
         median_pin, _, _, _ = median_time_ms(
             lambda: pinned_transfer(data, device, dtype),
             n_trials=n_trials,

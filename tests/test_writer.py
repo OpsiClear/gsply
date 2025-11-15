@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from gsply.gsdata import GSData
 from gsply.reader import plyread, read_compressed
 from gsply.writer import plywrite, write_compressed, write_uncompressed
 
@@ -25,8 +26,19 @@ class TestWriteUncompressed:
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
         shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
+        # Create GSData
+        data = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            _base=None,
+        )
+
         # Write
-        write_uncompressed(output_file, means, scales, quats, opacities, sh0, shN)
+        write_uncompressed(output_file, data)
 
         # Check file exists and has content
         assert output_file.exists()
@@ -43,8 +55,19 @@ class TestWriteUncompressed:
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
 
-        # Write without shN
-        write_uncompressed(output_file, means, scales, quats, opacities, sh0, shN=None)
+        # Create GSData without shN
+        data = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=np.empty((num_gaussians, 0, 3), dtype=np.float32),
+            _base=None,
+        )
+
+        # Write
+        write_uncompressed(output_file, data)
 
         assert output_file.exists()
 
@@ -59,10 +82,21 @@ class TestWriteUncompressed:
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
 
-        # Flattened shN (N, K*3)
-        shN_flat = np.random.randn(num_gaussians, 45).astype(np.float32)  # noqa: N806
+        # Reshape to (N, K, 3) format
+        shN = np.random.randn(num_gaussians, 15, 3).astype(np.float32)  # noqa: N806
 
-        write_uncompressed(output_file, means, scales, quats, opacities, sh0, shN_flat)
+        # Create GSData
+        data = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            _base=None,
+        )
+
+        write_uncompressed(output_file, data)
 
         assert output_file.exists()
 
@@ -76,8 +110,19 @@ class TestWriteUncompressed:
         opacities = np.random.randn(100).astype(np.float32)
         sh0 = np.random.randn(100, 3).astype(np.float32)
 
+        # Create GSData with mismatched shapes
+        data = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=np.empty((100, 0, 3), dtype=np.float32),
+            _base=None,
+        )
+
         with pytest.raises(AssertionError):
-            write_uncompressed(output_file, means, scales, quats, opacities, sh0)
+            write_uncompressed(output_file, data)
 
 
 class TestWriteCompressed:
@@ -255,8 +300,19 @@ class TestRoundTrip:
         opacities = np.random.randn(num_gaussians).astype(np.float32)
         sh0 = np.random.randn(num_gaussians, 3).astype(np.float32)
 
+        # Create GSData for uncompressed write
+        data = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=np.empty((num_gaussians, 0, 3), dtype=np.float32),
+            _base=None,
+        )
+
         # Write both formats
-        write_uncompressed(uncompressed_file, means, scales, quats, opacities, sh0)
+        write_uncompressed(uncompressed_file, data)
         write_compressed(compressed_file, means, scales, quats, opacities, sh0)
 
         # Verify compressed is significantly smaller (at least 3x for SH0)

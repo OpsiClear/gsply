@@ -1,10 +1,12 @@
 """Benchmark compressed format specifically to measure optimization impact."""
 
-import numpy as np
+import logging
 import time
 from pathlib import Path
+
+import numpy as np
+
 import gsply
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

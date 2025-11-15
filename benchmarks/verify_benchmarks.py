@@ -1,15 +1,15 @@
 """Verify benchmark data integrity and test a quick sanity check."""
 
 import sys
-from pathlib import Path
 import time
-import numpy as np
+from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import gsply
 import logging
+
+import gsply
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)

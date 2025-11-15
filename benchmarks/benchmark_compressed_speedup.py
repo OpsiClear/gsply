@@ -4,11 +4,13 @@ This script benchmarks compressed read/write operations and compares
 against uncompressed format to show speedup and compression ratio.
 """
 
-import numpy as np
+import logging
 import time
 from pathlib import Path
+
+import numpy as np
+
 import gsply
-import logging
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
@@ -24,10 +26,10 @@ def benchmark_compressed_speedup(num_gaussians: int = 50000, iterations: int = 1
     logger.info("=" * 70)
     logger.info("Compressed Format Speedup Benchmark")
     logger.info("=" * 70)
-    logger.info(f"\nTest configuration:")
+    logger.info("\nTest configuration:")
     logger.info(f"  Gaussians: {num_gaussians:,}")
     logger.info(f"  Iterations: {iterations}")
-    logger.info(f"  SH degree: 3")
+    logger.info("  SH degree: 3")
 
     # Generate test data
     np.random.seed(42)
@@ -111,12 +113,12 @@ def benchmark_compressed_speedup(num_gaussians: int = 50000, iterations: int = 1
     logger.info("\n" + "=" * 70)
     logger.info("RESULTS SUMMARY")
     logger.info("=" * 70)
-    logger.info(f"\nFile sizes:")
+    logger.info("\nFile sizes:")
     logger.info(f"  Uncompressed: {unc_size:.2f} MB")
     logger.info(f"  Compressed:   {cmp_size:.2f} MB")
     logger.info(f"  Compression ratio: {compression_ratio:.1f}x")
 
-    logger.info(f"\nWrite performance:")
+    logger.info("\nWrite performance:")
     logger.info(f"  Uncompressed: {unc_write_mean:.2f} ms")
     logger.info(f"  Compressed:   {cmp_write_mean:.2f} ms")
     if cmp_write_mean < unc_write_mean:
@@ -126,7 +128,7 @@ def benchmark_compressed_speedup(num_gaussians: int = 50000, iterations: int = 1
         slowdown = cmp_write_mean / unc_write_mean
         logger.info(f"  Compressed is {slowdown:.2f}x slower")
 
-    logger.info(f"\nRead performance:")
+    logger.info("\nRead performance:")
     logger.info(f"  Uncompressed: {unc_read_mean:.2f} ms")
     logger.info(f"  Compressed:   {cmp_read_mean:.2f} ms")
     if cmp_read_mean < unc_read_mean:

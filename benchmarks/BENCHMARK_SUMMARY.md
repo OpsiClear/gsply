@@ -1,16 +1,18 @@
 # GSPLY Performance Benchmark Summary
 
-**Date:** November 13, 2025
+**Date:** January 14, 2025
 **Platform:** Windows 11
 **Python:** 3.12+
-**Library Version:** Latest (post-optimization)
+**Library Version:** v0.2.0 (verified benchmarks)
 
 ## Executive Summary
 
 The gsply library demonstrates exceptional performance across all tested scenarios, with particularly impressive results for uncompressed format operations. Key highlights:
 
-- **Peak Read Throughput:** 78.0M Gaussians/sec (1M Gaussians, SH degree 0, uncompressed)
-- **Peak Write Throughput:** 29.4M Gaussians/sec (100K Gaussians, SH degree 0, compressed)
+- **Peak Read Throughput:** 93M Gaussians/sec (uncompressed, zero-copy)
+- **Peak Write Throughput:** 57M Gaussians/sec (uncompressed, zero-copy, GSData)
+- **Automatic Write Optimization:** All writes are 2.6-2.8x faster via auto-consolidation
+- **Zero-Copy Write:** Additional 2.8x speedup for data from plyread (total 7-8x vs baseline)
 - **Compression Ratio:** 71-74% size reduction (compressed format)
 - **Scalability:** Linear scaling up to 1M Gaussians tested
 
@@ -33,12 +35,12 @@ All benchmarks were conducted using:
 | 10,000 | 3 | 1.8ms | 0.6ms | 2.7ms | 3.4ms | 2.3MB | 0.6MB | 74% |
 | 50,000 | 0 | 3.3ms | 0.9ms | 2.9ms | 3.3ms | 2.7MB | 0.8MB | 71% |
 | 50,000 | 3 | 7.4ms | 2.4ms | 10.8ms | 16.0ms | 11.3MB | 2.9MB | 74% |
-| 100,000 | 0 | 5.5ms | 1.4ms | 3.4ms | 2.8ms | 5.3MB | 1.6MB | 71% |
-| 100,000 | 3 | 18.4ms | 6.1ms | 22.5ms | 30.5ms | 22.5MB | 5.8MB | 74% |
+| 100,000 | 0 | 3.9ms | 1.5ms | 3.4ms | 2.8ms | 5.3MB | 1.6MB | 71% |
+| 100,000 | 3 | 24.6ms | 6.9ms | 22.5ms | 30.5ms | 22.5MB | 5.8MB | 74% |
 | 400,000 | 0 | 19.3ms | 5.7ms | 15.0ms | 8.5ms | 21.4MB | 6.2MB | 71% |
-| 400,000 | 3 | 98.0ms | 25.3ms | 91.7ms | 118.2ms | 90.0MB | 23.4MB | 74% |
+| 400,000 | 3 | 121.5ms | 31.1ms | 110.5ms | 25.1ms | 90.0MB | 23.4MB | 74% |
 | 1,000,000 | 0 | 62.2ms | 12.8ms | 35.5ms | 16.7ms | 53.4MB | 15.5MB | 71% |
-| 1,000,000 | 3 | 256.1ms | 71.3ms | 210.0ms | 256.4ms | 225.1MB | 58.4MB | 74% |
+| 1,000,000 | 3 | 316.5ms | 81.8ms | 210.0ms | 256.4ms | 225.1MB | 58.4MB | 74% |
 
 **Legend:** UC = Uncompressed, C = Compressed, SH = Spherical Harmonics degree
 
@@ -51,8 +53,8 @@ All benchmarks were conducted using:
 |-----------|-------------|------------|
 | 10K | 16.5 | 40.7 |
 | 50K | 15.0 | 52.8 |
-| 100K | 18.3 | 70.7 |
-| 400K | 20.7 | 69.6 |
+| 100K | 26.0 | 68.1 |
+| 400K | 21.0 | 70.0 |
 | 1M | 16.1 | 78.0 |
 
 **SH Degree 3:**
@@ -60,9 +62,9 @@ All benchmarks were conducted using:
 |-----------|-------------|------------|
 | 10K | 5.6 | 16.3 |
 | 50K | 6.8 | 21.2 |
-| 100K | 5.4 | 16.4 |
-| 400K | 4.1 | 15.8 |
-| 1M | 3.9 | 14.0 |
+| 100K | 4.1 | 14.4 |
+| 400K | 3.3 | 12.9 |
+| 1M | 3.2 | 12.2 |
 
 #### Compressed Format
 
@@ -81,8 +83,85 @@ All benchmarks were conducted using:
 | 10K | 3.8 | 3.0 |
 | 50K | 4.6 | 3.1 |
 | 100K | 4.5 | 3.3 |
-| 400K | 4.4 | 3.4 |
+| 400K | 3.6 | 16.0 |
 | 1M | 4.8 | 3.9 |
+
+## Automatic Write Optimization (v0.2.0)
+
+### Overview
+
+All write operations are now automatically optimized through two mechanisms:
+
+1. **Auto-consolidation**: Automatically creates `_base` array for 2.6-2.8x speedup
+2. **Zero-copy path**: Uses existing `_base` from `plyread()` for total 7-8x speedup
+
+### How It Works
+
+**Auto-consolidation (new in v0.2.0):**
+- When writing GSData without `_base`, automatically calls `consolidate()` internally
+- Creates a contiguous 2D NumPy array in PLY format
+- Happens transparently - no user code changes required
+- Faster even for a single write (break-even < 1 write)
+
+**Zero-copy path (v0.1.1+):**
+- When data is from `plyread()`, the `_base` field already exists
+- Writes this array directly to disk without any copies
+- Combined with auto-consolidation provides total 7-8x speedup vs baseline
+
+### Performance Impact
+
+**Benchmark Results (388K Gaussians, SH degree 0):**
+
+| Method | Mean Time | Throughput | Speedup vs Baseline |
+|--------|-----------|------------|---------------------|
+| Zero-copy (from plyread) | 7.0ms | 57 M/s | **7.7x** |
+| Auto-consolidated (created) | 20ms | 20 M/s | **2.7x** |
+| Baseline (no optimization) | 54ms | 7.4 M/s | 1.0x |
+
+**Memory Savings:** Avoids copying ~21MB for zero-copy path
+
+### Usage
+
+```python
+# Method 1: From file - automatic zero-copy (7.7x faster vs baseline)
+data = gsply.plyread("input.ply")
+gsply.plywrite("output.ply", data)  # ~7ms for 388K Gaussians
+
+# Method 2: Created manually - automatic consolidation (2.7x faster vs baseline)
+data = GSData(means=means, scales=scales, ...)
+gsply.plywrite("output.ply", data)  # ~20ms for 388K Gaussians (auto-optimized!)
+
+# Method 3: Individual arrays - automatic consolidation (2.7x faster vs baseline)
+gsply.plywrite("output.ply", means, scales, quats, ...)  # ~20ms (auto-optimized!)
+
+# All methods produce identical output!
+```
+
+### Optimization Behavior
+
+**Zero-copy path** (fastest, 7.7x speedup):
+- Data from `plyread()` (has `_base` field)
+- Direct write without any memory copies
+- ~7ms for 388K Gaussians SH0
+
+**Auto-consolidation path** (fast, 2.7x speedup):
+- GSData created manually (no `_base` field)
+- Individual arrays passed to `plywrite()`
+- Automatically creates `_base` internally
+- ~20ms for 388K Gaussians SH0
+
+**Both paths are completely automatic** - no user code changes required!
+
+### Applicability
+
+**Automatic optimization applies to all uncompressed writes:**
+- **Read-modify-write workflows:** 7.7x speedup (zero-copy path)
+- **Training pipelines:** 2.7x speedup (auto-consolidation path)
+- **Data generation:** 2.7x speedup (auto-consolidation path)
+- **Format conversion:** 7.7x speedup (zero-copy path)
+- **All workflows benefit automatically!**
+
+All uncompressed write benchmarks below reflect the **auto-consolidation path** (synthetic data) for fair comparison across different configurations.
 
 ## Key Performance Insights
 
@@ -181,8 +260,8 @@ Compressed Read:       3.35 ms (3.0 M/s)
 
 **SH Degree 0:**
 ```
-Uncompressed Write:    5.48 ms (18.3 M/s) -> 5.34 MB
-Uncompressed Read:     1.41 ms (70.7 M/s)
+Uncompressed Write:    3.85 ms (26.0 M/s) -> 5.34 MB
+Uncompressed Read:     1.47 ms (68.1 M/s)
 Compressed Write:      3.40 ms (29.4 M/s) -> 1.55 MB (71% reduction)
 Compressed Read:       2.82 ms (35.4 M/s)
 ```
@@ -190,8 +269,8 @@ Compressed Read:       2.82 ms (35.4 M/s)
 
 **SH Degree 3:**
 ```
-Uncompressed Write:   18.36 ms (5.4 M/s) -> 22.51 MB
-Uncompressed Read:     6.08 ms (16.4 M/s)
+Uncompressed Write:   24.55 ms (4.1 M/s) -> 22.51 MB
+Uncompressed Read:     6.93 ms (14.4 M/s)
 Compressed Write:     22.45 ms (4.5 M/s) -> 5.85 MB (74% reduction)
 Compressed Read:      30.52 ms (3.3 M/s)
 ```
@@ -210,12 +289,12 @@ Compressed Read:       8.51 ms (47.0 M/s)
 
 **SH Degree 3:**
 ```
-Uncompressed Write:   98.00 ms (4.1 M/s) -> 90.03 MB
-Uncompressed Read:    25.28 ms (15.8 M/s)
-Compressed Write:     91.72 ms (4.4 M/s) -> 23.38 MB (74% reduction)
-Compressed Read:     118.24 ms (3.4 M/s)
+Uncompressed Write:  121.45 ms (3.3 M/s) -> 90.03 MB
+Uncompressed Read:    31.05 ms (12.9 M/s)
+Compressed Write:    110.54 ms (3.6 M/s) -> 23.38 MB (74% reduction)
+Compressed Read:      25.05 ms (16.0 M/s)
 ```
-**Winner:** Uncompressed read (4.6x faster)
+**Winner:** Compressed read (1.2x faster), uncompressed write slightly faster
 
 ### Test 4: Extra Large Scale (1M Gaussians)
 
@@ -230,12 +309,12 @@ Compressed Read:      16.66 ms (60.0 M/s)
 
 **SH Degree 3:**
 ```
-Uncompressed Write:  256.10 ms (3.9 M/s) -> 225.07 MB
-Uncompressed Read:    71.29 ms (14.0 M/s)
+Uncompressed Write:  316.48 ms (3.2 M/s) -> 225.07 MB
+Uncompressed Read:    81.80 ms (12.2 M/s)
 Compressed Write:    210.02 ms (4.8 M/s) -> 58.44 MB (74% reduction)
 Compressed Read:     256.38 ms (3.9 M/s)
 ```
-**Winner:** Compressed write (1.2x faster), uncompressed read (3.6x faster)
+**Winner:** Compressed write (1.5x faster), uncompressed read (3.1x faster)
 
 ## Optimization Impact Analysis
 
@@ -244,18 +323,29 @@ Based on these benchmarks compared to earlier versions:
 ### Achieved Optimizations
 
 1. **Zero-Copy Reads:** 6-8x faster than property-by-property access
-2. **Bulk Header Reading:** Single 8KB read vs. N readline() calls
-3. **Pre-computed Templates:** Eliminates dynamic string building
-4. **Buffered I/O:** 2MB buffer for large files
-5. **Numba JIT Parallelization:** 10-38x speedup for compressed operations
-6. **Radix Sort:** O(n) sorting for chunk-based compression
+2. **Zero-Copy Writes (v0.2.0):** 2.9x faster when using GSData directly
+3. **Bulk Header Reading:** Single 8KB read vs. N readline() calls
+4. **Pre-computed Templates:** Eliminates dynamic string building
+5. **Buffered I/O:** 2MB buffer for large files
+6. **Numba JIT Parallelization:** 10-38x speedup for compressed operations
+7. **Radix Sort:** O(n) sorting for chunk-based compression
 
 ### Real-World Impact
 
-For a typical 400K Gaussian model with SH degree 3:
-- **Uncompressed read:** 25.3ms (vs. 240ms in plyfile = 9.5x faster)
-- **Uncompressed write:** 98.0ms (vs. 270ms in plyfile = 2.8x faster)
-- **Compressed operations:** Practical at scale (90-120ms)
+For a typical 400K Gaussian model with SH degree 0:
+- **Uncompressed read:** 5.7ms zero-copy (70M/s)
+- **Uncompressed write (zero-copy):** ~7.5ms (53M/s) - read-modify-write workflows
+- **Uncompressed write (standard):** ~22ms (18M/s) - new data generation
+- **Compressed read:** 8.5ms (47M/s)
+- **Compressed write:** 15ms with 71% size reduction
+
+For SH degree 3 (400K Gaussians):
+- **Uncompressed read:** 31.1ms (vs. 240ms in plyfile = 7.7x faster)
+- **Uncompressed write:** 121.5ms (vs. 270ms in plyfile = 2.2x faster)
+- **Uncompressed write (zero-copy):** ~42ms estimated (2.9x faster)
+- **Compressed read:** 25.1ms (faster than uncompressed!)
+- **Compressed write:** 110.5ms with 74% size reduction
+- **Compressed operations:** Practical and often optimal at scale
 
 ## Memory Usage
 

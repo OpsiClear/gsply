@@ -7,16 +7,17 @@ import os
 import sys
 import tempfile
 import time
-import numpy as np
 from pathlib import Path
-from typing import Dict, Tuple
+
+import numpy as np
 
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 import gsply
 
-def generate_test_data(num_gaussians: int, sh_degree: int = 3) -> Tuple:
+
+def generate_test_data(num_gaussians: int, sh_degree: int = 3) -> tuple:
     """Generate synthetic Gaussian data for testing."""
     np.random.seed(42)
 
@@ -38,7 +39,7 @@ def generate_test_data(num_gaussians: int, sh_degree: int = 3) -> Tuple:
 
     return means, scales, quats, opacities, sh0, shN
 
-def benchmark_uncompressed_write(data: Tuple, num_runs: int = 10) -> float:
+def benchmark_uncompressed_write(data: tuple, num_runs: int = 10) -> float:
     """Benchmark uncompressed write performance."""
     means, scales, quats, opacities, sh0, shN = data
 
@@ -55,7 +56,7 @@ def benchmark_uncompressed_write(data: Tuple, num_runs: int = 10) -> float:
 
     return np.median(times) * 1000  # Return median time in ms
 
-def benchmark_compressed_write(data: Tuple, num_runs: int = 10) -> float:
+def benchmark_compressed_write(data: tuple, num_runs: int = 10) -> float:
     """Benchmark compressed write performance."""
     means, scales, quats, opacities, sh0, shN = data
 
@@ -73,7 +74,7 @@ def benchmark_compressed_write(data: Tuple, num_runs: int = 10) -> float:
 
     return np.median(times) * 1000  # Return median time in ms
 
-def benchmark_uncompressed_read(data: Tuple, num_runs: int = 10) -> float:
+def benchmark_uncompressed_read(data: tuple, num_runs: int = 10) -> float:
     """Benchmark uncompressed read performance."""
     means, scales, quats, opacities, sh0, shN = data
 
@@ -91,7 +92,7 @@ def benchmark_uncompressed_read(data: Tuple, num_runs: int = 10) -> float:
 
     return np.median(times) * 1000  # Return median time in ms
 
-def benchmark_compressed_read(data: Tuple, num_runs: int = 10) -> float:
+def benchmark_compressed_read(data: tuple, num_runs: int = 10) -> float:
     """Benchmark compressed read performance."""
     means, scales, quats, opacities, sh0, shN = data
 

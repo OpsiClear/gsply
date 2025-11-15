@@ -1,8 +1,10 @@
 """Simple test of read performance with refactored dataclass."""
 
 import time
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+
 from gsply import plyread
 
 
@@ -54,7 +56,7 @@ def test_with_existing_file():
 
     # Test that unpack() works
     means, scales, quats, opacities, sh0, shN = data.unpack()  # noqa: N806
-    print(f"  Unpacked 6 fields successfully")
+    print("  Unpacked 6 fields successfully")
     assert means is data.means
     assert shN is data.shN
     print("  [OK] Unpack interface works correctly")

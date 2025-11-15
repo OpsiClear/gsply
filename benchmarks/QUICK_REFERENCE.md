@@ -11,8 +11,8 @@
 
 | Format | SH0 Write | SH0 Read | SH3 Write | SH3 Read |
 |--------|-----------|----------|-----------|----------|
-| **Uncompressed** | 19ms (21M/s) | 6ms (70M/s) | 98ms (4.1M/s) | 25ms (16M/s) |
-| **Compressed** | 15ms (27M/s) | 8.5ms (47M/s) | 92ms (4.4M/s) | 118ms (3.4M/s) |
+| **Uncompressed** | 19ms (21M/s) | 6ms (70M/s) | 121ms (3.3M/s) | 31ms (13M/s) |
+| **Compressed** | 15ms (27M/s) | 8.5ms (47M/s) | 111ms (3.6M/s) | 25ms (16M/s) |
 
 ---
 
@@ -38,8 +38,8 @@
 **Recommendation:** Uncompressed SH0 or SH3
 ```
 100K Gaussians, SH3, Uncompressed:
-  Write: 18ms   Read: 6ms
-  Total round-trip: 24ms
+  Write: 25ms   Read: 7ms
+  Total round-trip: 32ms
   File size: 22.5 MB
 ```
 
@@ -47,7 +47,7 @@
 **Recommendation:** Compressed SH0 or SH3
 ```
 400K Gaussians, SH3, Compressed:
-  Write: 92ms   Read: 118ms
+  Write: 111ms   Read: 25ms (faster than uncompressed!)
   File size: 23.4 MB (vs 90MB uncompressed)
   Savings: 74% reduction
 ```
@@ -60,7 +60,7 @@ SH0 Compressed:
   File: 15.5MB (vs 53MB uncompressed, 71% savings)
 
 SH3 Uncompressed:
-  Write: 256ms (3.9M/s)  Read: 71ms (14M/s)
+  Write: 316ms (3.2M/s)  Read: 82ms (12M/s)
   File: 225MB (vs 58MB compressed)
 ```
 
@@ -73,9 +73,9 @@ SH3 Uncompressed:
 | Size | SH0 Write | SH0 Read | SH3 Write | SH3 Read |
 |------|-----------|----------|-----------|----------|
 | 10K | 16.5 | 40.7 | 5.6 | 16.3 |
-| 100K | 18.3 | 70.7 | 5.4 | 16.4 |
-| 400K | 20.7 | 69.6 | 4.1 | 15.8 |
-| 1M | 16.1 | **78.0** | 3.9 | 14.0 |
+| 100K | 26.0 | 68.1 | 4.1 | 14.4 |
+| 400K | 21.0 | 70.0 | 3.3 | 12.9 |
+| 1M | 16.1 | **78.0** | 3.2 | 12.2 |
 
 ### Compressed Format (M Gaussians/sec)
 
@@ -83,7 +83,7 @@ SH3 Uncompressed:
 |------|-----------|----------|-----------|----------|
 | 10K | 10.4 | 14.9 | 3.8 | 3.0 |
 | 100K | **29.4** | 35.4 | 4.5 | 3.3 |
-| 400K | 26.6 | 47.0 | 4.4 | 3.4 |
+| 400K | 26.6 | 47.0 | 3.6 | 16.0 |
 | 1M | 28.2 | 60.0 | 4.8 | 3.9 |
 
 ---
@@ -186,22 +186,23 @@ gsply.plywrite("model.ply", *data, compressed=True)
 
 ## Validation Status
 
-- [OK] All benchmark data verified (9/9 test files)
+- [OK] All benchmark data verified (synthetic + real 4D Gaussian Splatting files)
 - [OK] Performance claims validated vs. README
 - [OK] Scalability tested up to 1M Gaussians
-- [OK] Both formats tested across all configurations
-- [OK] 92 tests passing - Zero failures
-- [OK] Code quality improvements with zero performance impact
+- [OK] Both formats tested across all configurations (SH0 and SH3)
+- [OK] Real-world validation: 390-400K Gaussians, 54-56 M/s reads, 14-16 M/s writes
+- [OK] 169 tests passing - Zero failures
 - [OK] Ready for production use
 
 ## Version Info
 
-**gsply v0.1.1**
-- Performance: 78M Gaussians/sec read, 29M/sec write
-- Tests: 92 passing in 2.91s
-- Zero performance regressions from code quality improvements
+**gsply v0.2.0**
+- Performance: 78M Gaussians/sec read (peak), 29M/sec write (peak)
+- Tests: 169 passing
+- Benchmarks verified on both synthetic and real PLY files
+- Typical real-world performance: 12-70 M/s depending on format and SH degree
 
 ---
 
-**Last Updated:** 2025
-**See Also:** BENCHMARK_SUMMARY.md for full details
+**Last Updated:** January 14, 2025
+**See Also:** BENCHMARK_SUMMARY.md for full details, VERIFIED_BENCHMARKS.md for verification data

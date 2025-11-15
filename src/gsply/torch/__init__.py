@@ -28,6 +28,5 @@ def _check_torch_available():
     """Raise helpful error if PyTorch is not installed."""
     if not TORCH_AVAILABLE:
         raise ImportError(
-            "PyTorch is not installed. GSTensor requires PyTorch.\n"
-            "Install with: pip install torch"
+            "PyTorch is not installed. GSTensor requires PyTorch.\nInstall with: pip install torch"
         )

@@ -1,16 +1,18 @@
 """Extended benchmark including 1M Gaussians and file size comparisons."""
 
-import numpy as np
+import os
+import sys
 import time
 from pathlib import Path
-import sys
-import os
+
+import numpy as np
 
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-import gsply
 import logging
+
+import gsply
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
@@ -61,7 +63,7 @@ def benchmark_with_filesize(num_gaussians: int, sh_degree: int, iterations: int 
     unc_write = np.median(write_times)
     unc_read = np.median(read_times)
 
-    logger.info(f"  Uncompressed:")
+    logger.info("  Uncompressed:")
     logger.info(f"    Write:      {unc_write:8.2f} ms ({num_gaussians / (unc_write/1000) / 1e6:5.1f}M/s)")
     logger.info(f"    Read:       {unc_read:8.2f} ms ({num_gaussians / (unc_read/1000) / 1e6:5.1f}M/s)")
     logger.info(f"    File size:  {unc_size:8.2f} MB")
@@ -92,7 +94,7 @@ def benchmark_with_filesize(num_gaussians: int, sh_degree: int, iterations: int 
     comp_write = np.median(write_times)
     comp_read = np.median(read_times)
 
-    logger.info(f"  Compressed:")
+    logger.info("  Compressed:")
     logger.info(f"    Write:      {comp_write:8.2f} ms ({num_gaussians / (comp_write/1000) / 1e6:5.1f}M/s)")
     logger.info(f"    Read:       {comp_read:8.2f} ms ({num_gaussians / (comp_read/1000) / 1e6:5.1f}M/s)")
     logger.info(f"    File size:  {comp_size:8.2f} MB")

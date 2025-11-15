@@ -10,11 +10,9 @@ Tests both creation time and attribute access performance.
 
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
-
 
 # =============================================================================
 # Container Definitions

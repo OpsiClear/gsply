@@ -139,8 +139,10 @@ class TestDataOrderingAfterSorting:
         print("\n=== Data Ordering Verification ===")
         print(f"Input first 5 means X values: {means[:5, 0]}")
         print(f"Output first 5 means X values: {result.means[:5, 0]}")
-        print(f"Input chunk 1 first 3 means X values: {means[CHUNK_SIZE:CHUNK_SIZE+3, 0]}")
-        print(f"Output chunk 1 first 3 means X values: {result.means[CHUNK_SIZE:CHUNK_SIZE+3, 0]}")
+        print(f"Input chunk 1 first 3 means X values: {means[CHUNK_SIZE : CHUNK_SIZE + 3, 0]}")
+        print(
+            f"Output chunk 1 first 3 means X values: {result.means[CHUNK_SIZE : CHUNK_SIZE + 3, 0]}"
+        )
 
         # Verify the data matches (within compression tolerance)
         np.testing.assert_allclose(
