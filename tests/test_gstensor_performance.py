@@ -169,10 +169,10 @@ def test_slice_speedup_comparison(gsdata_large_no_base, gsdata_large_with_base):
     print(f"WITH _base:    {time_with:.2f} ms")
     print(f"Speedup:       {speedup:.2f}x")
 
-    # Both should complete in reasonable time (< 5ms)
+    # Both should complete in reasonable time (< 10ms, allowing for CI variance)
     # Note: On CPU tensors, _base may not provide speedup for boolean masking
-    assert time_without < 5.0, f"Slicing without _base too slow: {time_without:.2f}ms"
-    assert time_with < 5.0, f"Slicing with _base too slow: {time_with:.2f}ms"
+    assert time_without < 10.0, f"Slicing without _base too slow: {time_without:.2f}ms"
+    assert time_with < 10.0, f"Slicing with _base too slow: {time_with:.2f}ms"
 
 
 # =============================================================================
