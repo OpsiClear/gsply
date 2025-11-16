@@ -14,7 +14,7 @@
 
 ---
 
-## What's New in v0.2.1
+## What's New in v0.2.2
 
 - Data Concatenation: `GSData.concatenate()` - Bulk merge (6.15x faster), `GSData.add()` - Optimized pairwise (1.9x faster)
 - GPU Concatenation: `GSTensor.add()` - 18x faster than CPU

@@ -196,7 +196,7 @@ gsply.plywrite("model.ply", *data, compressed=True)
 
 ## Version Info
 
-**gsply v0.2.1**
+**gsply v0.2.2**
 - Performance: 78M Gaussians/sec read (peak), 29M/sec write (peak)
 - Tests: 169 passing
 - Benchmarks verified on both synthetic and real PLY files

@@ -1,6 +1,6 @@
 # Release Notes
 
-## v0.2.1 (Current - New Features)
+## v0.2.2 (Current - New Features)
 
 ### New Features
 - **Data Concatenation**: Bulk merge operations

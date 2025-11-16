@@ -1,6 +1,6 @@
 # Concatenation and Contiguity Optimizations
 
-## New Features (v0.2.1)
+## New Features (v0.2.2)
 
 This release adds powerful data concatenation and contiguity optimizations to both `GSData` (CPU) and `GSTensor` (GPU) classes.
 

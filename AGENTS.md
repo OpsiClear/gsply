@@ -234,7 +234,7 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - Used for parallel bit packing/unpacking in compressed format
 - Functions decorated with `@numba.jit` should be pure functions
 
-### Concatenation Optimizations (v0.2.1)
+### Concatenation Optimizations (v0.2.2)
 
 **GSData.add() and GSData.concatenate()**
 - `add()`: Pairwise concatenation using pre-allocation + direct assignment
@@ -271,7 +271,7 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - Masks persist through slicing and device transfers
 - `mask_names` field tracks layer names (list[str])
 
-### Contiguity Optimizations (v0.2.1)
+### Contiguity Optimizations (v0.2.2)
 
 **Problem: Non-Contiguous Arrays from plyread()**
 - PLY files load into interleaved `_base` array (zero-copy)
@@ -360,8 +360,8 @@ python -m build
 
 # Check dist files
 ls dist/
-# gsply-0.2.1-py3-none-any.whl
-# gsply-0.2.1.tar.gz
+# gsply-0.2.2-py3-none-any.whl
+# gsply-0.2.2.tar.gz
 ```
 
 ### Publishing (Maintainer Only)
@@ -379,7 +379,7 @@ twine upload dist/*
 1. Update version in `pyproject.toml`
 2. Update `__version__` in `src/gsply/__init__.py`
 3. Update CHANGELOG.md with release notes
-4. Create git tag: `git tag v0.2.1`
+4. Create git tag: `git tag v0.2.2`
 
 ## API Design Principles
 

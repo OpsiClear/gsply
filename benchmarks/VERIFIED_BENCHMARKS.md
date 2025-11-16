@@ -1,4 +1,4 @@
-# Verified Benchmarks - gsply v0.2.1
+# Verified Benchmarks - gsply v0.2.2
 
 **Date:** 2025-01-14
 **Platform:** Windows 11

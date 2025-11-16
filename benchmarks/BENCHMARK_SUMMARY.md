@@ -3,7 +3,7 @@
 **Date:** January 14, 2025
 **Platform:** Windows 11
 **Python:** 3.12+
-**Library Version:** v0.2.1 (verified benchmarks)
+**Library Version:** v0.2.2 (verified benchmarks)
 
 ## Executive Summary
 
