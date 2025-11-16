@@ -269,7 +269,7 @@ def test_apply_masks_filters_correctly(gstensor_cpu):
     # Check all arrays filtered correctly
     torch.testing.assert_close(filtered.means, gstensor_cpu.means[mask])
     torch.testing.assert_close(filtered.opacities, gstensor_cpu.opacities[mask])
-    assert len(filtered) == mask.sum()
+    assert len(filtered) == mask.sum().item()
 
 
 def test_apply_masks_specific_layers(gstensor_cpu):
@@ -280,7 +280,7 @@ def test_apply_masks_specific_layers(gstensor_cpu):
     filtered = gstensor_cpu.apply_masks(layers=["layer1"], inplace=False)
 
     expected_mask = gstensor_cpu.opacities > 0.5
-    assert len(filtered) == expected_mask.sum()
+    assert len(filtered) == expected_mask.sum().item()
 
 
 # =============================================================================

@@ -195,7 +195,7 @@ class TestMaskApplication:
         # Check all arrays filtered correctly
         np.testing.assert_array_equal(filtered.means, sample_data.means[mask])
         np.testing.assert_array_equal(filtered.opacities, sample_data.opacities[mask])
-        assert len(filtered) == mask.sum()
+        assert len(filtered) == int(mask.sum())
 
     def test_apply_specific_layers(self, sample_data):
         """Test applying only specific mask layers."""
@@ -205,7 +205,7 @@ class TestMaskApplication:
         filtered = sample_data.apply_masks(layers=["layer1"], inplace=False)
 
         expected_mask = sample_data.opacities > 0.5
-        assert len(filtered) == expected_mask.sum()
+        assert len(filtered) == int(expected_mask.sum())
 
 
 class TestMaskPersistence:

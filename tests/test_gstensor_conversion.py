@@ -315,7 +315,7 @@ def test_from_gsdata_with_mask(gsdata_sh0):
     """Test masked transfer - only transfers filtered subset to GPU."""
     # Create mask (50% pass)
     mask = gsdata_sh0.opacities > 0.5
-    expected_count = mask.sum()
+    expected_count = int(mask.sum())
 
     # Direct masked transfer (no intermediate copy)
     gstensor = GSTensor.from_gsdata(gsdata_sh0, device="cpu", mask=mask)
@@ -338,7 +338,7 @@ def test_from_gsdata_with_mask_validation(gsdata_sh0):
 def test_from_gsdata_masked_with_base(gsdata_sh0_with_base):
     """Test masked transfer preserves _base optimization."""
     mask = gsdata_sh0_with_base.opacities > 0.5
-    expected_count = mask.sum()
+    expected_count = int(mask.sum())
 
     # Masked transfer with _base optimization
     gstensor = GSTensor.from_gsdata(gsdata_sh0_with_base, device="cpu", mask=mask)
