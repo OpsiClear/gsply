@@ -584,10 +584,10 @@ def _validate_and_normalize_inputs(
 
     # Flatten shN if needed (from (N, K, 3) to (N, K*3))
     if shN is not None and shN.ndim == 3:
-        N, K, C = shN.shape  # noqa: N806
+        n_gaussians, n_bands, n_components = shN.shape
         if validate:
-            assert C == 3, f"shN must have shape (N, K, 3), got {shN.shape}"
-        shN = shN.reshape(N, K * 3)  # noqa: N806
+            assert n_components == 3, f"shN must have shape (N, K, 3), got {shN.shape}"
+        shN = shN.reshape(n_gaussians, n_bands * n_components)  # noqa: N806
 
     return means, scales, quats, opacities, sh0, shN
 

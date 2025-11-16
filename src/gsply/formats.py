@@ -10,6 +10,7 @@ __all__ = [
     "CHUNK_SIZE",
     "PROPERTY_COUNTS_BY_SH_DEGREE",
     "PROPERTY_COUNT_TO_SH_DEGREE",
+    "SH_BANDS_TO_DEGREE",
     "EXPECTED_PROPERTIES_BY_SH_DEGREE",
 ]
 
@@ -28,6 +29,13 @@ PROPERTY_COUNT_TO_SH_DEGREE = {
     23: 1,
     38: 2,
     59: 3,
+}
+
+# SH bands to degree mapping (for shN.shape[1] -> degree conversion)
+SH_BANDS_TO_DEGREE = {
+    3: 1,  # SH1: 3 bands
+    8: 2,  # SH2: 8 bands
+    15: 3,  # SH3: 15 bands
 }
 
 # Expected property names in order for each SH degree

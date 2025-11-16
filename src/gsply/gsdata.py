@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import numba
 import numpy as np
 
+from gsply.formats import SH_BANDS_TO_DEGREE
+
 
 # Numba-optimized mask combination (37-68x faster than numpy.all())
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
@@ -123,13 +125,7 @@ class GSData:
             return 0
         # shN.shape[1] is number of bands (K)
         sh_bands = self.shN.shape[1]
-        if sh_bands == 3:  # SH1: 3 bands
-            return 1
-        if sh_bands == 8:  # SH2: 8 bands
-            return 2
-        if sh_bands == 15:  # SH3: 15 bands
-            return 3
-        return 0
+        return SH_BANDS_TO_DEGREE.get(sh_bands, 0)
 
     def add_mask_layer(self, name: str, mask: np.ndarray) -> None:
         """Add a named boolean mask layer.
@@ -218,11 +214,11 @@ class GSData:
             if len(mask_list) == 0:
                 self.masks = None
                 self.mask_names = None
-            elif len(mask_list) == 1:
-                self.masks = mask_list[0]
-                self.mask_names = [n for n in self.mask_names if n != name]
             else:
-                self.masks = np.column_stack(mask_list)
+                if len(mask_list) == 1:
+                    self.masks = mask_list[0]
+                else:
+                    self.masks = np.column_stack(mask_list)
                 self.mask_names = [n for n in self.mask_names if n != name]
 
     def combine_masks(self, mode: str = "and", layers: list[str] | None = None) -> np.ndarray:
@@ -519,11 +515,7 @@ class GSData:
                     if self_masks.shape[1] == other_masks.shape[1]:
                         combined_masks = np.concatenate([self_masks, other_masks], axis=0)
                         # Merge names (prefer self names, use other as fallback)
-                        if (
-                            self.mask_names is not None
-                            and other.mask_names is not None
-                            or self.mask_names is not None
-                        ):
+                        if self.mask_names is not None:
                             combined_mask_names = self.mask_names.copy()
                         elif other.mask_names is not None:
                             combined_mask_names = other.mask_names.copy()
@@ -587,11 +579,7 @@ class GSData:
 
                 if self_masks.shape[1] == other_masks.shape[1]:
                     combined_masks = np.concatenate([self_masks, other_masks], axis=0)
-                    if (
-                        self.mask_names is not None
-                        and other.mask_names is not None
-                        or self.mask_names is not None
-                    ):
+                    if self.mask_names is not None:
                         combined_mask_names = self.mask_names.copy()
                     elif other.mask_names is not None:
                         combined_mask_names = other.mask_names.copy()

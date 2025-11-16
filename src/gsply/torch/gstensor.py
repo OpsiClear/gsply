@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
+from gsply.formats import SH_BANDS_TO_DEGREE
+
 if TYPE_CHECKING:
     from gsply.gsdata import GSData
 
@@ -78,13 +80,7 @@ class GSTensor:
             return 0
         # shN.shape[1] is number of bands (K)
         sh_bands = self.shN.shape[1]
-        if sh_bands == 3:  # SH1: 3 bands
-            return 1
-        if sh_bands == 8:  # SH2: 8 bands
-            return 2
-        if sh_bands == 15:  # SH3: 15 bands
-            return 3
-        return 0
+        return SH_BANDS_TO_DEGREE.get(int(sh_bands), 0)
 
     def has_high_order_sh(self) -> bool:
         """Check if data has higher-order SH coefficients.
@@ -167,13 +163,15 @@ class GSTensor:
             return cls._recreate_from_base(base_tensor, masks_tensor, data.mask_names)
 
         # Fallback: Stack arrays on CPU then transfer (2x faster than separate transfers)
-        n = len(data)
+        # Convert to Python int to avoid numpy _NoValueType issues
+        n = int(len(data))
 
         # Determine property count based on SH degree
         # Layout: means(3) + sh0(3) + shN(K*3) + opacity(1) + scales(3) + quats(4)
         # Total: 14 + K*3 where K=0/9/24/45
         if data.shN is not None and data.shN.shape[1] > 0:
-            sh_coeffs = data.shN.shape[1]  # K = 9, 24, 45
+            # Convert to Python int to avoid numpy _NoValueType issues
+            sh_coeffs = int(data.shN.shape[1])  # K = 9, 24, 45
             n_props = 14 + sh_coeffs * 3  # Total properties
         else:
             sh_coeffs = 0
@@ -428,8 +426,9 @@ class GSTensor:
         Returns:
             New GSTensor with views into base_tensor, or None if unknown format
         """
-        n_gaussians = base_tensor.shape[0]
-        n_props = base_tensor.shape[1]
+        # Convert to Python int to avoid numpy _NoValueType issues
+        n_gaussians = int(base_tensor.shape[0])
+        n_props = int(base_tensor.shape[1])
 
         # Map property count to SH degree
         # Layout: means(3) + sh0(3) + shN(K*3) + opacity(1) + scales(3) + quats(4)
@@ -772,11 +771,7 @@ class GSTensor:
                     if self_masks.shape[1] == other_masks.shape[1]:
                         combined_masks = torch.cat([self_masks, other_masks], dim=0)
                         # Merge names (prefer self names)
-                        if (
-                            self.mask_names is not None
-                            and other.mask_names is not None
-                            or self.mask_names is not None
-                        ):
+                        if self.mask_names is not None:
                             combined_mask_names = self.mask_names.copy()
                         elif other.mask_names is not None:
                             combined_mask_names = other.mask_names.copy()
@@ -850,11 +845,7 @@ class GSTensor:
 
                 if self_masks.shape[1] == other_masks.shape[1]:
                     combined_masks = torch.cat([self_masks, other_masks], dim=0)
-                    if (
-                        self.mask_names is not None
-                        and other.mask_names is not None
-                        or self.mask_names is not None
-                    ):
+                    if self.mask_names is not None:
                         combined_mask_names = self.mask_names.copy()
                     elif other.mask_names is not None:
                         combined_mask_names = other.mask_names.copy()
