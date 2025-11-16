@@ -234,6 +234,82 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - Used for parallel bit packing/unpacking in compressed format
 - Functions decorated with `@numba.jit` should be pure functions
 
+### Concatenation Optimizations (v0.2.1)
+
+**GSData.add() and GSData.concatenate()**
+- `add()`: Pairwise concatenation using pre-allocation + direct assignment
+  - 1.9x faster than np.concatenate for 500K Gaussians (99 M/s)
+  - Handles mask layer merging automatically
+  - Validates SH degree compatibility via `get_sh_degree()`
+- `+` operator: Pythonic concatenation syntax
+  - `data1 + data2` delegates to `data1.add(data2)` (same performance)
+  - `__radd__` enables `sum([data1, data2, data3])` to work
+  - Note: For >= 3 arrays, use `GSData.concatenate()` for 5.74x speedup
+- `concatenate()`: Bulk concatenation for multiple arrays
+  - 6.15x faster than repeated `add()` calls
+  - Single allocation vs N-1 intermediate allocations
+  - Use for >= 2 arrays
+- **Implementation details**:
+  - Pre-allocate output arrays with `np.empty()`
+  - Use slice assignment: `arr[:n1] = data1.arr`
+  - Preserve dtype, handle mask layer merging
+  - _base optimization path when both have compatible _base
+
+**GSTensor.add() - GPU Concatenation**
+- GPU-optimized using `torch.cat()`
+- 18.23x faster than CPU for 500K Gaussians
+- Automatic device/dtype handling
+- Preserves `requires_grad` flag
+- Handles mask layer concatenation with GPU tensors
+- `+` operator: Same as GSData, `gstensor1 + gstensor2` delegates to `add()`
+- `sum()` works with GSTensor objects via `__radd__`
+
+**Mask Layer Management**
+- Both GSData and GSTensor support multi-layer boolean masks
+- Methods: `add_mask_layer()`, `get_mask_layer()`, `remove_mask_layer()`, `combine_masks()`, `apply_masks()`
+- GSTensor uses `torch.all()`/`torch.any()` (100-1000x faster than CPU Numba)
+- Masks persist through slicing and device transfers
+- `mask_names` field tracks layer names (list[str])
+
+### Contiguity Optimizations (v0.2.1)
+
+**Problem: Non-Contiguous Arrays from plyread()**
+- PLY files load into interleaved `_base` array (zero-copy)
+- Creates non-contiguous views with stride=56 instead of 12
+- 2-45x performance penalty for array operations
+
+**GSData.make_contiguous()**
+- Converts non-contiguous arrays to contiguous layout
+- **Break-even**: ~8 operations (measured threshold)
+- **Speedups (100K Gaussians)**:
+  - argmax(): 45.5x faster
+  - max/min(): 18-19x faster
+  - sum/mean(): 6-7x faster
+  - Element-wise: 2-4x faster
+- **Conversion cost**:
+  - 10K: 0.14 ms
+  - 100K: 2.2 ms
+  - 1M: 25 ms
+- **Decision rule**: Convert if >= 8 operations
+- **Memory**: Zero overhead (same total, reorganized)
+- **Usage**: `inplace=True` modifies object, `inplace=False` returns copy
+
+**GSData.is_contiguous()**
+- Checks if all arrays are C-contiguous
+- Returns boolean
+- Useful for conditional optimization
+
+**Direct Masked GPU Transfer**
+- `GSTensor.from_gsdata(data, mask=mask, device="cuda")`
+- Filters data during GPU transfer (no intermediate CPU copy)
+- More efficient than `data[mask]` then `from_gsdata()`
+
+**Implementation Considerations**:
+- Always check contiguity before expensive operations
+- Document contiguity assumptions in function docstrings
+- Preserve contiguity through operations when possible
+- Test both contiguous and non-contiguous paths
+
 ## Pull Request Guidelines
 
 ### Before Creating PR
@@ -284,8 +360,8 @@ python -m build
 
 # Check dist files
 ls dist/
-# gsply-0.2.0-py3-none-any.whl
-# gsply-0.2.0.tar.gz
+# gsply-0.2.1-py3-none-any.whl
+# gsply-0.2.1.tar.gz
 ```
 
 ### Publishing (Maintainer Only)
@@ -303,7 +379,7 @@ twine upload dist/*
 1. Update version in `pyproject.toml`
 2. Update `__version__` in `src/gsply/__init__.py`
 3. Update CHANGELOG.md with release notes
-4. Create git tag: `git tag v0.2.0`
+4. Create git tag: `git tag v0.2.1`
 
 ## API Design Principles
 

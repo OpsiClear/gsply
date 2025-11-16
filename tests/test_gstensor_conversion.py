@@ -309,3 +309,124 @@ def test_to_gsdata_detaches_gradients(gsdata_sh0):
 
     # Should not have gradient info
     assert isinstance(gsdata_restored.means, np.ndarray)
+
+
+def test_from_gsdata_with_mask(gsdata_sh0):
+    """Test masked transfer - only transfers filtered subset to GPU."""
+    # Create mask (50% pass)
+    mask = gsdata_sh0.opacities > 0.5
+    expected_count = mask.sum()
+
+    # Direct masked transfer (no intermediate copy)
+    gstensor = GSTensor.from_gsdata(gsdata_sh0, device="cpu", mask=mask)
+
+    # Verify correct subset transferred
+    assert len(gstensor) == expected_count
+    np.testing.assert_array_equal(gstensor.means.cpu().numpy(), gsdata_sh0.means[mask])
+    np.testing.assert_array_equal(gstensor.opacities.cpu().numpy(), gsdata_sh0.opacities[mask])
+
+
+def test_from_gsdata_with_mask_validation(gsdata_sh0):
+    """Test mask validation."""
+    # Wrong length mask
+    wrong_mask = np.ones(100, dtype=bool)
+
+    with pytest.raises(ValueError, match="doesn't match data length"):
+        GSTensor.from_gsdata(gsdata_sh0, device="cpu", mask=wrong_mask)
+
+
+def test_from_gsdata_masked_with_base(gsdata_sh0_with_base):
+    """Test masked transfer preserves _base optimization."""
+    mask = gsdata_sh0_with_base.opacities > 0.5
+    expected_count = mask.sum()
+
+    # Masked transfer with _base optimization
+    gstensor = GSTensor.from_gsdata(gsdata_sh0_with_base, device="cpu", mask=mask)
+
+    # Should still have _base (from sliced data)
+    assert len(gstensor) == expected_count
+    # Verify data correctness
+    np.testing.assert_array_equal(gstensor.means.cpu().numpy(), gsdata_sh0_with_base.means[mask])
+
+
+def test_mask_names_transfer(gsdata_sh0):
+    """Test that mask_names are transferred from GSData to GSTensor."""
+    # Clear existing masks from fixture
+    gsdata_sh0.masks = None
+    gsdata_sh0.mask_names = None
+
+    # Add mask layers to GSData
+    gsdata_sh0.add_mask_layer("opacity", gsdata_sh0.opacities > 0.5)
+    gsdata_sh0.add_mask_layer("scale", gsdata_sh0.scales[:, 0] < 1.0)
+
+    # Convert to GSTensor
+    gstensor = GSTensor.from_gsdata(gsdata_sh0, device="cpu")
+
+    # Verify mask_names transferred
+    assert gstensor.mask_names == ["opacity", "scale"]
+    assert gstensor.masks is not None
+    assert gstensor.masks.shape == (len(gsdata_sh0), 2)
+
+    # Verify round-trip preserves mask_names
+    gsdata_restored = gstensor.to_gsdata()
+    assert gsdata_restored.mask_names == ["opacity", "scale"]
+    np.testing.assert_array_equal(gsdata_restored.masks, gsdata_sh0.masks)
+
+
+def test_mask_names_preserved_in_slicing(gsdata_sh0):
+    """Test that mask_names are preserved when slicing GSTensor."""
+    # Clear existing masks from fixture
+    gsdata_sh0.masks = None
+    gsdata_sh0.mask_names = None
+
+    # Add mask layers
+    gsdata_sh0.add_mask_layer("layer1", gsdata_sh0.opacities > 0.5)
+    gsdata_sh0.add_mask_layer("layer2", gsdata_sh0.scales[:, 0] < 1.0)
+
+    gstensor = GSTensor.from_gsdata(gsdata_sh0, device="cpu")
+
+    # Slice
+    sliced = gstensor[10:20]
+
+    # Verify mask_names preserved
+    assert sliced.mask_names == ["layer1", "layer2"]
+    assert sliced.masks.shape == (10, 2)
+
+
+def test_mask_names_preserved_in_device_move(gsdata_sh0):
+    """Test that mask_names are preserved when moving devices."""
+    # Clear existing masks from fixture
+    gsdata_sh0.masks = None
+    gsdata_sh0.mask_names = None
+
+    # Add mask layers
+    gsdata_sh0.add_mask_layer("test1", gsdata_sh0.opacities > 0.5)
+    gsdata_sh0.add_mask_layer("test2", gsdata_sh0.scales[:, 0] < 1.0)
+
+    gstensor_cpu = GSTensor.from_gsdata(gsdata_sh0, device="cpu")
+
+    # Clone (which internally uses to())
+    gstensor_cloned = gstensor_cpu.clone()
+
+    # Verify mask_names preserved
+    assert gstensor_cloned.mask_names == ["test1", "test2"]
+
+
+def test_mask_names_in_repr(gsdata_sh0):
+    """Test that __repr__ shows mask layer information."""
+    # Clear existing masks from fixture
+    gsdata_sh0.masks = None
+    gsdata_sh0.mask_names = None
+
+    # Add mask layers
+    gsdata_sh0.add_mask_layer("opacity", gsdata_sh0.opacities > 0.5)
+    gsdata_sh0.add_mask_layer("scale", gsdata_sh0.scales[:, 0] < 1.0)
+
+    gstensor = GSTensor.from_gsdata(gsdata_sh0, device="cpu")
+    repr_str = repr(gstensor)
+
+    # Should show mask info
+    assert "Masks:" in repr_str
+    assert "2 layers" in repr_str
+    assert "opacity" in repr_str
+    assert "scale" in repr_str

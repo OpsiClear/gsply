@@ -1,6 +1,24 @@
 # Release Notes
 
-## v0.2.0 (Current - Breaking Changes & New Features)
+## v0.2.1 (Current - New Features)
+
+### New Features
+- **Data Concatenation**: Bulk merge operations
+  - `GSData.concatenate([data1, data2, data3])` - 6.15x faster than loops
+  - `GSData.add(other)` - Optimized pairwise (1.9x faster)
+  - `GSTensor.add(other)` - GPU concatenation (18x faster than CPU)
+- **Performance Optimization**:
+  - `make_contiguous()` - Fix cache locality (2-45x speedup for operations)
+  - `is_contiguous()` - Check array layout
+  - Direct masked GPU transfer (no intermediate CPU copies)
+- **Mask Management**:
+  - Multi-layer boolean masks with named layers
+  - GPU-optimized mask operations (100-1000x faster)
+  - Automatic mask merging during concatenation
+
+---
+
+## v0.2.0 (Breaking Changes & New Features)
 
 ### Breaking Changes
 - **GSData is now a regular dataclass** (was NamedTuple)
@@ -49,7 +67,7 @@
 means, scales, quats, opacities, sh0, shN = data[:6]
 data = GSData(means, scales, quats, opacities, sh0, shN, _base=None)
 
-# New (v0.2.0)
+# New (v0.2.0+)
 means = data.means
 scales = data.scales
 # ... or use attributes directly

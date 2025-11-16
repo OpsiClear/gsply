@@ -345,10 +345,10 @@ __version__ = "0.1.0"
 
 ```bash
 # Edit pyproject.toml
-version = "0.2.0"
+version = "0.2.1"
 
 # Edit src/gsply/__init__.py
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 ```
 
 **Step 2: Update Documentation**
@@ -364,10 +364,10 @@ __version__ = "0.2.0"
 ```bash
 # Commit changes
 git add .
-git commit -m "Release v0.2.0"
+git commit -m "Release v0.2.1"
 
 # Create annotated tag
-git tag -a v0.2.0 -m "Release v0.2.0"
+git tag -a v0.2.1 -m "Release v0.2.1"
 
 # Push commits and tags
 git push && git push --tags
@@ -376,7 +376,7 @@ git push && git push --tags
 **Step 4: Create GitHub Release**
 
 1. Go to GitHub > Releases > Create new release
-2. Choose tag: v0.2.0
+2. Choose tag: v0.2.1
 3. Write release notes (copy from RELEASE_NOTES.md)
 4. Publish release
 

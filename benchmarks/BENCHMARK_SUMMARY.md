@@ -3,7 +3,7 @@
 **Date:** January 14, 2025
 **Platform:** Windows 11
 **Python:** 3.12+
-**Library Version:** v0.2.0 (verified benchmarks)
+**Library Version:** v0.2.1 (verified benchmarks)
 
 ## Executive Summary
 
@@ -86,7 +86,7 @@ All benchmarks were conducted using:
 | 400K | 3.6 | 16.0 |
 | 1M | 4.8 | 3.9 |
 
-## Automatic Write Optimization (v0.2.0)
+## Automatic Write Optimization (v0.2.0+)
 
 ### Overview
 
@@ -97,7 +97,7 @@ All write operations are now automatically optimized through two mechanisms:
 
 ### How It Works
 
-**Auto-consolidation (new in v0.2.0):**
+**Auto-consolidation (v0.2.0+):**
 - When writing GSData without `_base`, automatically calls `consolidate()` internally
 - Creates a contiguous 2D NumPy array in PLY format
 - Happens transparently - no user code changes required
@@ -323,7 +323,7 @@ Based on these benchmarks compared to earlier versions:
 ### Achieved Optimizations
 
 1. **Zero-Copy Reads:** 6-8x faster than property-by-property access
-2. **Zero-Copy Writes (v0.2.0):** 2.9x faster when using GSData directly
+2. **Zero-Copy Writes (v0.2.0+):** 2.9x faster when using GSData directly
 3. **Bulk Header Reading:** Single 8KB read vs. N readline() calls
 4. **Pre-computed Templates:** Eliminates dynamic string building
 5. **Buffered I/O:** 2MB buffer for large files
