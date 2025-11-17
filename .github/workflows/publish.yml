@@ -61,6 +61,7 @@ jobs:
 
     permissions:
       contents: write  # IMPORTANT: mandatory for creating releases
+      id-token: write  # IMPORTANT: mandatory for sigstore signing
 
     steps:
     - name: Download artifacts
