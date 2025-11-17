@@ -53,34 +53,3 @@ jobs:
       uses: pypa/gh-action-pypi-publish@v1.13.0
       with:
         verbose: true
-
-  github-release:
-    name: Create GitHub Release with artifacts
-    needs: publish-to-pypi
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write  # IMPORTANT: mandatory for creating releases
-      id-token: write  # IMPORTANT: mandatory for sigstore signing
-
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: python-package-distributions
-        path: dist/
-
-    - name: Sign artifacts with Sigstore
-      uses: sigstore/gh-action-sigstore-python@v3.0.0
-      with:
-        inputs: >-
-          ./dist/*.tar.gz
-          ./dist/*.whl
-
-    - name: Upload artifacts to GitHub Release
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: >-
-        gh release upload
-        '${{ github.ref_name }}' dist/**
-        --repo '${{ github.repository }}'
