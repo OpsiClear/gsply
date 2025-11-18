@@ -17,11 +17,8 @@ def _combine_masks_numba_and(masks):
     - numpy.all(): 1.43ms (72M/sec)
     - numba parallel: 0.039ms (2,550M/sec) - 37x faster!
 
-    Args:
-        masks: Boolean array of shape (N, L) where L >= 2
-
-    Returns:
-        Boolean array of shape (N,) - result of AND across layers
+    :param masks: Boolean array of shape (N, L) where L >= 2
+    :returns: Boolean array of shape (N,) - result of AND across layers
     """
     n, m = masks.shape
     result = np.empty(n, dtype=np.bool_)
@@ -41,11 +38,8 @@ def _combine_masks_numba_and(masks):
 def _combine_masks_numba_or(masks):
     """Combine masks with OR logic using parallel Numba.
 
-    Args:
-        masks: Boolean array of shape (N, L) where L >= 2
-
-    Returns:
-        Boolean array of shape (N,) - result of OR across layers
+    :param masks: Boolean array of shape (N, L) where L >= 2
+    :returns: Boolean array of shape (N,) - result of OR across layers
     """
     n, m = masks.shape
     result = np.empty(n, dtype=np.bool_)
@@ -118,8 +112,7 @@ class GSData:
     def get_sh_degree(self) -> int:
         """Get SH degree from shN shape.
 
-        Returns:
-            SH degree (0-3)
+        :returns: SH degree (0-3)
         """
         if self.shN is None or self.shN.shape[1] == 0:
             return 0
@@ -130,12 +123,9 @@ class GSData:
     def add_mask_layer(self, name: str, mask: np.ndarray) -> None:
         """Add a named boolean mask layer.
 
-        Args:
-            name: Name for this mask layer
-            mask: Boolean array of shape (N,) where N is number of Gaussians
-
-        Raises:
-            ValueError: If mask shape doesn't match data length or name already exists
+        :param name: Name for this mask layer
+        :param mask: Boolean array of shape (N,) where N is number of Gaussians
+        :raises ValueError: If mask shape doesn't match data length or name already exists
 
         Example:
             >>> data.add_mask_layer("high_opacity", data.opacities > 0.5)
@@ -166,14 +156,9 @@ class GSData:
     def get_mask_layer(self, name: str) -> np.ndarray:
         """Get a mask layer by name.
 
-        Args:
-            name: Name of the mask layer
-
-        Returns:
-            Boolean array of shape (N,)
-
-        Raises:
-            ValueError: If layer name not found
+        :param name: Name of the mask layer
+        :returns: Boolean array of shape (N,)
+        :raises ValueError: If layer name not found
 
         Example:
             >>> opacity_mask = data.get_mask_layer("high_opacity")
@@ -189,11 +174,8 @@ class GSData:
     def remove_mask_layer(self, name: str) -> None:
         """Remove a mask layer by name.
 
-        Args:
-            name: Name of the mask layer to remove
-
-        Raises:
-            ValueError: If layer name not found
+        :param name: Name of the mask layer to remove
+        :raises ValueError: If layer name not found
 
         Example:
             >>> data.remove_mask_layer("foreground")
@@ -224,15 +206,10 @@ class GSData:
     def combine_masks(self, mode: str = "and", layers: list[str] | None = None) -> np.ndarray:
         """Combine mask layers using boolean logic.
 
-        Args:
-            mode: Combination mode - "and" (all must pass) or "or" (any must pass)
-            layers: List of layer names to combine (None = use all layers)
-
-        Returns:
-            Combined boolean mask of shape (N,)
-
-        Raises:
-            ValueError: If no masks exist or invalid mode
+        :param mode: Combination mode - "and" (all must pass) or "or" (any must pass)
+        :param layers: List of layer names to combine (None = use all layers)
+        :returns: Combined boolean mask of shape (N,)
+        :raises ValueError: If no masks exist or invalid mode
 
         Example:
             >>> # Combine all layers with AND
@@ -292,13 +269,10 @@ class GSData:
     ) -> "GSData":
         """Apply mask layers to filter Gaussians.
 
-        Args:
-            mode: Combination mode - "and" or "or"
-            layers: List of layer names to apply (None = all layers)
-            inplace: If True, modify self; if False, return filtered copy
-
-        Returns:
-            Filtered GSData (self if inplace=True, new object if inplace=False)
+        :param mode: Combination mode - "and" or "or"
+        :param layers: List of layer names to apply (None = all layers)
+        :param inplace: If True, modify self; if False, return filtered copy
+        :returns: Filtered GSData (self if inplace=True, new object if inplace=False)
 
         Example:
             >>> # Filter using all mask layers (AND logic)
@@ -336,8 +310,7 @@ class GSData:
         performance for boolean masking operations. Only beneficial if you
         plan to perform many boolean mask operations.
 
-        Returns:
-            New GSData with _base array, or self if already consolidated
+        :returns: New GSData with _base array, or self if already consolidated
 
         Note:
             - One-time cost: ~2ms per 100K Gaussians
@@ -389,8 +362,7 @@ class GSData:
         Creates independent copies of all arrays, ensuring modifications
         to the copy won't affect the original data.
 
-        Returns:
-            GSData: A new GSData object with copied arrays
+        :returns: A new GSData object with copied arrays
         """
         # Optimize: If we have _base, copy it and recreate views (2-3x faster)
         if self._base is not None:
@@ -420,11 +392,8 @@ class GSData:
 
         Allows Pythonic concatenation using the + operator.
 
-        Args:
-            other: Another GSData object to concatenate
-
-        Returns:
-            New GSData object with combined Gaussians
+        :param other: Another GSData object to concatenate
+        :returns: New GSData object with combined Gaussians
 
         Example:
             >>> combined = data1 + data2  # Same as data1.add(data2)
@@ -454,14 +423,9 @@ class GSData:
         Note: For concatenating multiple arrays, use GSData.concatenate() which is
         5.74x faster than repeated add() calls due to single allocation.
 
-        Args:
-            other: Another GSData object to concatenate
-
-        Returns:
-            New GSData object with combined Gaussians
-
-        Raises:
-            ValueError: If SH degrees don't match
+        :param other: Another GSData object to concatenate
+        :returns: New GSData object with combined Gaussians
+        :raises ValueError: If SH degrees don't match
 
         Example:
             >>> data1 = gsply.plyread("scene1.ply")  # 100K Gaussians
@@ -643,14 +607,9 @@ class GSData:
         - 5.74x faster for concatenating 10 arrays
         - Reduces total memory copies
 
-        Args:
-            arrays: List of GSData objects to concatenate
-
-        Returns:
-            New GSData object with all Gaussians combined
-
-        Raises:
-            ValueError: If list is empty or SH degrees don't match
+        :param arrays: List of GSData objects to concatenate
+        :returns: New GSData object with all Gaussians combined
+        :raises ValueError: If list is empty or SH degrees don't match
 
         Example:
             >>> scenes = [gsply.plyread(f"scene{i}.ply") for i in range(10)]
@@ -758,12 +717,9 @@ class GSData:
 
         Memory: Zero overhead (same total memory, just reorganized)
 
-        Args:
-            inplace: If True, modify arrays in-place and clear _base (default).
-                     If False, return new GSData with contiguous arrays.
-
-        Returns:
-            Self if inplace=True, new GSData if inplace=False
+        :param inplace: If True, modify arrays in-place and clear _base (default).
+                        If False, return new GSData with contiguous arrays.
+        :returns: Self if inplace=True, new GSData if inplace=False
 
         Example:
             >>> data = gsply.plyread("scene.ply")  # Non-contiguous from _base
@@ -826,8 +782,7 @@ class GSData:
     def is_contiguous(self) -> bool:
         """Check if all arrays are C-contiguous.
 
-        Returns:
-            True if all arrays are contiguous, False otherwise
+        :returns: True if all arrays are contiguous, False otherwise
 
         Example:
             >>> data = gsply.plyread("scene.ply")
@@ -849,12 +804,9 @@ class GSData:
         Convenient for standard Gaussian Splatting workflows that expect
         individual arrays rather than a container object.
 
-        Args:
-            include_shN: If True, include shN in output (default True)
-
-        Returns:
-            If include_shN=True: (means, scales, quats, opacities, sh0, shN)
-            If include_shN=False: (means, scales, quats, opacities, sh0)
+        :param include_shN: If True, include shN in output (default True)
+        :returns: If include_shN=True: (means, scales, quats, opacities, sh0, shN),
+                  If include_shN=False: (means, scales, quats, opacities, sh0)
 
         Example:
             >>> data = plyread("scene.ply")
@@ -872,8 +824,7 @@ class GSData:
     def to_dict(self) -> dict:
         """Convert Gaussian data to dictionary.
 
-        Returns:
-            Dictionary with keys: means, scales, quats, opacities, sh0, shN
+        :returns: Dictionary with keys: means, scales, quats, opacities, sh0, shN
 
         Example:
             >>> data = plyread("scene.ply")
@@ -901,11 +852,8 @@ class GSData:
         For boolean masks and fancy indexing, this simply delegates to __getitem__
         since those already return copies.
 
-        Args:
-            key: Slice key (slice, int, array, or boolean mask)
-
-        Returns:
-            GSData: A new GSData object with copied sliced data
+        :param key: Slice key (slice, int, array, or boolean mask)
+        :returns: A new GSData object with copied sliced data
 
         Examples:
             data.copy_slice(100:200)    # Copy of elements 100-199 (avoids view)
@@ -982,11 +930,8 @@ class GSData:
         Unlike direct indexing which returns a tuple for efficiency,
         this method returns a GSData object containing a single Gaussian.
 
-        Args:
-            index: Index of the Gaussian to retrieve
-
-        Returns:
-            GSData object with a single Gaussian
+        :param index: Index of the Gaussian to retrieve
+        :returns: GSData object with a single Gaussian
         """
         if index < 0:
             index = len(self) + index
@@ -1003,13 +948,10 @@ class GSData:
         This centralizes the view recreation logic that was duplicated
         across multiple methods.
 
-        Args:
-            base_array: The base array to create views from
-            masks_array: Optional masks array
-            mask_names: Optional list of mask layer names
-
-        Returns:
-            New GSData object with views into base_array, or None if unknown format
+        :param base_array: The base array to create views from
+        :param masks_array: Optional masks array
+        :param mask_names: Optional list of mask layer names
+        :returns: New GSData object with views into base_array, or None if unknown format
         """
         n_gaussians = base_array.shape[0]
         n_props = base_array.shape[1]

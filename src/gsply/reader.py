@@ -123,11 +123,8 @@ def _read_header_fast(f) -> tuple[list[str], int] | None:
     and decodes it once, rather than doing multiple readline() + decode() calls.
     Provides 4-10% speedup for reads.
 
-    Args:
-        f: Open file handle in binary mode
-
-    Returns:
-        Tuple of (header_lines, data_offset) or None on error
+    :param f: Open file handle in binary mode
+    :returns: Tuple of (header_lines, data_offset) or None on error
     """
     try:
         # Read first chunk (typical header is 300-2000 bytes)
@@ -223,23 +220,32 @@ def _unpack_all_jit(
     - Pre-computed quaternion norm constant (_QUAT_NORM)
     - boundscheck=False: skip array bounds checking (indices guaranteed valid)
 
-    Args:
-        packed_position: (N,) uint32 array with packed xyz positions
-        packed_rotation: (N,) uint32 array with packed quaternions
-        packed_scale: (N,) uint32 array with packed scales
-        packed_color: (N,) uint32 array with packed colors and opacity
-        min_x, min_y, min_z, range_x, range_y, range_z: (num_chunks,) position bounds per chunk
-        min_sx, min_sy, min_sz, range_sx, range_sy, range_sz: (num_chunks,) scale bounds per chunk
-        min_r, min_g, min_b, range_r, range_g, range_b: (num_chunks,) color bounds per chunk
-        sh_c0: SH constant for color to SH DC conversion (0.28209479...)
-
-    Returns:
-        tuple: (means, scales, quats, sh0, opacities)
-            - means: (N, 3) xyz positions in world space
-            - scales: (N, 3) scale parameters
-            - quats: (N, 4) normalized quaternions (w, x, y, z)
-            - sh0: (N, 3) SH DC coefficients (converted from RGB)
-            - opacities: (N,) opacity in logit space
+    :param packed_position: (N,) uint32 array with packed xyz positions
+    :param packed_rotation: (N,) uint32 array with packed quaternions
+    :param packed_scale: (N,) uint32 array with packed scales
+    :param packed_color: (N,) uint32 array with packed colors and opacity
+    :param min_x: (num_chunks,) position minimum x bounds per chunk
+    :param min_y: (num_chunks,) position minimum y bounds per chunk
+    :param min_z: (num_chunks,) position minimum z bounds per chunk
+    :param range_x: (num_chunks,) position x range per chunk
+    :param range_y: (num_chunks,) position y range per chunk
+    :param range_z: (num_chunks,) position z range per chunk
+    :param min_sx: (num_chunks,) scale minimum x bounds per chunk
+    :param min_sy: (num_chunks,) scale minimum y bounds per chunk
+    :param min_sz: (num_chunks,) scale minimum z bounds per chunk
+    :param range_sx: (num_chunks,) scale x range per chunk
+    :param range_sy: (num_chunks,) scale y range per chunk
+    :param range_sz: (num_chunks,) scale z range per chunk
+    :param min_r: (num_chunks,) color minimum r bounds per chunk
+    :param min_g: (num_chunks,) color minimum g bounds per chunk
+    :param min_b: (num_chunks,) color minimum b bounds per chunk
+    :param range_r: (num_chunks,) color r range per chunk
+    :param range_g: (num_chunks,) color g range per chunk
+    :param range_b: (num_chunks,) color b range per chunk
+    :param sh_c0: SH constant for color to SH DC conversion (0.28209479...)
+    :returns: Tuple of (means, scales, quats, sh0, opacities) where means is (N, 3) xyz positions,
+              scales is (N, 3) scale parameters, quats is (N, 4) normalized quaternions (w, x, y, z),
+              sh0 is (N, 3) SH DC coefficients (converted from RGB), opacities is (N,) opacity in logit space
     """
     n = len(packed_position)
     means = np.empty((n, 3), dtype=np.float32)
@@ -343,11 +349,8 @@ def _unpack_sh_jit(shN_data):  # noqa: N803
     1. Center around zero: (x - 127.5) maps [0, 255] to [-127.5, 127.5]
     2. Scale to output range: divide by 32.0 to get [-4.0, 4.0]
 
-    Args:
-        shN_data: (N, num_coeffs) uint8 array of packed SH coefficients
-
-    Returns:
-        sh_flat: (N, num_coeffs) float32 array of decompressed SH values
+    :param shN_data: (N, num_coeffs) uint8 array of packed SH coefficients
+    :returns: (N, num_coeffs) float32 array of decompressed SH values
     """
     n, num_coeffs = shN_data.shape
     sh_flat = np.empty((n, num_coeffs), dtype=np.float32)
@@ -377,12 +380,9 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:  # noqa: PLR0911
     Note: This function does NOT use JIT compilation - it's already optimally
     implemented with NumPy zero-copy views. JIT is only used for compressed format.
 
-    Args:
-        file_path: Path to PLY file
-
-    Returns:
-        GSData container with zero-copy array views, or None if format
-        is incompatible. The base array is kept alive to ensure views remain valid.
+    :param file_path: Path to PLY file
+    :returns: GSData container with zero-copy array views, or None if format
+              is incompatible. The base array is kept alive to ensure views remain valid.
 
     Performance:
         - SH degree 0 (14 props): ~6ms for 400K Gaussians (70M Gaussians/sec)
@@ -499,11 +499,8 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:  # noqa: PLR0911
 def _parse_elements_from_header(header_lines: list[str]) -> dict:
     """Parse element information from PLY header lines.
 
-    Args:
-        header_lines: List of header lines from PLY file
-
-    Returns:
-        Dictionary mapping element names to their properties and counts
+    :param header_lines: List of header lines from PLY file
+    :returns: Dictionary mapping element names to their properties and counts
     """
     elements = {}
     current_element = None
@@ -566,15 +563,12 @@ def _decompress_data_internal(
     This function contains the core decompression logic shared between read_compressed()
     and decompress_from_bytes(). All JIT-compiled unpacking happens here.
 
-    Args:
-        chunk_data: Chunk bounds array (num_chunks, 18) float32
-        vertex_data: Packed vertex data (num_vertices, 4) uint32
-        shN_data: Optional SH coefficient data (num_vertices, num_coeffs) uint8
-        num_vertices: Total number of Gaussians
-        num_chunks: Total number of chunks
-
-    Returns:
-        GSData container with decompressed Gaussian parameters
+    :param chunk_data: Chunk bounds array (num_chunks, 18) float32
+    :param vertex_data: Packed vertex data (num_vertices, 4) uint32
+    :param shN_data: Optional SH coefficient data (num_vertices, num_coeffs) uint8
+    :param num_vertices: Total number of Gaussians
+    :param num_chunks: Total number of chunks
+    :returns: GSData container with decompressed Gaussian parameters
     """
     # Extract chunk bounds (views into chunk_data)
     min_x, min_y, min_z = chunk_data[:, 0], chunk_data[:, 1], chunk_data[:, 2]
@@ -674,14 +668,9 @@ def _parse_header_from_bytes(compressed_bytes: bytes) -> tuple[list[str], int, d
 
     Uses fast byte search instead of line-by-line reading for maximum performance.
 
-    Args:
-        compressed_bytes: Complete PLY file as bytes
-
-    Returns:
-        Tuple of (header_lines, data_offset, elements_dict)
-
-    Raises:
-        ValueError: If header is invalid or not compressed format
+    :param compressed_bytes: Complete PLY file as bytes
+    :returns: Tuple of (header_lines, data_offset, elements_dict)
+    :raises ValueError: If header is invalid or not compressed format
     """
     # Fast path: Find end_header with byte search (like _read_header_fast)
     end_marker = b"end_header\n"
@@ -714,12 +703,9 @@ def read_compressed(file_path: str | Path) -> GSData | None:
 
     Uses Numba JIT compilation for fast parallel decompression (6x faster than pure NumPy).
 
-    Args:
-        file_path: Path to compressed PLY file
-
-    Returns:
-        GSData container with decompressed Gaussian parameters, or None
-        if format is incompatible. The base field is None (no shared array).
+    :param file_path: Path to compressed PLY file
+    :returns: GSData container with decompressed Gaussian parameters, or None
+              if format is incompatible. The base field is None (no shared array).
 
     Performance:
         - With JIT: ~9ms for 400K Gaussians, SH0 (47M Gaussians/sec)
@@ -782,11 +768,8 @@ def decompress_from_bytes(compressed_bytes: bytes) -> GSData:
 
     Uses optimized header parsing (bytes.find) matching read_compressed() performance.
 
-    Args:
-        compressed_bytes: Complete compressed PLY file as bytes
-
-    Returns:
-        GSData container with decompressed Gaussian parameters
+    :param compressed_bytes: Complete compressed PLY file as bytes
+    :returns: GSData container with decompressed Gaussian parameters
 
     Example:
         >>> from gsply import compress_to_bytes, decompress_from_bytes
@@ -837,14 +820,9 @@ def plyread(file_path: str | Path) -> GSData:
 
     All reads use zero-copy optimization for maximum performance.
 
-    Args:
-        file_path: Path to PLY file
-
-    Returns:
-        GSData container with Gaussian parameters
-
-    Raises:
-        ValueError: If file format is not recognized or invalid
+    :param file_path: Path to PLY file
+    :returns: GSData container with Gaussian parameters
+    :raises ValueError: If file format is not recognized or invalid
 
     Performance:
         - Uncompressed: ~6ms for 400K Gaussians, SH0 (70M Gaussians/sec)

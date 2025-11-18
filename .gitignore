@@ -17,6 +17,7 @@ dist/
 downloads/
 eggs/
 .eggs/
+.ruff_cache/
 lib/
 lib64/
 parts/
@@ -112,3 +113,6 @@ nul
 !/tests/test_*.py
 !/benchmarks/benchmark_*.py
 benchmarks/test_data/
+
+# Documentation build artifacts
+docs/_build/

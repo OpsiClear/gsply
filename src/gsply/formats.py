@@ -122,14 +122,9 @@ SH_C0 = 0.28209479177387814  # sqrt(1/(4*pi))
 def _parse_ply_header(file_path: Path) -> tuple[dict[str, dict[str, Any]], int]:
     """Parse PLY header to extract element definitions.
 
-    Args:
-        file_path: Path to PLY file
-
-    Returns:
-        Tuple of (elements_dict, header_size_bytes)
-
-    Raises:
-        ValueError: If PLY format is invalid
+    :param file_path: Path to PLY file
+    :returns: Tuple of (elements_dict, header_size_bytes)
+    :raises ValueError: If PLY format is invalid
     """
     elements = {}
     current_element = None
@@ -171,13 +166,9 @@ def _parse_ply_header(file_path: Path) -> tuple[dict[str, dict[str, Any]], int]:
 def detect_format(file_path: str | Path) -> tuple[bool, int | None]:
     """Detect PLY format type and SH degree.
 
-    Args:
-        file_path: Path to PLY file
-
-    Returns:
-        Tuple of (is_compressed, sh_degree)
-        - is_compressed: True if compressed format, False if uncompressed
-        - sh_degree: 0-3 for uncompressed, None for compressed or unknown
+    :param file_path: Path to PLY file
+    :returns: Tuple of (is_compressed, sh_degree) where is_compressed is True if compressed format,
+              False if uncompressed, and sh_degree is 0-3 for uncompressed, None for compressed or unknown
 
     Example:
         >>> is_compressed, sh_degree = detect_format("model.ply")
@@ -222,11 +213,8 @@ def detect_format(file_path: str | Path) -> tuple[bool, int | None]:
 def _is_compressed_format(elements: dict[str, dict[str, Any]]) -> bool:
     """Check if elements dict represents compressed format.
 
-    Args:
-        elements: Parsed PLY header elements
-
-    Returns:
-        True if compressed format detected
+    :param elements: Parsed PLY header elements
+    :returns: True if compressed format detected
     """
     # Must have chunk and vertex elements
     if "chunk" not in elements or "vertex" not in elements:
@@ -293,10 +281,7 @@ def _is_compressed_format(elements: dict[str, dict[str, Any]]) -> bool:
 def get_sh_degree_from_property_count(property_count: int) -> int | None:
     """Get SH degree from property count.
 
-    Args:
-        property_count: Number of properties in vertex element
-
-    Returns:
-        SH degree (0-3) or None if unknown
+    :param property_count: Number of properties in vertex element
+    :returns: SH degree (0-3) or None if unknown
     """
     return PROPERTY_COUNT_TO_SH_DEGREE.get(property_count)

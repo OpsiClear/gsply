@@ -9,7 +9,7 @@ This file provides context and instructions for AI coding agents working on the 
 - **Language**: Pure Python (3.10+)
 - **Core Dependencies**: NumPy, Numba (JIT acceleration)
 - **Optional Dependencies**: PyTorch (GPU acceleration via GSTensor)
-- **Performance**: 93M Gaussians/sec read, 87M Gaussians/sec write
+- **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
 - **Key Features**: Zero-copy optimization, compressed format support, GPU integration
 
 ## Development Environment Setup

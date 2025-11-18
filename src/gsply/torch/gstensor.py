@@ -73,8 +73,7 @@ class GSTensor:
     def get_sh_degree(self) -> int:
         """Get SH degree from shN shape.
 
-        Returns:
-            SH degree (0-3)
+        :returns: SH degree (0-3)
         """
         if self.shN is None or self.shN.shape[1] == 0:
             return 0
@@ -85,8 +84,7 @@ class GSTensor:
     def has_high_order_sh(self) -> bool:
         """Check if data has higher-order SH coefficients.
 
-        Returns:
-            True if SH degree > 0
+        :returns: True if SH degree > 0
         """
         return self.shN is not None and self.shN.shape[1] > 0
 
@@ -112,15 +110,12 @@ class GSTensor:
         When mask is provided, only the masked subset is transferred to GPU,
         avoiding intermediate CPU copies and unnecessary GPU memory usage.
 
-        Args:
-            data: GSData object to convert
-            device: Target device ('cuda', 'cpu', or torch.device)
-            dtype: Target dtype (default: float32)
-            requires_grad: Enable gradient tracking (default: False)
-            mask: Optional boolean mask to filter data before transfer (default: None)
-
-        Returns:
-            GSTensor on specified device
+        :param data: GSData object to convert
+        :param device: Target device ('cuda', 'cpu', or torch.device)
+        :param dtype: Target dtype (default: float32)
+        :param requires_grad: Enable gradient tracking (default: False)
+        :param mask: Optional boolean mask to filter data before transfer (default: None)
+        :returns: GSTensor on specified device
 
         Example:
             >>> data = gsply.plyread("scene.ply")
@@ -211,8 +206,7 @@ class GSTensor:
 
         Transfers all tensors to CPU and converts to NumPy arrays.
 
-        Returns:
-            GSData object with NumPy arrays on CPU
+        :returns: GSData object with NumPy arrays on CPU
 
         Example:
             >>> gstensor = data.to_tensor(device='cuda')
@@ -266,13 +260,10 @@ class GSTensor:
     ) -> GSTensor:
         """Move tensors to specified device and/or dtype.
 
-        Args:
-            device: Target device ('cuda', 'cpu', or torch.device)
-            dtype: Target dtype
-            non_blocking: If True, asynchronous transfer (default: False)
-
-        Returns:
-            New GSTensor on target device/dtype
+        :param device: Target device ('cuda', 'cpu', or torch.device)
+        :param dtype: Target dtype
+        :param non_blocking: If True, asynchronous transfer (default: False)
+        :returns: New GSTensor on target device/dtype
 
         Example:
             >>> gstensor_gpu = gstensor.to('cuda')
@@ -336,19 +327,15 @@ class GSTensor:
     def cpu(self) -> GSTensor:
         """Move tensors to CPU.
 
-        Returns:
-            New GSTensor on CPU
+        :returns: New GSTensor on CPU
         """
         return self.to("cpu")
 
     def cuda(self, device: int | None = None) -> GSTensor:
         """Move tensors to CUDA device.
 
-        Args:
-            device: CUDA device index (default: current device)
-
-        Returns:
-            New GSTensor on CUDA
+        :param device: CUDA device index (default: current device)
+        :returns: New GSTensor on CUDA
         """
         if device is None:
             return self.to("cuda")
@@ -364,8 +351,7 @@ class GSTensor:
         Creates a _base tensor from separate tensors, improving performance for
         slicing operations (25x faster boolean masking on GPU).
 
-        Returns:
-            New GSTensor with _base tensor, or self if already consolidated
+        :returns: New GSTensor with _base tensor, or self if already consolidated
 
         Example:
             >>> gstensor = gstensor.consolidate()  # Create _base
@@ -418,13 +404,10 @@ class GSTensor:
     ) -> GSTensor | None:
         """Helper to recreate GSTensor from a base tensor.
 
-        Args:
-            base_tensor: Base tensor (N, P) where P is property count
-            masks_tensor: Optional masks tensor (N,) or (N, L)
-            mask_names: Optional mask layer names
-
-        Returns:
-            New GSTensor with views into base_tensor, or None if unknown format
+        :param base_tensor: Base tensor (N, P) where P is property count
+        :param masks_tensor: Optional masks tensor (N,) or (N, L)
+        :param mask_names: Optional mask layer names
+        :returns: New GSTensor with views into base_tensor, or None if unknown format
         """
         # Convert to Python int to avoid numpy _NoValueType issues
         n_gaussians = int(base_tensor.shape[0])
@@ -476,11 +459,8 @@ class GSTensor:
     def _slice_from_base(self, indices_or_mask):
         """Efficiently slice data when _base tensor exists.
 
-        Args:
-            indices_or_mask: Slice, boolean mask, or integer indices
-
-        Returns:
-            New GSTensor with sliced data, or None if no _base
+        :param indices_or_mask: Slice, boolean mask, or integer indices
+        :returns: New GSTensor with sliced data, or None if no _base
         """
         if self._base is None:
             return None
@@ -519,11 +499,8 @@ class GSTensor:
             >>> gstensor[mask]      # Boolean mask (COPY)
             >>> gstensor[[0,1,2]]   # Fancy indexing (COPY)
 
-        Args:
-            key: Slice, index, boolean mask, or index array
-
-        Returns:
-            Single Gaussian (tuple) or new GSTensor
+        :param key: Slice, index, boolean mask, or index array
+        :returns: Single Gaussian (tuple) or new GSTensor
         """
         # Handle single index - return tuple
         if isinstance(key, int):
@@ -620,11 +597,8 @@ class GSTensor:
     def get_gaussian(self, index: int) -> GSTensor:
         """Get a single Gaussian as a GSTensor object.
 
-        Args:
-            index: Index of the Gaussian
-
-        Returns:
-            GSTensor with single Gaussian
+        :param index: Index of the Gaussian
+        :returns: GSTensor with single Gaussian
 
         Example:
             >>> gaussian = gstensor.get_gaussian(0)  # Returns GSTensor
@@ -645,8 +619,7 @@ class GSTensor:
     def clone(self) -> GSTensor:
         """Create a deep copy of the GSTensor.
 
-        Returns:
-            New GSTensor with cloned tensors (independent data)
+        :returns: New GSTensor with cloned tensors (independent data)
 
         Example:
             >>> gstensor_copy = gstensor.clone()
@@ -680,11 +653,8 @@ class GSTensor:
 
         Allows Pythonic concatenation using the + operator.
 
-        Args:
-            other: Another GSTensor object to concatenate
-
-        Returns:
-            New GSTensor object with combined Gaussians
+        :param other: Another GSTensor object to concatenate
+        :returns: New GSTensor object with combined Gaussians
 
         Example:
             >>> combined = gstensor1 + gstensor2  # Same as gstensor1.add(gstensor2)
@@ -709,14 +679,9 @@ class GSTensor:
         achieving 10-100x speedup over CPU for large datasets. _base optimization
         provides additional 2-3x speedup when both tensors have consolidated bases.
 
-        Args:
-            other: Another GSTensor object to concatenate
-
-        Returns:
-            New GSTensor object with combined Gaussians
-
-        Raises:
-            ValueError: If SH degrees don't match
+        :param other: Another GSTensor object to concatenate
+        :returns: New GSTensor object with combined Gaussians
+        :raises ValueError: If SH degrees don't match
 
         Example:
             >>> gstensor1 = GSTensor.from_gsdata(data1, device='cuda')  # 100K Gaussians
@@ -893,12 +858,9 @@ class GSTensor:
         Convenient for standard Gaussian Splatting workflows that expect
         individual tensors rather than a container object.
 
-        Args:
-            include_shN: If True, include shN in output (default True)
-
-        Returns:
-            If include_shN=True: (means, scales, quats, opacities, sh0, shN)
-            If include_shN=False: (means, scales, quats, opacities, sh0)
+        :param include_shN: If True, include shN in output (default True)
+        :returns: If include_shN=True: (means, scales, quats, opacities, sh0, shN),
+                  If include_shN=False: (means, scales, quats, opacities, sh0)
 
         Example:
             >>> data = plyread("scene.ply")
@@ -917,8 +879,7 @@ class GSTensor:
     def to_dict(self) -> dict:
         """Convert Gaussian data to dictionary.
 
-        Returns:
-            Dictionary with keys: means, scales, quats, opacities, sh0, shN
+        :returns: Dictionary with keys: means, scales, quats, opacities, sh0, shN
 
         Example:
             >>> gstensor = GSTensor.from_gsdata(data, device='cuda')
@@ -944,11 +905,8 @@ class GSTensor:
     def to_dtype(self, dtype: torch.dtype) -> GSTensor:
         """Convert tensors to specified dtype.
 
-        Args:
-            dtype: Target dtype (e.g., torch.float16, torch.float32, torch.float64)
-
-        Returns:
-            New GSTensor with converted dtype
+        :param dtype: Target dtype (e.g., torch.float16, torch.float32, torch.float64)
+        :returns: New GSTensor with converted dtype
 
         Example:
             >>> gstensor_half = gstensor.to_dtype(torch.float16)
@@ -958,24 +916,21 @@ class GSTensor:
     def half(self) -> GSTensor:
         """Convert to float16 (half precision).
 
-        Returns:
-            New GSTensor with float16 dtype
+        :returns: New GSTensor with float16 dtype
         """
         return self.to_dtype(torch.float16)
 
     def float(self) -> GSTensor:
         """Convert to float32 (single precision).
 
-        Returns:
-            New GSTensor with float32 dtype
+        :returns: New GSTensor with float32 dtype
         """
         return self.to_dtype(torch.float32)
 
     def double(self) -> GSTensor:
         """Convert to float64 (double precision).
 
-        Returns:
-            New GSTensor with float64 dtype
+        :returns: New GSTensor with float64 dtype
         """
         return self.to_dtype(torch.float64)
 
@@ -986,12 +941,9 @@ class GSTensor:
     def add_mask_layer(self, name: str, mask: torch.Tensor) -> None:
         """Add a named boolean mask layer.
 
-        Args:
-            name: Name for this mask layer
-            mask: Boolean tensor of shape (N,) where N is number of Gaussians
-
-        Raises:
-            ValueError: If mask shape doesn't match data length or name already exists
+        :param name: Name for this mask layer
+        :param mask: Boolean tensor of shape (N,) where N is number of Gaussians
+        :raises ValueError: If mask shape doesn't match data length or name already exists
 
         Example:
             >>> gstensor.add_mask_layer("high_opacity", gstensor.opacities > 0.5)
@@ -1027,14 +979,9 @@ class GSTensor:
     def get_mask_layer(self, name: str) -> torch.Tensor:
         """Get a mask layer by name.
 
-        Args:
-            name: Name of the mask layer
-
-        Returns:
-            Boolean tensor of shape (N,)
-
-        Raises:
-            ValueError: If layer name not found
+        :param name: Name of the mask layer
+        :returns: Boolean tensor of shape (N,)
+        :raises ValueError: If layer name not found
 
         Example:
             >>> opacity_mask = gstensor.get_mask_layer("high_opacity")
@@ -1050,11 +997,8 @@ class GSTensor:
     def remove_mask_layer(self, name: str) -> None:
         """Remove a mask layer by name.
 
-        Args:
-            name: Name of the mask layer to remove
-
-        Raises:
-            ValueError: If layer name not found
+        :param name: Name of the mask layer to remove
+        :raises ValueError: If layer name not found
 
         Example:
             >>> gstensor.remove_mask_layer("foreground")
@@ -1098,15 +1042,10 @@ class GSTensor:
         - torch.all() for AND: 100-1000x faster than CPU Numba
         - torch.any() for OR: 100-1000x faster than CPU Numba
 
-        Args:
-            mode: Combination mode - "and" (all must pass) or "or" (any must pass)
-            layers: List of layer names to combine (None = use all layers)
-
-        Returns:
-            Combined boolean tensor of shape (N,)
-
-        Raises:
-            ValueError: If no masks exist or invalid mode
+        :param mode: Combination mode - "and" (all must pass) or "or" (any must pass)
+        :param layers: List of layer names to combine (None = use all layers)
+        :returns: Combined boolean tensor of shape (N,)
+        :raises ValueError: If no masks exist or invalid mode
 
         Example:
             >>> # Combine all layers with AND
@@ -1163,13 +1102,10 @@ class GSTensor:
     ) -> GSTensor:
         """Apply mask layers to filter Gaussians.
 
-        Args:
-            mode: Combination mode - "and" or "or"
-            layers: List of layer names to apply (None = all layers)
-            inplace: If True, modify self; if False, return filtered copy
-
-        Returns:
-            Filtered GSTensor (self if inplace=True, new object if inplace=False)
+        :param mode: Combination mode - "and" or "or"
+        :param layers: List of layer names to apply (None = all layers)
+        :param inplace: If True, modify self; if False, return filtered copy
+        :returns: Filtered GSTensor (self if inplace=True, new object if inplace=False)
 
         Example:
             >>> # Filter using all mask layers (AND logic)

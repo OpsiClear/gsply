@@ -8,11 +8,8 @@ from gsply.formats import SH_C0
 def sh2rgb(sh: np.ndarray | float) -> np.ndarray | float:
     """Convert SH DC coefficients to RGB colors.
 
-    Args:
-        sh: SH DC coefficients (N, 3) or scalar
-
-    Returns:
-        RGB colors in [0, 1] range
+    :param sh: SH DC coefficients (N, 3) or scalar
+    :returns: RGB colors in [0, 1] range
 
     Example:
         >>> import gsply
@@ -26,11 +23,8 @@ def sh2rgb(sh: np.ndarray | float) -> np.ndarray | float:
 def rgb2sh(rgb: np.ndarray | float) -> np.ndarray | float:
     """Convert RGB colors to SH DC coefficients.
 
-    Args:
-        rgb: RGB colors in [0, 1] range (N, 3) or scalar
-
-    Returns:
-        SH DC coefficients
+    :param rgb: RGB colors in [0, 1] range (N, 3) or scalar
+    :returns: SH DC coefficients
 
     Example:
         >>> import gsply

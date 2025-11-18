@@ -83,12 +83,9 @@ def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
     This optimization pre-computes header strings for common SH degrees (0-3),
     avoiding dynamic string building in loops. Provides 3-5% speedup for writes.
 
-    Args:
-        num_gaussians: Number of Gaussians
-        num_sh_rest: Number of higher-order SH coefficients (None for SH0)
-
-    Returns:
-        Header bytes ready to write
+    :param num_gaussians: Number of Gaussians
+    :param num_sh_rest: Number of higher-order SH coefficients (None for SH0)
+    :returns: Header bytes ready to write
     """
     if num_sh_rest is None:
         # SH degree 0: use pre-computed template
@@ -156,14 +153,15 @@ def _build_header_fast(num_gaussians: int, num_sh_rest: int | None) -> bytes:
 def _pack_positions_jit(sorted_means, chunk_indices, min_x, min_y, min_z, max_x, max_y, max_z):
     """JIT-compiled position quantization and packing (11-10-11 bits) with parallel processing.
 
-    Args:
-        sorted_means: (N, 3) float32 array of positions
-        chunk_indices: int32 array of chunk indices for each vertex
-        min_x, min_y, min_z: chunk minimum bounds
-        max_x, max_y, max_z: chunk maximum bounds
-
-    Returns:
-        packed: (N,) uint32 array of packed positions
+    :param sorted_means: (N, 3) float32 array of positions
+    :param chunk_indices: int32 array of chunk indices for each vertex
+    :param min_x: chunk minimum x bounds
+    :param min_y: chunk minimum y bounds
+    :param min_z: chunk minimum z bounds
+    :param max_x: chunk maximum x bounds
+    :param max_y: chunk maximum y bounds
+    :param max_z: chunk maximum z bounds
+    :returns: (N,) uint32 array of packed positions
     """
     n = len(sorted_means)
     packed = np.zeros(n, dtype=np.uint32)
@@ -208,14 +206,15 @@ def _pack_positions_jit(sorted_means, chunk_indices, min_x, min_y, min_z, max_x,
 def _pack_scales_jit(sorted_scales, chunk_indices, min_sx, min_sy, min_sz, max_sx, max_sy, max_sz):
     """JIT-compiled scale quantization and packing (11-10-11 bits) with parallel processing.
 
-    Args:
-        sorted_scales: (N, 3) float32 array of scales
-        chunk_indices: int32 array of chunk indices for each vertex
-        min_sx, min_sy, min_sz: chunk minimum scale bounds
-        max_sx, max_sy, max_sz: chunk maximum scale bounds
-
-    Returns:
-        packed: (N,) uint32 array of packed scales
+    :param sorted_scales: (N, 3) float32 array of scales
+    :param chunk_indices: int32 array of chunk indices for each vertex
+    :param min_sx: chunk minimum scale x bounds
+    :param min_sy: chunk minimum scale y bounds
+    :param min_sz: chunk minimum scale z bounds
+    :param max_sx: chunk maximum scale x bounds
+    :param max_sy: chunk maximum scale y bounds
+    :param max_sz: chunk maximum scale z bounds
+    :returns: (N,) uint32 array of packed scales
     """
     n = len(sorted_scales)
     packed = np.zeros(n, dtype=np.uint32)
@@ -270,15 +269,16 @@ def _pack_colors_jit(
 ):
     """JIT-compiled color and opacity quantization and packing (8-8-8-8 bits) with parallel processing.
 
-    Args:
-        sorted_color_rgb: (N, 3) float32 array of pre-computed RGB colors (SH0 * SH_C0 + 0.5)
-        sorted_opacities: (N,) float32 array of opacities (logit space)
-        chunk_indices: int32 array of chunk indices for each vertex
-        min_r, min_g, min_b: chunk minimum color bounds
-        max_r, max_g, max_b: chunk maximum color bounds
-
-    Returns:
-        packed: (N,) uint32 array of packed colors
+    :param sorted_color_rgb: (N, 3) float32 array of pre-computed RGB colors (SH0 * SH_C0 + 0.5)
+    :param sorted_opacities: (N,) float32 array of opacities (logit space)
+    :param chunk_indices: int32 array of chunk indices for each vertex
+    :param min_r: chunk minimum color r bounds
+    :param min_g: chunk minimum color g bounds
+    :param min_b: chunk minimum color b bounds
+    :param max_r: chunk maximum color r bounds
+    :param max_g: chunk maximum color g bounds
+    :param max_b: chunk maximum color b bounds
+    :returns: (N,) uint32 array of packed colors
     """
     n = len(sorted_color_rgb)
     packed = np.zeros(n, dtype=np.uint32)
@@ -333,11 +333,8 @@ def _pack_colors_jit(
 def _pack_quaternions_jit(sorted_quats):
     """JIT-compiled quaternion normalization and packing (2+10-10-10 bits, smallest-three) with parallel processing.
 
-    Args:
-        sorted_quats: (N, 4) float32 array of quaternions
-
-    Returns:
-        packed: (N,) uint32 array of packed quaternions
+    :param sorted_quats: (N, 4) float32 array of quaternions
+    :returns: (N,) uint32 array of packed quaternions
     """
     n = len(sorted_quats)
     packed = np.zeros(n, dtype=np.uint32)
@@ -403,18 +400,13 @@ def _compute_chunk_bounds_jit(
     Computes min/max bounds for positions, scales, and colors for each chunk.
     This is the main bottleneck in compressed write (~90ms -> ~10ms).
 
-    Args:
-        sorted_means: (N, 3) float32 array of positions
-        sorted_scales: (N, 3) float32 array of scales
-        sorted_color_rgb: (N, 3) float32 array of pre-computed RGB colors (SH0 * SH_C0 + 0.5)
-        chunk_starts: (num_chunks,) int array of chunk start indices
-        chunk_ends: (num_chunks,) int array of chunk end indices
-
-    Returns:
-        bounds: (num_chunks, 18) float32 array with layout:
-            [0:6]   - min_x, min_y, min_z, max_x, max_y, max_z
-            [6:12]  - min_scale_x/y/z, max_scale_x/y/z (clamped to [-20,20])
-            [12:18] - min_r, min_g, min_b, max_r, max_g, max_b
+    :param sorted_means: (N, 3) float32 array of positions
+    :param sorted_scales: (N, 3) float32 array of scales
+    :param sorted_color_rgb: (N, 3) float32 array of pre-computed RGB colors (SH0 * SH_C0 + 0.5)
+    :param chunk_starts: (num_chunks,) int array of chunk start indices
+    :param chunk_ends: (num_chunks,) int array of chunk end indices
+    :returns: (num_chunks, 18) float32 array with layout [0:6] min_x, min_y, min_z, max_x, max_y, max_z,
+              [6:12] min_scale_x/y/z, max_scale_x/y/z (clamped to [-20,20]), [12:18] min_r, min_g, min_b, max_r, max_g, max_b
     """
     num_chunks = len(chunk_starts)
     bounds = np.zeros((num_chunks, 18), dtype=np.float32)
@@ -506,17 +498,14 @@ def _validate_and_normalize_inputs(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
     """Validate and normalize input arrays to float32 format.
 
-    Args:
-        means: Gaussian centers, shape (N, 3)
-        scales: Log scales, shape (N, 3)
-        quats: Rotations as quaternions (wxyz), shape (N, 4)
-        opacities: Logit opacities, shape (N,)
-        sh0: DC spherical harmonics, shape (N, 3)
-        shN: Higher-order SH coefficients, shape (N, K, 3) or None
-        validate: Whether to validate shapes
-
-    Returns:
-        Tuple of normalized arrays (all float32)
+    :param means: Gaussian centers, shape (N, 3)
+    :param scales: Log scales, shape (N, 3)
+    :param quats: Rotations as quaternions (wxyz), shape (N, 4)
+    :param opacities: Logit opacities, shape (N,)
+    :param sh0: DC spherical harmonics, shape (N, 3)
+    :param shN: Higher-order SH coefficients, shape (N, K, 3) or None
+    :param validate: Whether to validate shapes
+    :returns: Tuple of normalized arrays (all float32)
     """
     # Ensure all arrays are numpy arrays
     if not isinstance(means, np.ndarray):
@@ -605,16 +594,13 @@ def _compress_data_internal(
     This function contains the core compression logic extracted from write_compressed().
     All inputs must be pre-validated and normalized to float32.
 
-    Args:
-        means: (N, 3) float32 - xyz positions
-        scales: (N, 3) float32 - scale parameters
-        quats: (N, 4) float32 - rotation quaternions
-        opacities: (N,) float32 - opacity values
-        sh0: (N, 3) float32 - DC spherical harmonics
-        shN: (N, K*3) float32 or None - flattened SH coefficients
-
-    Returns:
-        Tuple of (header_bytes, chunk_bounds, packed_data, packed_sh, num_gaussians, num_chunks)
+    :param means: (N, 3) float32 - xyz positions
+    :param scales: (N, 3) float32 - scale parameters
+    :param quats: (N, 4) float32 - rotation quaternions
+    :param opacities: (N,) float32 - opacity values
+    :param sh0: (N, 3) float32 - DC spherical harmonics
+    :param shN: (N, K*3) float32 or None - flattened SH coefficients
+    :returns: Tuple of (header_bytes, chunk_bounds, packed_data, packed_sh, num_gaussians, num_chunks)
     """
     num_gaussians = means.shape[0]
     num_chunks = (num_gaussians + CHUNK_SIZE - 1) // CHUNK_SIZE
@@ -775,10 +761,9 @@ def write_uncompressed(
         - Standard path (data without _base): ~20-120ms depending on size and SH degree
         - Peak: 70M Gaussians/sec for 400K Gaussians, SH0 (zero-copy)
 
-    Args:
-        file_path: Output PLY file path
-        data: GSData object containing Gaussian parameters
-        validate: If True, validate input shapes (default True)
+    :param file_path: Output PLY file path
+    :param data: GSData object containing Gaussian parameters
+    :param validate: If True, validate input shapes (default True)
 
     Example:
         >>> # RECOMMENDED: Pass GSData directly (automatic zero-copy)
@@ -882,15 +867,14 @@ def write_compressed(
 
     Uses Numba JIT compilation for fast parallel compression (3.8x faster than pure NumPy).
 
-    Args:
-        file_path: Output PLY file path
-        means: (N, 3) - xyz positions
-        scales: (N, 3) - scale parameters
-        quats: (N, 4) - rotation quaternions (must be normalized)
-        opacities: (N,) - opacity values
-        sh0: (N, 3) - DC spherical harmonics
-        shN: (N, K, 3) or (N, K*3) - Higher-order SH coefficients (optional)
-        validate: If True, validate input shapes (default True)
+    :param file_path: Output PLY file path
+    :param means: (N, 3) - xyz positions
+    :param scales: (N, 3) - scale parameters
+    :param quats: (N, 4) - rotation quaternions (must be normalized)
+    :param opacities: (N,) - opacity values
+    :param sh0: (N, 3) - DC spherical harmonics
+    :param shN: (N, K, 3) or (N, K*3) - Higher-order SH coefficients (optional)
+    :param validate: If True, validate input shapes (default True)
 
     Performance:
         - With JIT: ~15ms for 400K Gaussians, SH0 (27M Gaussians/sec)
@@ -949,17 +933,14 @@ def compress_to_bytes(
     Compresses Gaussian data into PlayCanvas format and returns as bytes,
     without writing to disk. Useful for network transfer or custom storage.
 
-    Args:
-        data_or_means: Either a GSData object or means array (N, 3) float32
-        scales: Gaussian scales (N, 3) float32 (required if first arg is means)
-        quats: Gaussian quaternions (N, 4) float32 (required if first arg is means)
-        opacities: Gaussian opacities (N,) float32 (required if first arg is means)
-        sh0: Degree 0 SH coefficients RGB (N, 3) float32 (required if first arg is means)
-        shN: Optional higher degree SH coefficients (N, K, 3) float32
-        validate: Whether to validate inputs
-
-    Returns:
-        bytes: Complete compressed PLY file as bytes
+    :param data_or_means: Either a GSData object or means array (N, 3) float32
+    :param scales: Gaussian scales (N, 3) float32 (required if first arg is means)
+    :param quats: Gaussian quaternions (N, 4) float32 (required if first arg is means)
+    :param opacities: Gaussian opacities (N,) float32 (required if first arg is means)
+    :param sh0: Degree 0 SH coefficients RGB (N, 3) float32 (required if first arg is means)
+    :param shN: Optional higher degree SH coefficients (N, K, 3) float32
+    :param validate: Whether to validate inputs
+    :returns: Complete compressed PLY file as bytes
 
     Example:
         >>> from gsply import plyread, compress_to_bytes
@@ -1032,21 +1013,15 @@ def compress_to_arrays(
     components (header, chunks, data, SH), without writing to disk.
     Useful for custom processing or partial updates.
 
-    Args:
-        data_or_means: Either a GSData object or means array (N, 3) float32
-        scales: Gaussian scales (N, 3) float32 (required if first arg is means)
-        quats: Gaussian quaternions (N, 4) float32 (required if first arg is means)
-        opacities: Gaussian opacities (N,) float32 (required if first arg is means)
-        sh0: Degree 0 SH coefficients RGB (N, 3) float32 (required if first arg is means)
-        shN: Optional higher degree SH coefficients (N, K, 3) float32
-        validate: Whether to validate inputs
-
-    Returns:
-        Tuple containing:
-        - header_bytes: PLY header as bytes
-        - chunk_bounds: Chunk boundary array (num_chunks, 18) float32
-        - packed_data: Main compressed data array (N, 4) uint32
-        - packed_sh: Optional compressed SH data array uint8
+    :param data_or_means: Either a GSData object or means array (N, 3) float32
+    :param scales: Gaussian scales (N, 3) float32 (required if first arg is means)
+    :param quats: Gaussian quaternions (N, 4) float32 (required if first arg is means)
+    :param opacities: Gaussian opacities (N,) float32 (required if first arg is means)
+    :param sh0: Degree 0 SH coefficients RGB (N, 3) float32 (required if first arg is means)
+    :param shN: Optional higher degree SH coefficients (N, K, 3) float32
+    :param validate: Whether to validate inputs
+    :returns: Tuple containing header_bytes (PLY header as bytes), chunk_bounds (Chunk boundary array (num_chunks, 18) float32),
+              packed_data (Main compressed data array (N, 4) uint32), packed_sh (Optional compressed SH data array uint8)
 
     Example:
         >>> from gsply import plyread, compress_to_arrays
@@ -1119,30 +1094,23 @@ def plywrite(
 ) -> None:
     """Write Gaussian splatting PLY file with automatic optimization.
 
-    Supports two input patterns:
-    1. GSData object (RECOMMENDED): Automatic zero-copy optimization
-    2. Individual arrays: Converted to GSData and auto-consolidated
+    The helper accepts either a :class:`gsply.GSData` instance (recommended) or
+    the individual Gaussian arrays.  When `_base` is available the writer
+    streams the consolidated buffer directly to disk; otherwise it performs a
+    one-time consolidation before writing.  File format selection happens
+    automatically: the compressed path is chosen when `compressed=True` or when
+    the destination filename already ends with `.compressed.ply` /
+    `.ply_compressed`.
 
-    Automatic optimizations:
-    - Zero-copy writes: GSData with _base (from plyread) writes 2.9x faster
-    - Auto-consolidation: GSData without _base is automatically consolidated
-      for 2.4x faster writes (one-time 10-35ms cost, faster even for single write!)
-
-    Format selection (automatic based on compressed parameter or extension):
-    - compressed=False or .ply -> uncompressed (fast, zero-copy optimized)
-    - compressed=True -> automatically saves as .compressed.ply
-    - .compressed.ply or .ply_compressed extension -> compressed format
-
-    Args:
-        file_path: Output PLY file path (extension auto-adjusted if compressed=True)
-        data: GSData object OR (N, 3) xyz positions array
-        scales: (N, 3) scale parameters (required if data is array)
-        quats: (N, 4) rotation quaternions (required if data is array)
-        opacities: (N,) opacity values (required if data is array)
-        sh0: (N, 3) DC spherical harmonics (required if data is array)
-        shN: (N, K, 3) or (N, K*3) - Higher-order SH coefficients (optional)
-        compressed: If True, write compressed format and auto-adjust extension
-        validate: If True, validate input shapes (default True)
+    :param file_path: Output PLY file path (extension auto-adjusted if compressed=True)
+    :param data: GSData object OR (N, 3) xyz positions array
+    :param scales: (N, 3) scale parameters (required if data is array)
+    :param quats: (N, 4) rotation quaternions (required if data is array)
+    :param opacities: (N,) opacity values (required if data is array)
+    :param sh0: (N, 3) DC spherical harmonics (required if data is array)
+    :param shN: (N, K, 3) or (N, K*3) - Higher-order SH coefficients (optional)
+    :param compressed: If True, write compressed format and auto-adjust extension
+    :param validate: If True, validate input shapes (default True)
 
     Performance:
         - GSData from plyread: ~7ms for 400K Gaussians (zero-copy, 53 M/s)
