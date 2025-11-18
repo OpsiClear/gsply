@@ -51,7 +51,7 @@ from gsply.reader import decompress_from_bytes, plyread
 from gsply.utils import SH_C0, rgb2sh, sh2rgb
 from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
-__version__ = "0.2.2"
+__version__ = "0.2.4"
 __all__ = [
     "plyread",
     "GSData",

@@ -5,14 +5,22 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
 # -- Path setup --------------------------------------------------------------
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "src"))
+# Read the Docs path setup
+if os.environ.get("READTHEDOCS") == "True":
+    # RTD uses a different directory structure
+    # The repository root is typically one level up from docs/source
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "src")))
+else:
+    # Local development path
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(REPO_ROOT / "src"))
 
 
 # -- Project information -----------------------------------------------------
@@ -21,8 +29,8 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 project = "gsply"
 author = "OpsiClear"
 copyright = f"{datetime.now().year}, {author}"
-version = "0.2.2"
-release = "0.2.2"
+version = "0.2.4"
+release = "0.2.4"
 
 
 # -- General configuration ---------------------------------------------------

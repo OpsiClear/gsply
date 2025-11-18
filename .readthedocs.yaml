@@ -7,19 +7,20 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.12"
-  commands:
-    - pip install -e ".[docs]"
-    - cd docs && make html
 
 # Python requirements
 python:
   install:
-    - requirements: docs/requirements.txt
+    - method: pip
+      path: .
+      extra_requirements:
+        - docs
 
 # Sphinx configuration
 sphinx:
   configuration: docs/source/conf.py
   builder: html
+  fail_on_warning: false
 
 # Build PDF output
 formats:
