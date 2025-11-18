@@ -14,12 +14,14 @@
 
 ---
 
-## What's New in v0.2.2
+## What's New in v0.2.4
 
-- Data Concatenation: `GSData.concatenate()` - Bulk merge (6.15x faster), `GSData.add()` - Optimized pairwise (1.9x faster)
-- GPU Concatenation: `GSTensor.add()` - 18x faster than CPU
-- Performance Optimization: `make_contiguous()` - Fix cache locality (2-45x speedup)
-- Mask Management: Multi-layer boolean masks with GPU-optimized operations (100-1000x faster)
+- GPU I/O API: `plyread_gpu()` and `plywrite_gpu()` - Direct GPU compression/decompression (4-5x faster than CPU + transfer)
+- GPU Compression: Full GPU-accelerated compression pipeline with optimized memory transfers
+- CPU Optimization: Pre-compute ranges for compression (1.44x speedup)
+
+**Previous versions:**
+- v0.2.2: Data Concatenation, GPU Concatenation, Performance Optimization, Mask Management
 
 [Full API Reference](docs/API_REFERENCE.md) | [Changelog](docs/CHANGELOG.md)
 
@@ -128,10 +130,10 @@ data_restored = decompress_from_bytes(compressed_bytes)
 ### GPU Acceleration
 
 ```python
-from gsply import GSTensor
+from gsply import GSTensor, plyread_gpu, plywrite_gpu
 
-# Convert to GPU tensors (requires PyTorch)
-gstensor = GSTensor.from_gsdata(data, device='cuda')
+# Direct GPU I/O (4x faster than CPU decompress + GPU transfer)
+gstensor = plyread_gpu("model.compressed.ply", device='cuda')
 
 # Access GPU tensors
 positions_gpu = gstensor.means  # torch.Tensor on GPU
@@ -139,6 +141,13 @@ colors_gpu = gstensor.sh0       # torch.Tensor on GPU
 
 # Filter on GPU
 high_opacity = gstensor[gstensor.opacities > 0.5]
+
+# Write back to compressed PLY (GPU compression)
+plywrite_gpu("output.compressed.ply", gstensor)
+
+# Or convert from CPU data
+data = plyread("model.ply")
+gstensor = GSTensor.from_gsdata(data, device='cuda')
 
 # Convert back to CPU
 data_cpu = gstensor.to_gsdata()

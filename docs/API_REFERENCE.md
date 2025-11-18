@@ -3,38 +3,50 @@
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
 **Quick Navigation:**
-- [Core I/O](#core-io)
-  - [`plyread()`](#plyreadfile_path) - Read PLY files
-  - [`plywrite()`](#plywritefile_path-means-scales-quats-opacities-sh0-shn-compressedfalse) - Write PLY files
-  - [`detect_format()`](#detect_formatfile_path) - Detect format and SH degree
-- [GSData](#gsdata) - CPU dataclass container
-  - [`data.unpack()`](#dataunpackinclude_shntrue) - Unpack to tuple
-  - [`data.to_dict()`](#datato_dict) - Convert to dictionary
-  - [`data.copy()`](#datacopy) - Deep copy
-  - [`data.consolidate()`](#dataconsolidate) - Optimize for slicing
-  - [`data[index]`](#dataindex) - Indexing and slicing
-  - [`len(data)`](#lendata) - Get number of Gaussians
-- [Compression APIs](#compression-apis)
-  - [`compress_to_bytes()`](#compress_to_bytesdata) - Compress to bytes
-  - [`compress_to_arrays()`](#compress_to_arraysdata) - Compress to arrays
-  - [`decompress_from_bytes()`](#decompress_from_bytescompressed_bytes) - Decompress bytes
-- [Utility Functions](#utility-functions)
-  - [`sh2rgb()`](#sh2rgbsh) - SH to RGB conversion
-  - [`rgb2sh()`](#rgb2shrgb) - RGB to SH conversion
-  - [`SH_C0`](#sh_c0) - SH normalization constant
-- [GSTensor (GPU)](#gstensor---gpu-accelerated-dataclass) - PyTorch integration
-  - [`GSTensor.from_gsdata()`](#gstensorfrom_gsdatadata-devicecuda-dtypetorchfloat32-requires_gradfalse) - Convert to GPU
-  - [`gstensor.to_gsdata()`](#gstensorto_gsdata) - Convert to CPU
-  - [`gstensor.to()`](#gstensortodevicenonedtypenone) - Device/dtype transfer
-  - [`gstensor.cpu()` / `cuda()`](#gstensorcpu) - Device shortcuts
-  - [`gstensor.half()` / `float()` / `double()`](#gstensorhalf-gstensorfloat-gstensordouble) - Precision conversion
-  - [`gstensor.consolidate()`](#gstensorconsolidate) - Optimize for slicing
-  - [`gstensor.clone()`](#gstensorclone) - Deep copy
-  - [`gstensor.unpack()`](#gstensorunpackinclude_shntrue) - Unpack to tuple
-  - [`gstensor.to_dict()`](#gstensorto_dict) - Convert to dictionary
-  - [`gstensor[index]`](#gstensorindex) - Indexing and slicing
-  - [`len(gstensor)`](#lengstensor) - Get number of Gaussians
-  - [Properties & Helpers](#gstensordevice-property) - `device`, `dtype`, `get_sh_degree()`, `has_high_order_sh()`
+- [gsply API Reference](#gsply-api-reference)
+  - [Core I/O](#core-io)
+    - [`plyread(file_path)`](#plyreadfile_path)
+    - [`plywrite(file_path, means, scales, quats, opacities, sh0, shN=None, compressed=False)`](#plywritefile_path-means-scales-quats-opacities-sh0-shnnone-compressedfalse)
+    - [`detect_format(file_path)`](#detect_formatfile_path)
+  - [GSData](#gsdata)
+    - [`data.unpack(include_shN=True)`](#dataunpackinclude_shntrue)
+    - [`data.to_dict()`](#datato_dict)
+    - [`data.copy()`](#datacopy)
+    - [`data.consolidate()`](#dataconsolidate)
+    - [`data[index]`](#dataindex)
+    - [`len(data)`](#lendata)
+    - [`plyread_gpu(file_path, device='cuda')`](#plyread_gpufile_path-devicecuda)
+    - [`plywrite_gpu(file_path, gstensor, compressed=True)`](#plywrite_gpufile_path-gstensor-compressedtrue)
+  - [Compression APIs](#compression-apis)
+    - [`compress_to_bytes(data)`](#compress_to_bytesdata)
+    - [`compress_to_arrays(data)`](#compress_to_arraysdata)
+    - [`decompress_from_bytes(compressed_bytes)`](#decompress_from_bytescompressed_bytes)
+  - [Utility Functions](#utility-functions)
+    - [`sh2rgb(sh)`](#sh2rgbsh)
+    - [`rgb2sh(rgb)`](#rgb2shrgb)
+    - [`SH_C0`](#sh_c0)
+  - [GSTensor - GPU-Accelerated Dataclass](#gstensor---gpu-accelerated-dataclass)
+    - [Key Features](#key-features)
+    - [Performance](#performance)
+    - [`GSTensor.from_gsdata(data, device='cuda', dtype=torch.float32, requires_grad=False)`](#gstensorfrom_gsdatadata-devicecuda-dtypetorchfloat32-requires_gradfalse)
+    - [`gstensor.to_gsdata()`](#gstensorto_gsdata)
+    - [`gstensor.to(device=None, dtype=None)`](#gstensortodevicenone-dtypenone)
+    - [`gstensor.consolidate()`](#gstensorconsolidate)
+    - [`gstensor.clone()`](#gstensorclone)
+    - [`gstensor.cpu()`](#gstensorcpu)
+    - [`gstensor.cuda(device=None)`](#gstensorcudadevicenone)
+    - [`gstensor.half()`, `gstensor.float()`, `gstensor.double()`](#gstensorhalf-gstensorfloat-gstensordouble)
+    - [`gstensor.unpack(include_shN=True)`](#gstensorunpackinclude_shntrue)
+    - [`gstensor.to_dict()`](#gstensorto_dict)
+    - [`gstensor[index]`](#gstensorindex)
+    - [`len(gstensor)`](#lengstensor)
+    - [`gstensor.device` (property)](#gstensordevice-property)
+    - [`gstensor.dtype` (property)](#gstensordtype-property)
+    - [`gstensor.get_sh_degree()`](#gstensorget_sh_degree)
+    - [`gstensor.has_high_order_sh()`](#gstensorhas_high_order_sh)
+  - [Complete Workflow Examples](#complete-workflow-examples)
+    - [Training Workflow](#training-workflow)
+    - [Inference Workflow](#inference-workflow)
 
 ---
 
@@ -343,6 +355,74 @@ Get number of Gaussians in the dataset.
 data = plyread("scene.ply")
 print(f"Loaded {len(data)} Gaussians")
 ```
+
+---
+
+### `plyread_gpu(file_path, device='cuda')`
+
+Read compressed PLY file directly to GPU using GPU-accelerated decompression.
+
+**Parameters:**
+- `file_path` (str | Path): Path to compressed PLY file
+- `device` (str): Target GPU device (default "cuda")
+
+**Returns:**
+`GSTensor` with decompressed data on GPU
+
+**Performance:**
+- 4-5x faster than CPU decompression + GPU transfer
+- Direct GPU memory allocation (no intermediate CPU copies)
+- ~19ms for 365K Gaussians (19 M/s throughput)
+
+**Example:**
+```python
+from gsply import plyread_gpu
+
+# Read compressed PLY directly to GPU
+gstensor = plyread_gpu("scene.compressed.ply", device="cuda")
+print(f"Loaded {len(gstensor):,} Gaussians on GPU")
+
+# Access GPU tensors directly
+positions_gpu = gstensor.means  # Already on GPU
+colors_gpu = gstensor.sh0
+```
+
+**Note:** Only supports compressed PLY format. Requires PyTorch to be installed.
+
+---
+
+### `plywrite_gpu(file_path, gstensor, compressed=True)`
+
+Write GSTensor to compressed PLY file using GPU compression.
+
+**Parameters:**
+- `file_path` (str | Path): Output file path
+- `gstensor` (GSTensor): GSTensor on GPU to compress and save
+- `compressed` (bool): Must be True (default True, required for GPU path)
+
+**Returns:**
+None (writes to file)
+
+**Performance:**
+- 4-5x faster compression than CPU Numba
+- GPU reduction for chunk bounds (instant)
+- Minimal CPU-GPU data transfer
+- ~18ms for 365K Gaussians (20 M/s throughput)
+
+**Example:**
+```python
+from gsply import plyread_gpu, plywrite_gpu
+
+# Read to GPU
+gstensor = plyread_gpu("input.compressed.ply", device="cuda")
+
+# ... GPU operations ...
+
+# Write back to compressed file
+plywrite_gpu("output.compressed.ply", gstensor)
+```
+
+**Note:** Only supports compressed format. GSTensor must be on GPU (use `gstensor.to("cuda")` if needed).
 
 ---
 

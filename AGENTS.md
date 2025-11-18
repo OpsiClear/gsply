@@ -221,12 +221,23 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - **GSTensor uses lazy import** via `__getattr__` in `__init__.py`
   - This prevents torch from loading when just importing gsply
   - Avoids torch-related errors in CI when torch isn't needed
-  - Only imports torch when `gsply.GSTensor` is accessed
+  - Only imports torch when `gsply.GSTensor`, `gsply.plyread_gpu`, or `gsply.plywrite_gpu` is accessed
 - Use `try/except ImportError` for torch imports in modules
 - Tests use `pytest.importorskip("torch")` to skip when unavailable
 - GSTensor features only work if user installs PyTorch separately
 - **Never add PyTorch to dependencies** in pyproject.toml
 - **Python 3.13 not supported** by PyTorch yet - exclude from torch test matrix
+
+### GPU I/O API (v0.2.4+)
+
+**New Functions: `plyread_gpu()` and `plywrite_gpu()`**
+- Located in `src/gsply/torch/io.py`
+- Exported via lazy import in `src/gsply/__init__.py` (matches GSTensor pattern)
+- Provides direct GPU I/O for compressed PLY files
+- **Performance**: 4-5x faster than CPU decompress + GPU transfer
+- **API Style**: Matches `plyread()`/`plywrite()` for consistency
+- **Tests**: `tests/test_gpu_io_api.py` (5 tests covering API, roundtrip, lazy import)
+- **Implementation**: Uses `read_compressed_gpu()` and `write_compressed_gpu()` from `compression.py`
 
 ### Numba JIT Acceleration
 

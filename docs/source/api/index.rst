@@ -44,6 +44,8 @@ Quick Reference
 
 - :func:`gsply.plyread` — Read PLY files (auto-detects format)
 - :func:`gsply.plywrite` — Write PLY files (auto-optimized)
+- :func:`gsply.plyread_gpu` — Read compressed PLY directly to GPU
+- :func:`gsply.plywrite_gpu` — Write GSTensor to compressed PLY using GPU compression
 - :func:`gsply.compress_to_bytes` — Compress to bytes
 - :func:`gsply.decompress_from_bytes` — Decompress from bytes
 

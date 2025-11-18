@@ -21,6 +21,10 @@ Basic Usage:
     >>> gsply.plywrite("output.ply", data.means, data.scales, data.quats,
     ...                data.opacities, data.sh0, data.shN, compressed=True)
     >>>
+    >>> # GPU-accelerated I/O (requires PyTorch)
+    >>> gstensor = gsply.plyread_gpu("model.compressed.ply", device="cuda")
+    >>> gsply.plywrite_gpu("output.compressed.ply", gstensor)
+    >>>
     >>> # Compress/decompress without disk I/O
     >>> compressed = gsply.compress_to_bytes(data)  # For network transfer, etc.
     >>> data_restored = gsply.decompress_from_bytes(compressed)
@@ -82,5 +86,23 @@ def __getattr__(name):
         except ImportError as e:
             raise ImportError(
                 "GSTensor requires PyTorch to be installed.\nInstall with: pip install torch"
+            ) from e
+    elif name == "plyread_gpu":
+        try:
+            from gsply.torch.io import plyread_gpu
+
+            return plyread_gpu
+        except ImportError as e:
+            raise ImportError(
+                "plyread_gpu requires PyTorch to be installed.\nInstall with: pip install torch"
+            ) from e
+    elif name == "plywrite_gpu":
+        try:
+            from gsply.torch.io import plywrite_gpu
+
+            return plywrite_gpu
+        except ImportError as e:
+            raise ImportError(
+                "plywrite_gpu requires PyTorch to be installed.\nInstall with: pip install torch"
             ) from e
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

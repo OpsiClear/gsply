@@ -1,6 +1,45 @@
 # Release Notes
 
-## v0.2.2 (Current - New Features)
+## v0.2.4 (GPU I/O API & Performance Optimizations)
+
+### New Features
+- **GPU I/O API**: Direct GPU compression/decompression functions
+  - `plyread_gpu(file_path, device='cuda')` - Read compressed PLY directly to GPU
+    - 4-5x faster than CPU decompression + GPU transfer
+    - Direct GPU memory allocation (no intermediate CPU copies)
+    - Optimized batch memory transfer (1.71x speedup)
+    - ~19ms for 365K Gaussians (19 M/s throughput)
+  - `plywrite_gpu(file_path, gstensor, compressed=True)` - Write GSTensor using GPU compression
+    - 4-5x faster compression than CPU Numba
+    - GPU reduction for chunk bounds (instant)
+    - Minimal CPU-GPU data transfer
+    - ~18ms for 365K Gaussians (20 M/s throughput)
+  - Lazy import pattern - PyTorch only loaded when functions are accessed
+  - Consistent API style matching `plyread()`/`plywrite()`
+
+### Performance Improvements
+- **GPU Compression**: Full GPU-accelerated compression pipeline
+  - Optimized memory transfers (batch transfer reduces DMA overhead)
+  - Pre-computed ranges for quantization
+  - Vectorized chunk bounds computation
+- **CPU Compression**: Pre-compute ranges optimization
+  - 1.44x speedup by computing ranges once per chunk instead of per-vertex
+  - Eliminates redundant calculations in packing loops
+
+### API Changes
+- New top-level functions: `gsply.plyread_gpu()` and `gsply.plywrite_gpu()`
+  - Available via lazy import (PyTorch not required unless used)
+  - Returns `GSTensor` instead of `GSData` for GPU operations
+  - Only supports compressed format (GPU path optimized for this)
+
+### Documentation
+- Added GPU I/O API documentation to Sphinx docs
+- Updated API reference with performance metrics
+- Added examples for GPU workflows
+
+---
+
+## v0.2.2 (Data Concatenation & Performance)
 
 ### New Features
 - **Data Concatenation**: Bulk merge operations

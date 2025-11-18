@@ -15,11 +15,12 @@ except ImportError:
     TORCH_AVAILABLE = False
     torch = None
 
-# Import GSTensor only if PyTorch is available
+# Import GSTensor and GPU I/O functions only if PyTorch is available
 if TORCH_AVAILABLE:
     from .gstensor import GSTensor
+    from .io import plyread_gpu, plywrite_gpu
 
-    __all__ = ["GSTensor", "TORCH_AVAILABLE"]
+    __all__ = ["GSTensor", "plyread_gpu", "plywrite_gpu", "TORCH_AVAILABLE"]
 else:
     __all__ = ["TORCH_AVAILABLE"]
 
