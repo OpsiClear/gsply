@@ -36,11 +36,15 @@ PlayCanvas compressed PLY, and SOG (Splat Ordering Grid) formats.
 
 ### Object-Oriented API
 
-Convenient save/load methods for cleaner code:
+Convenient save/load methods and factory methods for cleaner code:
 - `data.save(file_path, compressed=False)` - Instance method for saving
 - `GSData.load(file_path)` - Classmethod for loading (auto-detects format)
+- `GSData.from_arrays(...)` - Create from NumPy arrays with format preset
+- `GSData.from_dict(data_dict)` - Create from dictionary with format preset
 - `gstensor.save(file_path, compressed=True)` - GPU compression by default
 - `GSTensor.load(file_path, device='cuda')` - Direct GPU loading
+- `GSTensor.from_arrays(...)` - Create from PyTorch tensors with format preset
+- `GSTensor.from_dict(data_dict)` - Create from dictionary with format preset
 
 ### Format Conversion with In-Place Tracking
 
@@ -97,6 +101,7 @@ Choose the right API for your use case:
 | Scenario                                    | Recommended API                                    |
 |---------------------------------------------|-----------------------------------------------------|
 | Load a PLY file (any format)                | `GSData.load()` — Object-oriented, auto-detects format |
+| Create from external arrays/dicts            | `GSData.from_arrays()` / `GSData.from_dict()` — Factory methods with format presets |
 | Write back to disk (auto-optimized)        | `data.save()` — Object-oriented, automatic optimization |
 | Load SOG format files                      | `sogread()` — Returns GSData (same API)            |
 | Convert linear ↔ PLY format                | `normalize()` / `denormalize()` — In-place conversion |
@@ -104,6 +109,7 @@ Choose the right API for your use case:
 | Stream compressed bytes over network        | `compress_to_bytes()` / `decompress_from_bytes()`  |
 | Batch merge hundreds of shards              | `GSData.concatenate()` — Bulk merge (5.74x faster) |
 | GPU training / rendering loops              | `GSTensor.load()` — Direct GPU loading             |
+| Create GPU tensors from external data      | `GSTensor.from_arrays()` / `GSTensor.from_dict()` — Factory methods with format presets |
 | GPU compression                            | `gstensor.save()` — GPU compression (default)      |
 | Filter data with multiple conditions        | `add_mask_layer()` + `combine_masks()`             |
 | Optimize for many array operations         | `make_contiguous()` — Up to 45x speedup           |

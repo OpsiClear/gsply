@@ -2,7 +2,12 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
-**Version:** 0.2.5
+**Version:** 0.2.6
+
+**New in v0.2.6:**
+- Automatic Format Detection (auto-detects log vs linear values)
+- Format Helper Functions (`create_ply_format`, `create_rasterizer_format`)
+- Strict Format Validation (prevents mixing incompatible formats)
 
 **New in v0.2.5:**
 - Object-Oriented I/O API (`data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`)
@@ -43,10 +48,15 @@ pip install gsply[sogs] torch  # GPU + SOG support
     - [`plyread(file_path)`](#plyreadfile_path)
     - [`plywrite(file_path, means, scales, quats, opacities, sh0, shN=None, compressed=False)`](#plywritefile_path-means-scales-quats-opacities-sh0-shnnone-compressedfalse)
     - [`detect_format(file_path)`](#detect_formatfile_path)
+    - [`create_ply_format(sh_degree=0)`](#create_ply_formatsh_degree0)
+    - [`create_rasterizer_format(sh_degree=0)`](#create_rasterizer_formatsh_degree0)
+    - [`create_linear_format(sh_degree=0)`](#create_linear_formatsh_degree0)
     - [`sogread(file_path | bytes)`](#sogreadfile_path--bytes)
   - [GSData](#gsdata)
     - [`data.save(file_path, compressed=False)`](#datasavefile_path-compressedfalse)
     - [`GSData.load(file_path)`](#gsdataloadfile_path)
+    - [`GSData.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', sh_degree=None, sh0_format=SH0_SH)`](#gsdatafrom_arraysmeans-scales-quats-opacities-sh0-shnnone-formatauto-sh_degreenone-sh0_formatsh0_sh)
+    - [`GSData.from_dict(data_dict, format='auto', sh_degree=None, sh0_format=SH0_SH)`](#gsdatafrom_dictdata_dict-formatauto-sh_degreenone-sh0_formatsh0_sh)
     - [`data.unpack(include_shN=True)`](#dataunpackinclude_shntrue)
     - [`data.to_dict()`](#datato_dict)
     - [`data.copy()`](#datacopy)
@@ -74,6 +84,8 @@ pip install gsply[sogs] torch  # GPU + SOG support
     - [Key Features](#key-features)
     - [Performance](#performance)
     - [`GSTensor.load(file_path, device='cuda')`](#gstensorloadfile_path-devicecuda)
+    - [`GSTensor.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', sh_degree=None, sh0_format=SH0_SH, device=None, dtype=None)`](#gstensorfrom_arraysmeans-scales-quats-opacities-sh0-shnnone-formatauto-sh_degreenone-sh0_formatsh0_sh-devicenone-dtypenone)
+    - [`GSTensor.from_dict(data_dict, format='auto', sh_degree=None, sh0_format=SH0_SH, device='cuda', dtype=None)`](#gstensorfrom_dictdata_dict-formatauto-sh_degreenone-sh0_formatsh0_sh-devicecuda-dtypenone)
     - [`gstensor.save(file_path, compressed=True)`](#gstensorsavefile_path-compressedtrue)
     - [`gstensor.save_compressed(file_path)`](#gstensorsave_compressedfile_path)
     - [`GSTensor.from_gsdata(data, device='cuda', dtype=torch.float32, requires_grad=False)`](#gstensorfrom_gsdatadata-devicecuda-dtypetorchfloat32-requires_gradfalse)
@@ -218,6 +230,40 @@ else:
 
 ---
 
+### `create_ply_format(sh_degree=0)`
+
+Create format dictionary for PLY file format (log-scales, logit-opacities).
+
+Use this when creating GSData from data that matches PLY file format or when you want to ensure compatibility.
+
+**Parameters:**
+- `sh_degree` (int): Spherical harmonics degree (0-3)
+
+**Returns:**
+- `FormatDict`: Format dictionary with PLY settings
+
+---
+
+### `create_rasterizer_format(sh_degree=0)`
+
+Create format dictionary for rasterizer format (linear scales, linear opacities).
+
+Use this when creating GSData for rasterization or when you have linear values. Alias: `create_linear_format`.
+
+**Parameters:**
+- `sh_degree` (int): Spherical harmonics degree (0-3)
+
+**Returns:**
+- `FormatDict`: Format dictionary with linear settings
+
+---
+
+### `create_linear_format(sh_degree=0)`
+
+Alias for `create_rasterizer_format`.
+
+---
+
 ### `sogread(file_path | bytes)`
 
 Read SOG (Splat Ordering Grid) format file.
@@ -357,6 +403,77 @@ print(f"Loaded {len(data)} Gaussians")
 
 # Same as plyread()
 data2 = plyread("scene.ply")  # Equivalent
+```
+
+---
+
+### `GSData.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', sh_degree=None, sh0_format=SH0_SH)`
+
+Create GSData from individual arrays with format preset.
+
+Convenient factory method for creating GSData from external arrays with automatic format detection or explicit format presets.
+
+**Parameters:**
+- `means` (np.ndarray): (N, 3) - Gaussian centers
+- `scales` (np.ndarray): (N, 3) - Scale parameters
+- `quats` (np.ndarray): (N, 4) - Rotation quaternions
+- `opacities` (np.ndarray): (N,) - Opacity values
+- `sh0` (np.ndarray): (N, 3) - DC spherical harmonics
+- `shN` (np.ndarray, optional): (N, K, 3) - Higher-order SH coefficients
+- `format` (str): Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+- `sh_degree` (int, optional): SH degree (0-3) - auto-detected from shN if None
+- `sh0_format` (DataFormat): Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+
+**Returns:**
+- `GSData`: Object with specified format
+
+**Example:**
+```python
+from gsply import GSData
+import numpy as np
+
+# Auto-detect format from values
+data = GSData.from_arrays(means, scales, quats, opacities, sh0)
+
+# Explicit PLY format (log-scales, logit-opacities)
+data = GSData.from_arrays(means, scales, quats, opacities, sh0, format="ply")
+
+# Explicit linear format (for rasterizer)
+data = GSData.from_arrays(means, scales, quats, opacities, sh0, format="linear")
+```
+
+---
+
+### `GSData.from_dict(data_dict, format='auto', sh_degree=None, sh0_format=SH0_SH)`
+
+Create GSData from dictionary with format preset.
+
+Convenient factory method for creating GSData from a dictionary with automatic format detection or explicit format presets.
+
+**Parameters:**
+- `data_dict` (dict): Dictionary with keys: means, scales, quats, opacities, sh0, shN (optional)
+- `format` (str): Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+- `sh_degree` (int, optional): SH degree (0-3) - auto-detected from shN if None
+- `sh0_format` (DataFormat): Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+
+**Returns:**
+- `GSData`: Object with specified format
+
+**Example:**
+```python
+from gsply import GSData
+
+# From dictionary with auto-detection
+data = GSData.from_dict({
+    "means": means, "scales": scales, "quats": quats,
+    "opacities": opacities, "sh0": sh0, "shN": shN
+})
+
+# Explicit PLY format
+data = GSData.from_dict(data_dict, format="ply")
+
+# Explicit linear format
+data = GSData.from_dict(data_dict, format="linear")
 ```
 
 ---
@@ -1163,6 +1280,81 @@ gstensor = GSTensor.load("scene.compressed.ply", device="cuda")
 # Load uncompressed PLY (auto-detects format)
 gstensor = GSTensor.load("scene.ply", device="cuda")
 print(f"Loaded {len(gstensor):,} Gaussians on GPU")
+```
+
+---
+
+### `GSTensor.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', sh_degree=None, sh0_format=SH0_SH, device=None, dtype=None)`
+
+Create GSTensor from individual tensors with format preset.
+
+Convenient factory method for creating GSTensor from external tensors with automatic format detection or explicit format presets.
+
+**Parameters:**
+- `means` (torch.Tensor): (N, 3) - Gaussian centers
+- `scales` (torch.Tensor): (N, 3) - Scale parameters
+- `quats` (torch.Tensor): (N, 4) - Rotation quaternions
+- `opacities` (torch.Tensor): (N,) - Opacity values
+- `sh0` (torch.Tensor): (N, 3) - DC spherical harmonics
+- `shN` (torch.Tensor, optional): (N, K, 3) - Higher-order SH coefficients
+- `format` (str): Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+- `sh_degree` (int, optional): SH degree (0-3) - auto-detected from shN if None
+- `sh0_format` (DataFormat): Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+- `device` (str | torch.device, optional): Target device - inferred from tensors if None
+- `dtype` (torch.dtype, optional): Target dtype - inferred from tensors if None
+
+**Returns:**
+- `GSTensor`: Object with specified format
+
+**Example:**
+```python
+from gsply import GSTensor
+import torch
+
+# Auto-detect format from values
+gstensor = GSTensor.from_arrays(means, scales, quats, opacities, sh0, device="cuda")
+
+# Explicit PLY format (log-scales, logit-opacities)
+gstensor = GSTensor.from_arrays(means, scales, quats, opacities, sh0, format="ply", device="cuda")
+
+# Explicit linear format (for rasterizer)
+gstensor = GSTensor.from_arrays(means, scales, quats, opacities, sh0, format="linear", device="cuda")
+```
+
+---
+
+### `GSTensor.from_dict(data_dict, format='auto', sh_degree=None, sh0_format=SH0_SH, device='cuda', dtype=None)`
+
+Create GSTensor from dictionary with format preset.
+
+Convenient factory method for creating GSTensor from a dictionary with automatic format detection or explicit format presets.
+
+**Parameters:**
+- `data_dict` (dict): Dictionary with keys: means, scales, quats, opacities, sh0, shN (optional)
+- `format` (str): Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+- `sh_degree` (int, optional): SH degree (0-3) - auto-detected from shN if None
+- `sh0_format` (DataFormat): Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+- `device` (str | torch.device): Target device (default "cuda")
+- `dtype` (torch.dtype, optional): Target dtype - inferred from tensors if None
+
+**Returns:**
+- `GSTensor`: Object with specified format
+
+**Example:**
+```python
+from gsply import GSTensor
+
+# From dictionary with auto-detection
+gstensor = GSTensor.from_dict({
+    "means": means, "scales": scales, "quats": quats,
+    "opacities": opacities, "sh0": sh0, "shN": shN
+}, device="cuda")
+
+# Explicit PLY format
+gstensor = GSTensor.from_dict(data_dict, format="ply", device="cuda")
+
+# Explicit linear format
+gstensor = GSTensor.from_dict(data_dict, format="linear", device="cuda")
 ```
 
 ---

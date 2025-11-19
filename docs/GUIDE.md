@@ -2,7 +2,7 @@
 
 Complete guide to gsply - Ultra-fast Gaussian Splatting PLY I/O library for Python
 
-**Version:** 0.2.5
+**Version:** 0.2.6
 **Last Updated:** 2025-11-19
 
 ---

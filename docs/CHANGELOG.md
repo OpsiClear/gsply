@@ -1,5 +1,45 @@
 # Release Notes
 
+## v0.2.6 (Format Safety & Auto-detection)
+
+### New Features
+- **Convenience Factory Methods**: Create GSData/GSTensor from external data with format presets
+  - `GSData.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto')` - Create from arrays with format preset
+  - `GSData.from_dict(data_dict, format='auto')` - Create from dictionary with format preset
+  - `GSTensor.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', device='cuda')` - Create from tensors with format preset
+  - `GSTensor.from_dict(data_dict, format='auto', device='cuda')` - Create from dictionary with format preset
+  - Format presets: `"auto"` (detect), `"ply"` (log/logit), `"linear"` or `"rasterizer"` (linear)
+  - Auto-detects SH degree from `shN` shape when not specified
+- **Automatic Format Detection**: Smart heuristics to detect PLY format vs Linear format
+  - Automatically detects if data uses log-scales/logit-opacities (PLY format) or linear values
+  - `_detect_format_from_values()` uses statistical analysis of data ranges
+  - Works when creating `GSData` or `GSTensor` from raw arrays
+  - Ensures correct format handling without manual flag setting
+- **Format Helper Functions**: Clearer API for creating format dictionaries
+  - `create_ply_format(sh_degree)` - For data matching PLY file spec
+  - `create_rasterizer_format(sh_degree)` - For data matching renderer spec
+  - `create_linear_format(sh_degree)` - Alias for rasterizer format
+- **Strict Format Validation**:
+  - `GSData` and `GSTensor` now enforce format consistency during concatenation
+  - Prevents accidental merging of mixed formats (e.g. linear + log-space)
+  - Raises clear `ValueError` with helpful instructions
+
+### Improvements
+- **Enhanced `GSData` / `GSTensor`**:
+  - `_format` field is now always present (never None), auto-populated if missing
+  - `__post_init__` automatically detects format from data values if not specified
+  - All format conversion methods (`normalize`, `denormalize`, `to_rgb`, `to_sh`) correctly update format tracking
+- **Writer Safety**:
+  - `plywrite()` now auto-detects format when passed raw arrays
+  - `plywrite()` ensures data is in PLY format before writing (auto-converts linear -> PLY if needed)
+  - Prevents writing linear data as if it were log-space (which would cause invalid scale/opacity values)
+
+### Testing
+- Added `tests/test_format_management.py` covering all new format utilities and safety checks
+- Added comprehensive edge case tests for `from_arrays()` and `from_dict()` methods (26 new tests)
+  - Empty data, single Gaussian, shape mismatches, format boundary values
+  - Missing/extra dictionary keys, device/dtype handling, format preset edge cases
+
 ## v0.2.5 (SOG Format Support & API Improvements)
 
 ### New Features

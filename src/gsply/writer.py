@@ -28,7 +28,7 @@ import numpy as np
 from numba import jit
 
 from gsply.formats import CHUNK_SIZE, CHUNK_SIZE_SHIFT, SH_C0
-from gsply.gsdata import DataFormat, GSData, _create_format_dict, _get_sh_order_format
+from gsply.gsdata import DataFormat, GSData, _create_format_dict
 
 if TYPE_CHECKING:
     from gsply.torch.gstensor import GSTensor  # noqa: F401
@@ -1174,21 +1174,34 @@ def plywrite(
                 "When passing individual arrays, all of data (means), scales, quats, "
                 "opacities, and sh0 must be provided"
             )
-        # Determine SH degree from shN shape
+        # Create GSData without _base (will auto-consolidate below)
+        # Automatically detect format from values (always returns valid format)
+        from gsply.gsdata import _detect_format_from_values, _get_sh_order_format
+
+        scales_format, opacities_format = _detect_format_from_values(scales, opacities)
+
+        # Determine SH degree for format dict
         if shN is not None and shN.shape[1] > 0:
-            # Reshape if needed: (N, K*3) -> (N, K, 3)
             if shN.ndim == 2:
                 sh_bands = shN.shape[1] // 3
             else:
                 sh_bands = shN.shape[1]
-            # Map bands to degree: 3->1, 8->2, 15->3
             from gsply.formats import SH_BANDS_TO_DEGREE
 
             sh_degree = SH_BANDS_TO_DEGREE.get(sh_bands, 0)
         else:
             sh_degree = 0
 
-        # Create GSData without _base (will auto-consolidate below)
+        # Create format dict (always provided)
+        format_dict = _create_format_dict(
+            scales=scales_format,
+            opacities=opacities_format,
+            sh0=DataFormat.SH0_SH,  # Assume SH format
+            sh_order=_get_sh_order_format(sh_degree),
+            means=DataFormat.MEANS_RAW,
+            quats=DataFormat.QUATS_RAW,
+        )
+
         data = GSData(
             means=data,
             scales=scales,
@@ -1197,14 +1210,7 @@ def plywrite(
             sh0=sh0,
             shN=shN if shN is not None else np.empty((data.shape[0], 0, 3), dtype=np.float32),
             _base=None,  # No _base for manually created data
-            _format=_create_format_dict(
-                scales=DataFormat.SCALES_LINEAR,  # Assume linear for manually created data
-                opacities=DataFormat.OPACITIES_LINEAR,  # Assume linear for manually created data
-                sh0=DataFormat.SH0_SH,  # Assume SH format
-                sh_order=_get_sh_order_format(sh_degree),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            ),
+            _format=format_dict,  # Auto-detected format (always provided)
         )
 
     # Auto-consolidate for uncompressed writes if no _base exists
@@ -1236,24 +1242,32 @@ def plywrite(
 
         # Ensure data is in PLY format before writing compressed (log-scales, logit-opacities)
         # Check format flags and convert if needed
-        if data._format is not None:
-            scales_format = data._format.get("scales")
-            opacities_format = data._format.get("opacities")
+        scales_format = data._format.get("scales")
+        opacities_format = data._format.get("opacities")
 
-            # Convert to PLY format if not already in PLY format
-            if (
-                scales_format != DataFormat.SCALES_PLY
-                or opacities_format != DataFormat.OPACITIES_PLY
-            ):
-                logger.debug(
-                    f"[PLY Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
-                )
-                data = data.normalize(inplace=False)  # Create copy with PLY format
+        # Convert to PLY format if not already in PLY format
+        if scales_format != DataFormat.SCALES_PLY or opacities_format != DataFormat.OPACITIES_PLY:
+            logger.debug(
+                f"[PLY Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
+            )
+            data = data.normalize(inplace=False)  # Create copy with PLY format
 
         # Extract arrays for compressed write (compressed write doesn't use GSData yet)
         means, scales, quats, opacities, sh0, shN = data.unpack()  # noqa: N806
         write_compressed(file_path, means, scales, quats, opacities, sh0, shN)
     else:
+        # Ensure data is in PLY format before writing uncompressed (log-scales, logit-opacities)
+        # Check format flags and convert if needed
+        scales_format = data._format.get("scales")
+        opacities_format = data._format.get("opacities")
+
+        # Convert to PLY format if not already in PLY format
+        if scales_format != DataFormat.SCALES_PLY or opacities_format != DataFormat.OPACITIES_PLY:
+            logger.debug(
+                f"[PLY Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
+            )
+            data = data.normalize(inplace=False)  # Create copy with PLY format
+
         write_uncompressed(file_path, data, validate=validate)
 
 

@@ -1,6 +1,6 @@
 """Gaussian Splatting data container."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import TypedDict
@@ -56,6 +56,15 @@ class FormatDict(TypedDict, total=False):
     quats: DataFormat
 
 
+# Mapping from SH degree to format enum (module-level constant for performance)
+_SH_DEGREE_TO_FORMAT: dict[int, DataFormat] = {
+    0: DataFormat.SH_ORDER_0,
+    1: DataFormat.SH_ORDER_1,
+    2: DataFormat.SH_ORDER_2,
+    3: DataFormat.SH_ORDER_3,
+}
+
+
 def _create_format_dict(
     scales: DataFormat | None = None,
     opacities: DataFormat | None = None,
@@ -72,22 +81,17 @@ def _create_format_dict(
     :param sh_order: SH order/degree for shN (DataFormat.SH_ORDER_0/1/2/3)
     :param means: Format for means (DataFormat.MEANS_RAW)
     :param quats: Format for quats (DataFormat.QUATS_RAW)
-    :returns: Format dict with all attributes
+    :returns: Format dict with all non-None attributes
     """
-    fmt = {}
-    if scales is not None:
-        fmt["scales"] = scales
-    if opacities is not None:
-        fmt["opacities"] = opacities
-    if sh0 is not None:
-        fmt["sh0"] = sh0
-    if sh_order is not None:
-        fmt["sh_order"] = sh_order
-    if means is not None:
-        fmt["means"] = means
-    if quats is not None:
-        fmt["quats"] = quats
-    return fmt
+    format_mapping = {
+        "scales": scales,
+        "opacities": opacities,
+        "sh0": sh0,
+        "sh_order": sh_order,
+        "means": means,
+        "quats": quats,
+    }
+    return {key: value for key, value in format_mapping.items() if value is not None}
 
 
 def _get_sh_order_format(sh_degree: int) -> DataFormat:
@@ -95,16 +99,156 @@ def _get_sh_order_format(sh_degree: int) -> DataFormat:
 
     :param sh_degree: SH degree (0-3)
     :returns: DataFormat enum for SH order
+    :raises ValueError: If sh_degree is not in range 0-3
     """
-    if sh_degree == 0:
-        return DataFormat.SH_ORDER_0
-    if sh_degree == 1:
-        return DataFormat.SH_ORDER_1
-    if sh_degree == 2:
-        return DataFormat.SH_ORDER_2
-    if sh_degree == 3:
-        return DataFormat.SH_ORDER_3
-    raise ValueError(f"Invalid SH degree: {sh_degree}, must be 0-3")
+    if sh_degree not in _SH_DEGREE_TO_FORMAT:
+        raise ValueError(f"Invalid SH degree: {sh_degree}, must be 0-3")
+    return _SH_DEGREE_TO_FORMAT[sh_degree]
+
+
+def create_ply_format(sh_degree: int = 0, sh0_format: DataFormat = DataFormat.SH0_SH) -> FormatDict:
+    """Create format dict for PLY file format (log-scales, logit-opacities).
+
+    This is the standard format used when loading from raw PLY files.
+    Use this when creating GSData from data that matches PLY file format
+    or when you want to ensure compatibility with PLY file format.
+
+    Format details:
+    - Scales: log-scales (log(scale)) - PLY format
+    - Opacities: logit-opacities (logit(opacity)) - PLY format
+    - Colors: SH format (spherical harmonics)
+
+    :param sh_degree: Spherical harmonics degree (0-3), default 0
+    :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+    :returns: Format dict with PLY format settings
+
+    Example:
+        >>> # Create GSData matching PLY file format (loaded from raw PLY)
+        >>> format_dict = create_ply_format(sh_degree=3)
+        >>> data = GSData(means=..., scales=..., _format=format_dict)
+    """
+    return _create_format_dict(
+        scales=DataFormat.SCALES_PLY,
+        opacities=DataFormat.OPACITIES_PLY,
+        sh0=sh0_format,
+        sh_order=_get_sh_order_format(sh_degree),
+        means=DataFormat.MEANS_RAW,
+        quats=DataFormat.QUATS_RAW,
+    )
+
+
+def create_rasterizer_format(
+    sh_degree: int = 0, sh0_format: DataFormat = DataFormat.SH0_SH
+) -> FormatDict:
+    """Create format dict for rasterizer format (linear scales, linear opacities).
+
+    This is the format expected by gsplat rasterizer and other rendering pipelines.
+    Use this when creating GSData for rasterization or when you need linear values
+    for computation and visualization.
+
+    Format details:
+    - Scales: linear scales (scale) - rasterizer format
+    - Opacities: linear opacities (opacity in [0, 1]) - rasterizer format
+    - Colors: SH format (spherical harmonics)
+
+    :param sh_degree: Spherical harmonics degree (0-3), default 0
+    :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+    :returns: Format dict with rasterizer format settings
+
+    Example:
+        >>> # Create GSData for gsplat rasterizer (linear format)
+        >>> format_dict = create_rasterizer_format(sh_degree=3)
+        >>> data = GSData(means=..., scales=..., _format=format_dict)
+        >>> # Data is ready to pass to rasterizer
+    """
+    return _create_format_dict(
+        scales=DataFormat.SCALES_LINEAR,
+        opacities=DataFormat.OPACITIES_LINEAR,
+        sh0=sh0_format,
+        sh_order=_get_sh_order_format(sh_degree),
+        means=DataFormat.MEANS_RAW,
+        quats=DataFormat.QUATS_RAW,
+    )
+
+
+def create_linear_format(
+    sh_degree: int = 0, sh0_format: DataFormat = DataFormat.SH0_SH
+) -> FormatDict:
+    """Create format dict for linear format (linear scales, linear opacities).
+
+    Alias for `create_rasterizer_format()`. This format is useful for computation
+    and visualization where you need linear values.
+
+    Format details:
+    - Scales: linear scales (scale)
+    - Opacities: linear opacities (opacity in [0, 1])
+    - Colors: SH format (spherical harmonics)
+
+    :param sh_degree: Spherical harmonics degree (0-3), default 0
+    :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+    :returns: Format dict with linear format settings
+
+    Example:
+        >>> # Create GSData with linear format (for computation)
+        >>> format_dict = create_linear_format(sh_degree=1)
+        >>> data = GSData(means=..., scales=..., _format=format_dict)
+    """
+    return create_rasterizer_format(sh_degree=sh_degree, sh0_format=sh0_format)
+
+
+def _detect_format_from_values(
+    scales: np.ndarray, opacities: np.ndarray
+) -> tuple[DataFormat, DataFormat]:
+    """Detect format from scale and opacity values (heuristic).
+
+    Uses heuristics to detect if data is in PLY format (log-scales, logit-opacities)
+    or linear format. Defaults to PLY format if uncertain (backward compatibility).
+
+    Heuristics:
+    - Scales: PLY format (log-scales) typically has many negative values
+    - Opacities: PLY format (logit-opacities) typically has values outside [0, 1]
+    - Linear scales are typically positive and small (< 10)
+    - Linear opacities are typically in [0, 1] range
+
+    :param scales: Scale array (N, 3)
+    :param opacities: Opacity array (N,)
+    :returns: Tuple of (scales_format, opacities_format) - always returns valid formats
+    """
+    # Handle empty arrays - default to PLY format
+    if scales.size == 0 or opacities.size == 0:
+        return DataFormat.SCALES_PLY, DataFormat.OPACITIES_PLY
+
+    # Check scales: PLY format (log-scales) often has negative values
+    # Linear scales are typically positive
+    scales_flat = scales.flatten()
+    negative_ratio = np.sum(scales_flat < 0) / scales_flat.size
+    max_scale = np.max(np.abs(scales_flat))
+
+    # If many negative values or very large values, likely PLY format (log-scales)
+    if negative_ratio > 0.1 or max_scale > 10.0:
+        scales_format = DataFormat.SCALES_PLY
+    # If all positive and small, likely linear
+    elif negative_ratio == 0.0 and max_scale < 10.0:
+        scales_format = DataFormat.SCALES_LINEAR
+    else:
+        # Uncertain: default to PLY format (backward compatibility)
+        scales_format = DataFormat.SCALES_PLY
+
+    # Check opacities: PLY format (logit-opacities) often outside [0, 1]
+    # Linear opacities are typically in [0, 1]
+    in_range_ratio = np.sum((opacities >= 0) & (opacities <= 1)) / opacities.size
+
+    # If mostly outside [0, 1], likely PLY format (logit-opacities)
+    if in_range_ratio < 0.9:
+        opacities_format = DataFormat.OPACITIES_PLY
+    # If mostly in [0, 1], likely linear
+    elif in_range_ratio > 0.95:
+        opacities_format = DataFormat.OPACITIES_LINEAR
+    else:
+        # Uncertain: default to PLY format (backward compatibility)
+        opacities_format = DataFormat.OPACITIES_PLY
+
+    return scales_format, opacities_format
 
 
 # Numba-optimized mask combination (37-68x faster than numpy.all())
@@ -176,14 +320,14 @@ class GSData:
         masks: (N,) or (N, L) - Boolean mask layers for filtering (None = no masks)
         mask_names: list[str] - Names for each mask layer (None = unnamed layers)
         _base: (N, P) - Private base array (keeps memory alive for views, None otherwise)
-        _format: FormatDict | None - Format tracking per attribute (type-safe TypedDict)
+        _format: FormatDict - Format tracking per attribute (type-safe TypedDict)
             - Format: {"scales": DataFormat.SCALES_PLY, "opacities": DataFormat.OPACITIES_PLY, ...}
             - Scales: DataFormat.SCALES_PLY (log-scales) or DataFormat.SCALES_LINEAR (linear scales)
             - Opacities: DataFormat.OPACITIES_PLY (logit-opacities) or DataFormat.OPACITIES_LINEAR (linear opacities)
             - Colors: DataFormat.SH0_SH (sh0 as SH) or DataFormat.SH0_RGB (sh0 as RGB)
             - SH Order: DataFormat.SH_ORDER_0/1/2/3 (spherical harmonics degree for shN)
             - Positions/Rotations: DataFormat.MEANS_RAW (means) and DataFormat.QUATS_RAW (quats) - raw format
-            - None: format unknown (manually created data)
+            - Always provided when creating GSData (auto-detected if not specified)
 
     Mask Layers:
         - Single layer: masks shape (N,), mask_names = None or ["name"]
@@ -212,12 +356,28 @@ class GSData:
     opacities: np.ndarray
     sh0: np.ndarray
     shN: np.ndarray  # noqa: N815
+    _format: FormatDict = field(
+        default_factory=lambda: {}
+    )  # Format tracking - auto-detected in __post_init__ if empty
     masks: np.ndarray | None = None  # Boolean mask layers (N,) or (N, L)
     mask_names: list[str] | None = None  # Names for each mask layer
     _base: np.ndarray | None = None  # Private field for zero-copy views
-    _format: FormatDict | None = (
-        None  # Format tracking per attribute: {"scales": PLY, "opacities": PLY, ...}
-    )
+
+    def __post_init__(self):
+        """Auto-detect format if not provided."""
+        # If _format is empty dict, auto-detect from values
+        if not self._format:
+            scales_format, opacities_format = _detect_format_from_values(
+                self.scales, self.opacities
+            )
+            self._format = _create_format_dict(
+                scales=scales_format,
+                opacities=opacities_format,
+                sh0=DataFormat.SH0_SH,
+                sh_order=_get_sh_order_format(self.get_sh_degree()),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
 
     def __len__(self) -> int:
         """Return the number of Gaussians."""
@@ -466,9 +626,9 @@ class GSData:
         # Recreate GSData with new base
         return GSData._recreate_from_base(
             new_base,
+            format_flag=self._format,
             masks_array=self.masks.copy() if self.masks is not None else None,
             mask_names=self.mask_names.copy() if self.mask_names is not None else None,
-            format_flag=self._format,
         )
 
     def copy(self) -> "GSData":
@@ -486,7 +646,10 @@ class GSData:
             mask_names_copy = self.mask_names.copy() if self.mask_names is not None else None
 
             result = GSData._recreate_from_base(
-                new_base, masks_copy, mask_names_copy, format_flag=self._format
+                new_base,
+                format_flag=self._format,
+                masks_array=masks_copy,
+                mask_names=mask_names_copy,
             )
             if result is not None:
                 return result
@@ -543,7 +706,7 @@ class GSData:
 
         :param other: Another GSData object to concatenate
         :returns: New GSData object with combined Gaussians
-        :raises ValueError: If SH degrees don't match
+        :raises ValueError: If SH degrees don't match or formats don't match
 
         Example:
             >>> data1 = gsply.plyread("scene1.ply")  # 100K Gaussians
@@ -561,6 +724,14 @@ class GSData:
             raise ValueError(
                 f"Cannot concatenate GSData with different SH degrees: "
                 f"{self.get_sh_degree()} vs {other.get_sh_degree()}"
+            )
+
+        # Validate format equivalence
+        if self._format != other._format:
+            raise ValueError(
+                f"Cannot concatenate GSData with different formats. "
+                f"self: {self._format}, other: {other._format}. "
+                f"Use normalize() or denormalize() to convert formats before concatenating."
             )
 
         # Fast path: If both have _base with same format, concatenate base arrays
@@ -622,10 +793,13 @@ class GSData:
                     combined_masks = np.concatenate([self_masks_filled, other_masks], axis=0)
                     combined_mask_names = other.mask_names.copy() if other.mask_names else None
 
-            # Preserve format if both are same format (compare dicts)
-            format_flag = self._format if self._format == other._format else None
+            # Format already validated above, use self's format
+            format_flag = self._format
             return GSData._recreate_from_base(
-                combined_base, combined_masks, combined_mask_names, format_flag=format_flag
+                combined_base,
+                format_flag=format_flag,
+                masks_array=combined_masks,
+                mask_names=combined_mask_names,
             )
 
         # Fallback: Concatenate individual arrays
@@ -708,8 +882,8 @@ class GSData:
         sh0[:n1] = self.sh0
         sh0[n1:] = other.sh0
 
-        # Preserve format flag (both should be same format, use self's format)
-        format_flag = self._format if self._format == other._format else None
+        # Format already validated above, use self's format
+        format_flag = self._format
 
         return GSData(
             means=means,
@@ -735,7 +909,7 @@ class GSData:
 
         :param arrays: List of GSData objects to concatenate
         :returns: New GSData object with all Gaussians combined
-        :raises ValueError: If list is empty or SH degrees don't match
+        :raises ValueError: If list is empty, SH degrees don't match, or formats don't match
 
         Example:
             >>> scenes = [gsply.plyread(f"scene{i}.ply") for i in range(10)]
@@ -761,6 +935,16 @@ class GSData:
             if arr.get_sh_degree() != sh_degree:
                 raise ValueError(
                     f"All arrays must have same SH degree, got {sh_degree} and {arr.get_sh_degree()}"
+                )
+
+        # Validate all have same format
+        format_ref = arrays[0]._format
+        for i, arr in enumerate(arrays[1:], start=1):
+            if arr._format != format_ref:
+                raise ValueError(
+                    f"All arrays must have same format. "
+                    f"Array 0: {format_ref}, Array {i}: {arr._format}. "
+                    f"Use normalize() or denormalize() to convert formats before concatenating."
                 )
 
         # Calculate total size
@@ -799,9 +983,8 @@ class GSData:
 
             offset += n
 
-        # Preserve format flag if all arrays have same format (compare dicts)
-        formats = [arr._format for arr in arrays if arr._format is not None]
-        format_flag = formats[0] if formats and all(f == formats[0] for f in formats) else None
+        # Format already validated above, use first array's format
+        format_flag = arrays[0]._format
 
         return GSData(
             means=means,
@@ -1018,8 +1201,6 @@ class GSData:
             self.opacities = opacities
             self._base = None  # Invalidate _base since we modified arrays
             # Update format dict: scales and opacities are now in PLY format
-            if self._format is None:
-                self._format = {}
             self._format["scales"] = DataFormat.SCALES_PLY
             self._format["opacities"] = DataFormat.OPACITIES_PLY
             return self
@@ -1034,16 +1215,7 @@ class GSData:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=DataFormat.SCALES_PLY,
-                opacities=DataFormat.OPACITIES_PLY,
-                sh0=DataFormat.SH0_SH,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {
+            _format={
                 **self._format,
                 "scales": DataFormat.SCALES_PLY,
                 "opacities": DataFormat.OPACITIES_PLY,
@@ -1088,8 +1260,6 @@ class GSData:
             self.opacities = opacities
             self._base = None  # Invalidate _base since we modified arrays
             # Update format dict: scales and opacities are now in linear format
-            if self._format is None:
-                self._format = {}
             self._format["scales"] = DataFormat.SCALES_LINEAR
             self._format["opacities"] = DataFormat.OPACITIES_LINEAR
             return self
@@ -1104,16 +1274,7 @@ class GSData:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=DataFormat.SCALES_LINEAR,
-                opacities=DataFormat.OPACITIES_LINEAR,
-                sh0=DataFormat.SH0_SH,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {
+            _format={
                 **self._format,
                 "scales": DataFormat.SCALES_LINEAR,
                 "opacities": DataFormat.OPACITIES_LINEAR,
@@ -1182,8 +1343,6 @@ class GSData:
             _sh2rgb_inplace_jit(self.sh0, SH_C0)
             self._base = None  # Invalidate _base since we modified arrays
             # Update format dict: sh0 is now in RGB format
-            if self._format is None:
-                self._format = {}
             self._format["sh0"] = DataFormat.SH0_RGB
             return self
 
@@ -1199,18 +1358,7 @@ class GSData:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=self._format.get("scales") if self._format else DataFormat.SCALES_PLY,
-                opacities=self._format.get("opacities")
-                if self._format
-                else DataFormat.OPACITIES_PLY,
-                sh0=DataFormat.SH0_RGB,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {**self._format, "sh0": DataFormat.SH0_RGB},
+            _format={**self._format, "sh0": DataFormat.SH0_RGB},
         )
 
     def to_sh(self, inplace: bool = True) -> "GSData":
@@ -1241,8 +1389,6 @@ class GSData:
             _rgb2sh_inplace_jit(self.sh0, 1.0 / SH_C0)
             self._base = None  # Invalidate _base since we modified arrays
             # Update format dict: sh0 is now in SH format
-            if self._format is None:
-                self._format = {}
             self._format["sh0"] = DataFormat.SH0_SH
             return self
 
@@ -1258,18 +1404,7 @@ class GSData:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=self._format.get("scales") if self._format else DataFormat.SCALES_PLY,
-                opacities=self._format.get("opacities")
-                if self._format
-                else DataFormat.OPACITIES_PLY,
-                sh0=DataFormat.SH0_SH,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {**self._format, "sh0": DataFormat.SH0_SH},
+            _format={**self._format, "sh0": DataFormat.SH0_SH},
         )
 
     def copy_slice(self, key) -> "GSData":
@@ -1319,6 +1454,7 @@ class GSData:
                 masks=self.masks[key : key + 1].copy() if self.masks is not None else None,
                 mask_names=self.mask_names.copy() if self.mask_names is not None else None,
                 _base=None,
+                _format=self._format,  # Preserve format flag
             )
 
         # For slicing, optimize using base array when available
@@ -1330,7 +1466,10 @@ class GSData:
                 mask_names_copy = self.mask_names.copy() if self.mask_names is not None else None
 
                 result = GSData._recreate_from_base(
-                    base_copy, masks_copy, mask_names_copy, format_flag=self._format
+                    base_copy,
+                    format_flag=self._format,
+                    masks_array=masks_copy,
+                    mask_names=mask_names_copy,
                 )
                 if result is not None:
                     return result
@@ -1376,19 +1515,19 @@ class GSData:
     @staticmethod
     def _recreate_from_base(
         base_array,
+        format_flag: FormatDict,
         masks_array=None,
         mask_names=None,
-        format_flag: FormatDict | None = None,
-    ) -> "GSData":
+    ) -> "GSData | None":
         """Helper method to recreate GSData from a base array.
 
         This centralizes the view recreation logic that was duplicated
         across multiple methods.
 
         :param base_array: The base array to create views from
+        :param format_flag: Format dict (required)
         :param masks_array: Optional masks array
         :param mask_names: Optional list of mask layer names
-        :param format_flag: Optional format dict to preserve
         :returns: New GSData object with views into base_array, or None if unknown format
         """
         n_gaussians = base_array.shape[0]
@@ -1435,7 +1574,7 @@ class GSData:
             masks=masks_array,
             mask_names=mask_names,
             _base=base_array,
-            _format=format_flag,  # Preserve format dict (None if unknown)
+            _format=format_flag,  # Format dict (always provided)
         )
 
     def _slice_from_base(self, indices_or_mask):
@@ -1472,7 +1611,10 @@ class GSData:
 
         # Use helper to recreate views from sliced base
         return GSData._recreate_from_base(
-            base_subset, masks_subset, mask_names_copy, format_flag=self._format
+            base_subset,
+            format_flag=self._format,
+            masks_array=masks_subset,
+            mask_names=mask_names_copy,
         )
 
     def __getitem__(self, key):
@@ -1639,3 +1781,130 @@ class GSData:
         from gsply.reader import plyread
 
         return plyread(file_path)
+
+    @classmethod
+    def from_arrays(
+        cls,
+        means: np.ndarray,
+        scales: np.ndarray,
+        quats: np.ndarray,
+        opacities: np.ndarray,
+        sh0: np.ndarray,
+        shN: np.ndarray | None = None,
+        format: str = "auto",
+        sh_degree: int | None = None,
+        sh0_format: DataFormat = DataFormat.SH0_SH,
+    ) -> "GSData":
+        """Create GSData from individual arrays with format preset.
+
+        Convenient factory method for creating GSData from external arrays
+        with automatic format detection or explicit format presets.
+
+        :param means: (N, 3) array - Gaussian centers
+        :param scales: (N, 3) array - Scale parameters
+        :param quats: (N, 4) array - Rotation quaternions
+        :param opacities: (N,) array - Opacity values
+        :param sh0: (N, 3) array - DC spherical harmonics
+        :param shN: (N, K, 3) array or None - Higher-order SH coefficients
+        :param format: Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+        :param sh_degree: SH degree (0-3) - auto-detected from shN if None
+        :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+        :returns: GSData object with specified format
+
+        Example:
+            >>> # Auto-detect format from values
+            >>> data = GSData.from_arrays(means, scales, quats, opacities, sh0)
+            >>>
+            >>> # Explicit PLY format (log-scales, logit-opacities)
+            >>> data = GSData.from_arrays(means, scales, quats, opacities, sh0, format="ply")
+            >>>
+            >>> # Explicit linear format (for rasterizer)
+            >>> data = GSData.from_arrays(means, scales, quats, opacities, sh0, format="linear")
+        """
+        # Determine SH degree
+        if sh_degree is None:
+            if shN is not None and shN.shape[1] > 0:
+                sh_bands = shN.shape[1]
+                sh_degree = SH_BANDS_TO_DEGREE.get(sh_bands, 0)
+            else:
+                sh_degree = 0
+
+        # Create format dict based on preset
+        if format == "auto":
+            # Auto-detect format from values
+            scales_format, opacities_format = _detect_format_from_values(scales, opacities)
+            format_dict = _create_format_dict(
+                scales=scales_format,
+                opacities=opacities_format,
+                sh0=sh0_format,
+                sh_order=_get_sh_order_format(sh_degree),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
+        elif format == "ply":
+            # PLY format (log-scales, logit-opacities)
+            format_dict = create_ply_format(sh_degree=sh_degree, sh0_format=sh0_format)
+        elif format in ("linear", "rasterizer"):
+            # Linear/rasterizer format (linear scales, linear opacities)
+            format_dict = create_rasterizer_format(sh_degree=sh_degree, sh0_format=sh0_format)
+        else:
+            raise ValueError(
+                f"Invalid format preset: {format}. Must be 'auto', 'ply', 'linear', or 'rasterizer'"
+            )
+
+        return cls(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            masks=None,
+            mask_names=None,
+            _base=None,
+            _format=format_dict,
+        )
+
+    @classmethod
+    def from_dict(
+        cls,
+        data_dict: dict,
+        format: str = "auto",
+        sh_degree: int | None = None,
+        sh0_format: DataFormat = DataFormat.SH0_SH,
+    ) -> "GSData":
+        """Create GSData from dictionary with format preset.
+
+        Convenient factory method for creating GSData from a dictionary
+        with automatic format detection or explicit format presets.
+
+        :param data_dict: Dictionary with keys: means, scales, quats, opacities, sh0, shN (optional)
+        :param format: Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+        :param sh_degree: SH degree (0-3) - auto-detected from shN if None
+        :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+        :returns: GSData object with specified format
+
+        Example:
+            >>> # From dictionary with auto-detection
+            >>> data = GSData.from_dict({
+            ...     "means": means, "scales": scales, "quats": quats,
+            ...     "opacities": opacities, "sh0": sh0, "shN": shN
+            ... })
+            >>>
+            >>> # Explicit PLY format
+            >>> data = GSData.from_dict(data_dict, format="ply")
+            >>>
+            >>> # Explicit linear format
+            >>> data = GSData.from_dict(data_dict, format="linear")
+        """
+        return cls.from_arrays(
+            means=data_dict["means"],
+            scales=data_dict["scales"],
+            quats=data_dict["quats"],
+            opacities=data_dict["opacities"],
+            sh0=data_dict["sh0"],
+            shN=data_dict.get("shN"),
+            format=format,
+            sh_degree=sh_degree,
+            sh0_format=sh0_format,
+        )

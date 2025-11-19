@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +12,16 @@ from gsply.formats import SH_BANDS_TO_DEGREE, SH_C0
 
 # Import DataFormat, FormatDict, GSData, and helpers from gsdata
 # No circular dependency - gsdata.py doesn't import GSTensor
-from gsply.gsdata import DataFormat, FormatDict, GSData, _create_format_dict, _get_sh_order_format
+from gsply.gsdata import (
+    DataFormat,
+    FormatDict,
+    GSData,
+    _create_format_dict,
+    _detect_format_from_values,
+    _get_sh_order_format,
+    create_ply_format,
+    create_rasterizer_format,
+)
 
 # Import compression functions (no circular dependency - compression.py only imports GSTensor for type hints)
 from gsply.torch.compression import read_compressed_gpu, write_compressed_gpu
@@ -67,12 +76,29 @@ class GSTensor:
     opacities: torch.Tensor
     sh0: torch.Tensor
     shN: torch.Tensor | None = None
+    _format: FormatDict = field(
+        default_factory=lambda: {}
+    )  # Format tracking - auto-detected in __post_init__ if empty
     masks: torch.Tensor | None = None
     mask_names: list[str] | None = None
     _base: torch.Tensor | None = None
-    _format: FormatDict | None = (
-        None  # Format tracking per attribute: {"scales": PLY, "opacities": PLY, ...}
-    )
+
+    def __post_init__(self):
+        """Auto-detect format if not provided."""
+        # If _format is empty dict, auto-detect from values
+        if not self._format:
+            # Convert tensors to numpy for format detection
+            scales_np = self.scales.detach().cpu().numpy()
+            opacities_np = self.opacities.detach().cpu().numpy()
+            scales_format, opacities_format = _detect_format_from_values(scales_np, opacities_np)
+            self._format = _create_format_dict(
+                scales=scales_format,
+                opacities=opacities_format,
+                sh0=DataFormat.SH0_SH,
+                sh_order=_get_sh_order_format(self.get_sh_degree()),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
 
     def __len__(self) -> int:
         """Return the number of Gaussians."""
@@ -198,7 +224,10 @@ class GSTensor:
 
             # Recreate GSTensor from base tensor (preserve format from GSData)
             return cls._recreate_from_base(
-                base_tensor, masks_tensor, data.mask_names, format_flag=data._format
+                base_tensor,
+                format_flag=data._format,
+                masks_tensor=masks_tensor,
+                mask_names=data.mask_names,
             )
 
         # Fallback: Stack arrays on CPU then transfer (2x faster than separate transfers)
@@ -244,7 +273,10 @@ class GSTensor:
 
         # Recreate GSTensor from base tensor (preserve format from GSData)
         return cls._recreate_from_base(
-            base_tensor, masks_tensor, data.mask_names, format_flag=data._format
+            base_tensor,
+            format_flag=data._format,
+            masks_tensor=masks_tensor,
+            mask_names=data.mask_names,
         )
 
     def to_gsdata(self) -> GSData:
@@ -270,7 +302,10 @@ class GSTensor:
             )
 
             return GSData._recreate_from_base(
-                base_numpy, masks_numpy, cpu_tensor.mask_names, format_flag=cpu_tensor._format
+                base_numpy,
+                format_flag=cpu_tensor._format,
+                masks_array=masks_numpy,
+                mask_names=cpu_tensor.mask_names,
             )
 
         # Fallback: Convert each tensor
@@ -313,10 +348,7 @@ class GSTensor:
         opacities = torch.logit(torch.clamp(self.opacities, min=_MIN_OPACITY, max=_MAX_OPACITY))
 
         # Preserve format and update to PLY format
-        if self._format is not None:
-            format_flag = self._format.copy()
-        else:
-            format_flag = {}
+        format_flag = self._format.copy()
         format_flag["scales"] = DataFormat.SCALES_PLY
         format_flag["opacities"] = DataFormat.OPACITIES_PLY
         if "sh_order" not in format_flag:
@@ -395,8 +427,6 @@ class GSTensor:
             self.opacities = opacities
             self._base = None  # Invalidate _base since we modified tensors
             # Update format dict: scales and opacities are now in PLY format
-            if self._format is None:
-                self._format = {}
             self._format["scales"] = DataFormat.SCALES_PLY
             self._format["opacities"] = DataFormat.OPACITIES_PLY
             return self
@@ -411,16 +441,7 @@ class GSTensor:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=DataFormat.SCALES_PLY,
-                opacities=DataFormat.OPACITIES_PLY,
-                sh0=DataFormat.SH0_SH,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {
+            _format={
                 **self._format,
                 "scales": DataFormat.SCALES_PLY,
                 "opacities": DataFormat.OPACITIES_PLY,
@@ -463,8 +484,6 @@ class GSTensor:
             self.opacities = opacities
             self._base = None  # Invalidate _base since we modified tensors
             # Update format dict: scales and opacities are now in linear format
-            if self._format is None:
-                self._format = {}
             self._format["scales"] = DataFormat.SCALES_LINEAR
             self._format["opacities"] = DataFormat.OPACITIES_LINEAR
             return self
@@ -479,16 +498,7 @@ class GSTensor:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=DataFormat.SCALES_LINEAR,
-                opacities=DataFormat.OPACITIES_LINEAR,
-                sh0=DataFormat.SH0_SH,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {
+            _format={
                 **self._format,
                 "scales": DataFormat.SCALES_LINEAR,
                 "opacities": DataFormat.OPACITIES_LINEAR,
@@ -554,8 +564,6 @@ class GSTensor:
             self.sh0.mul_(SH_C0).add_(0.5)
             self._base = None  # Invalidate _base since we modified tensors
             # Update format dict: sh0 is now in RGB format
-            if self._format is None:
-                self._format = {}
             self._format["sh0"] = DataFormat.SH0_RGB
             return self
 
@@ -571,18 +579,7 @@ class GSTensor:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=self._format.get("scales") if self._format else DataFormat.SCALES_PLY,
-                opacities=self._format.get("opacities")
-                if self._format
-                else DataFormat.OPACITIES_PLY,
-                sh0=DataFormat.SH0_RGB,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {**self._format, "sh0": DataFormat.SH0_RGB},
+            _format={**self._format, "sh0": DataFormat.SH0_RGB},
         )
 
     def to_sh(self, inplace: bool = True) -> GSTensor:
@@ -610,8 +607,6 @@ class GSTensor:
             self.sh0.sub_(0.5).div_(SH_C0)
             self._base = None  # Invalidate _base since we modified tensors
             # Update format dict: sh0 is now in SH format
-            if self._format is None:
-                self._format = {}
             self._format["sh0"] = DataFormat.SH0_SH
             return self
 
@@ -627,18 +622,7 @@ class GSTensor:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
-            _format=_create_format_dict(
-                scales=self._format.get("scales") if self._format else DataFormat.SCALES_PLY,
-                opacities=self._format.get("opacities")
-                if self._format
-                else DataFormat.OPACITIES_PLY,
-                sh0=DataFormat.SH0_SH,
-                sh_order=_get_sh_order_format(self.get_sh_degree()),
-                means=DataFormat.MEANS_RAW,
-                quats=DataFormat.QUATS_RAW,
-            )
-            if self._format is None
-            else {**self._format, "sh0": DataFormat.SH0_SH},
+            _format={**self._format, "sh0": DataFormat.SH0_SH},
         )
 
     # ==========================================================================
@@ -685,7 +669,10 @@ class GSTensor:
                 new_masks = self.masks.to(device=target_device, non_blocking=non_blocking)
 
             return self._recreate_from_base(
-                new_base, new_masks, self.mask_names, format_flag=self._format
+                new_base,
+                format_flag=self._format,
+                masks_tensor=new_masks,
+                mask_names=self.mask_names,
             )
 
         # Fallback: Move each tensor
@@ -790,23 +777,23 @@ class GSTensor:
 
         # Recreate GSTensor with new base (preserve format)
         return self._recreate_from_base(
-            new_base, new_masks, self.mask_names, format_flag=self._format
+            new_base, format_flag=self._format, masks_tensor=new_masks, mask_names=self.mask_names
         )
 
     @classmethod
     def _recreate_from_base(
         cls,
         base_tensor: torch.Tensor,
+        format_flag: FormatDict,
         masks_tensor: torch.Tensor | None = None,
         mask_names: list[str] | None = None,
-        format_flag: FormatDict | None = None,
     ) -> GSTensor | None:
         """Helper to recreate GSTensor from a base tensor.
 
         :param base_tensor: Base tensor (N, P) where P is property count
+        :param format_flag: Format dict (required)
         :param masks_tensor: Optional masks tensor (N,) or (N, L)
         :param mask_names: Optional mask layer names
-        :param format_flag: Optional format flag to preserve
         :returns: New GSTensor with views into base_tensor, or None if unknown format
         """
         # Convert to Python int to avoid numpy _NoValueType issues
@@ -854,7 +841,7 @@ class GSTensor:
             masks=masks_tensor,
             mask_names=mask_names,
             _base=base_tensor,
-            _format=format_flag,  # Preserve format dict (None if unknown)
+            _format=format_flag,  # Format dict (always provided)
         )
 
     def _slice_from_base(self, indices_or_mask):
@@ -877,7 +864,10 @@ class GSTensor:
 
         # Recreate from sliced base (preserve mask_names and format)
         return self._recreate_from_base(
-            base_subset, masks_subset, self.mask_names, format_flag=self._format
+            base_subset,
+            format_flag=self._format,
+            masks_tensor=masks_subset,
+            mask_names=self.mask_names,
         )
 
     # ==========================================================================
@@ -1038,7 +1028,10 @@ class GSTensor:
             mask_names_copy = self.mask_names.copy() if self.mask_names is not None else None
 
             result = self._recreate_from_base(
-                new_base, masks_clone, mask_names_copy, format_flag=self._format
+                new_base,
+                format_flag=self._format,
+                masks_tensor=masks_clone,
+                mask_names=mask_names_copy,
             )
             if result is not None:
                 return result
@@ -1090,7 +1083,7 @@ class GSTensor:
 
         :param other: Another GSTensor object to concatenate
         :returns: New GSTensor object with combined Gaussians
-        :raises ValueError: If SH degrees don't match
+        :raises ValueError: If SH degrees don't match or formats don't match
 
         Example:
             >>> gstensor1 = GSTensor.from_gsdata(data1, device='cuda')  # 100K Gaussians
@@ -1105,6 +1098,14 @@ class GSTensor:
             raise ValueError(
                 f"Cannot concatenate GSTensor with different SH degrees: "
                 f"{self.get_sh_degree()} vs {other.get_sh_degree()}"
+            )
+
+        # Validate format equivalence
+        if self._format != other._format:
+            raise ValueError(
+                f"Cannot concatenate GSTensor with different formats. "
+                f"self: {self._format}, other: {other._format}. "
+                f"Use normalize() or denormalize() to convert formats before concatenating."
             )
 
         # Ensure same device and dtype
@@ -1178,10 +1179,13 @@ class GSTensor:
                     combined_masks = torch.cat([self_masks_filled, other_masks], dim=0)
                     combined_mask_names = other.mask_names.copy() if other.mask_names else None
 
-            # Preserve format if both are same format (compare dicts)
-            format_flag = self._format if self._format == other._format else None
+            # Format already validated above, use self's format
+            format_flag = self._format
             return self._recreate_from_base(
-                combined_base, combined_masks, combined_mask_names, format_flag=format_flag
+                combined_base,
+                format_flag=format_flag,
+                masks_tensor=combined_masks,
+                mask_names=combined_mask_names,
             )
 
         # Fallback: Concatenate individual tensors (still GPU-optimized)
@@ -1253,8 +1257,8 @@ class GSTensor:
         if requires_grad:
             combined_means.requires_grad_(True)
 
-        # Preserve format if both are same format (compare dicts)
-        format_flag = self._format if self._format == other._format else None
+        # Format already validated above, use self's format
+        format_flag = self._format
 
         return GSTensor(
             means=combined_means,
@@ -1407,6 +1411,161 @@ class GSTensor:
 
         gsdata = plyread(file_path)
         return cls.from_gsdata(gsdata, device=device)
+
+    @classmethod
+    def from_arrays(
+        cls,
+        means: torch.Tensor,
+        scales: torch.Tensor,
+        quats: torch.Tensor,
+        opacities: torch.Tensor,
+        sh0: torch.Tensor,
+        shN: torch.Tensor | None = None,
+        format: str = "auto",
+        sh_degree: int | None = None,
+        sh0_format: DataFormat = DataFormat.SH0_SH,
+        device: str | torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> GSTensor:
+        """Create GSTensor from individual tensors with format preset.
+
+        Convenient factory method for creating GSTensor from external tensors
+        with automatic format detection or explicit format presets.
+
+        :param means: (N, 3) tensor - Gaussian centers
+        :param scales: (N, 3) tensor - Scale parameters
+        :param quats: (N, 4) tensor - Rotation quaternions
+        :param opacities: (N,) tensor - Opacity values
+        :param sh0: (N, 3) tensor - DC spherical harmonics
+        :param shN: (N, K, 3) tensor or None - Higher-order SH coefficients
+        :param format: Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+        :param sh_degree: SH degree (0-3) - auto-detected from shN if None
+        :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+        :param device: Target device - inferred from tensors if None
+        :param dtype: Target dtype - inferred from tensors if None
+        :returns: GSTensor object with specified format
+
+        Example:
+            >>> # Auto-detect format from values
+            >>> gstensor = GSTensor.from_arrays(means, scales, quats, opacities, sh0, device="cuda")
+            >>>
+            >>> # Explicit PLY format (log-scales, logit-opacities)
+            >>> gstensor = GSTensor.from_arrays(means, scales, quats, opacities, sh0, format="ply", device="cuda")
+            >>>
+            >>> # Explicit linear format (for rasterizer)
+            >>> gstensor = GSTensor.from_arrays(means, scales, quats, opacities, sh0, format="linear", device="cuda")
+        """
+        # Infer device and dtype from first tensor if not provided
+        if device is None:
+            device = means.device
+        if dtype is None:
+            dtype = means.dtype
+
+        # Ensure all tensors are on correct device and dtype
+        device_obj = torch.device(device)
+        means = means.to(device=device_obj, dtype=dtype)
+        scales = scales.to(device=device_obj, dtype=dtype)
+        quats = quats.to(device=device_obj, dtype=dtype)
+        opacities = opacities.to(device=device_obj, dtype=dtype)
+        sh0 = sh0.to(device=device_obj, dtype=dtype)
+        if shN is not None:
+            shN = shN.to(device=device_obj, dtype=dtype)
+
+        # Determine SH degree
+        if sh_degree is None:
+            if shN is not None and shN.shape[1] > 0:
+                sh_bands = int(shN.shape[1])
+                sh_degree = SH_BANDS_TO_DEGREE.get(sh_bands, 0)
+            else:
+                sh_degree = 0
+
+        # Create format dict based on preset
+        if format == "auto":
+            # Auto-detect format from values (convert to numpy for detection)
+            scales_np = scales.detach().cpu().numpy()
+            opacities_np = opacities.detach().cpu().numpy()
+            scales_format, opacities_format = _detect_format_from_values(scales_np, opacities_np)
+            format_dict = _create_format_dict(
+                scales=scales_format,
+                opacities=opacities_format,
+                sh0=sh0_format,
+                sh_order=_get_sh_order_format(sh_degree),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
+        elif format == "ply":
+            # PLY format (log-scales, logit-opacities)
+            format_dict = create_ply_format(sh_degree=sh_degree, sh0_format=sh0_format)
+        elif format in ("linear", "rasterizer"):
+            # Linear/rasterizer format (linear scales, linear opacities)
+            format_dict = create_rasterizer_format(sh_degree=sh_degree, sh0_format=sh0_format)
+        else:
+            raise ValueError(
+                f"Invalid format preset: {format}. Must be 'auto', 'ply', 'linear', or 'rasterizer'"
+            )
+
+        return cls(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            masks=None,
+            mask_names=None,
+            _base=None,
+            _format=format_dict,
+        )
+
+    @classmethod
+    def from_dict(
+        cls,
+        data_dict: dict,
+        format: str = "auto",
+        sh_degree: int | None = None,
+        sh0_format: DataFormat = DataFormat.SH0_SH,
+        device: str | torch.device = "cuda",
+        dtype: torch.dtype | None = None,
+    ) -> GSTensor:
+        """Create GSTensor from dictionary with format preset.
+
+        Convenient factory method for creating GSTensor from a dictionary
+        with automatic format detection or explicit format presets.
+
+        :param data_dict: Dictionary with keys: means, scales, quats, opacities, sh0, shN (optional)
+        :param format: Format preset - "auto" (detect), "ply" (log/logit), "linear" or "rasterizer" (linear)
+        :param sh_degree: SH degree (0-3) - auto-detected from shN if None
+        :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+        :param device: Target device (default "cuda")
+        :param dtype: Target dtype - inferred from tensors if None
+        :returns: GSTensor object with specified format
+
+        Example:
+            >>> # From dictionary with auto-detection
+            >>> gstensor = GSTensor.from_dict({
+            ...     "means": means, "scales": scales, "quats": quats,
+            ...     "opacities": opacities, "sh0": sh0, "shN": shN
+            ... }, device="cuda")
+            >>>
+            >>> # Explicit PLY format
+            >>> gstensor = GSTensor.from_dict(data_dict, format="ply", device="cuda")
+            >>>
+            >>> # Explicit linear format
+            >>> gstensor = GSTensor.from_dict(data_dict, format="linear", device="cuda")
+        """
+        return cls.from_arrays(
+            means=data_dict["means"],
+            scales=data_dict["scales"],
+            quats=data_dict["quats"],
+            opacities=data_dict["opacities"],
+            sh0=data_dict["sh0"],
+            shN=data_dict.get("shN"),
+            format=format,
+            sh_degree=sh_degree,
+            sh0_format=sh0_format,
+            device=device,
+            dtype=dtype,
+        )
 
     # ==========================================================================
     # Type Conversions

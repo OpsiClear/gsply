@@ -93,16 +93,15 @@ def plywrite_gpu(
 
     # Ensure data is in PLY format before writing (log-scales, logit-opacities)
     # Check format flags and convert if needed
-    if gstensor._format is not None:
-        scales_format = gstensor._format.get("scales")
-        opacities_format = gstensor._format.get("opacities")
+    scales_format = gstensor._format.get("scales")
+    opacities_format = gstensor._format.get("opacities")
 
-        # Convert to PLY format if not already in PLY format
-        if scales_format != DataFormat.SCALES_PLY or opacities_format != DataFormat.OPACITIES_PLY:
-            logger.debug(
-                f"[GPU Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
-            )
-            gstensor = gstensor.normalize(inplace=False)  # Create copy with PLY format
+    # Convert to PLY format if not already in PLY format
+    if scales_format != DataFormat.SCALES_PLY or opacities_format != DataFormat.OPACITIES_PLY:
+        logger.debug(
+            f"[GPU Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
+        )
+        gstensor = gstensor.normalize(inplace=False)  # Create copy with PLY format
 
     file_path = Path(file_path)
     write_compressed_gpu(file_path, gstensor)

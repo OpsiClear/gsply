@@ -29,8 +29,8 @@ else:
 project = "gsply"
 author = "OpsiClear"
 copyright = f"{datetime.now().year}, {author}"
-version = "0.2.5"
-release = "0.2.5"
+version = "0.2.6"
+release = "0.2.6"
 
 
 # -- General configuration ---------------------------------------------------

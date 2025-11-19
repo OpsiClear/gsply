@@ -15,6 +15,18 @@
 
 ---
 
+## What's New in v0.2.6
+
+- **Convenience Factory Methods**: Create GSData/GSTensor from external data with format presets
+  - `GSData.from_arrays()` / `GSData.from_dict()` - Create from arrays/dictionaries with format preset
+  - `GSTensor.from_arrays()` / `GSTensor.from_dict()` - Create from tensors/dictionaries with format preset
+  - Format presets: `"auto"` (detect), `"ply"` (log/logit), `"linear"` or `"rasterizer"` (linear)
+  - Auto-detects SH degree from `shN` shape when not specified
+- **Auto-Format Detection**: Smart heuristics automatically detect if data is in PLY format (log/logit) or Linear format
+- **Format Safety**: Strict validation prevents mixing incompatible formats (e.g. linear + log) during concatenation
+- **Format Helpers**: New `create_ply_format()` and `create_rasterizer_format()` helpers
+- **Enhanced I/O**: `plywrite()` automatically converts linear data to PLY format before writing
+
 ## What's New in v0.2.5
 
 - **SOG Format Support**: `sogread()` - Read SOG (Splat Ordering Grid) format files
@@ -239,6 +251,45 @@ gstensor.save("output.compressed.ply")  # GPU compression (default)
 data_cpu = gstensor.to_gsdata()
 ```
 
+### Creating GSData/GSTensor from External Data
+
+```python
+from gsply import GSData, GSTensor
+import numpy as np
+import torch
+
+# Create GSData from arrays with format preset
+data = GSData.from_arrays(
+    means=np.random.randn(1000, 3),
+    scales=np.random.rand(1000, 3),
+    quats=np.random.randn(1000, 4),
+    opacities=np.random.rand(1000),
+    sh0=np.random.randn(1000, 3),
+    format="linear"  # or "auto", "ply", "rasterizer"
+)
+
+# Create GSData from dictionary
+data_dict = {
+    "means": means, "scales": scales, "quats": quats,
+    "opacities": opacities, "sh0": sh0, "shN": shN
+}
+data = GSData.from_dict(data_dict, format="ply")
+
+# Create GSTensor from tensors with format preset
+gstensor = GSTensor.from_arrays(
+    means=torch.randn(1000, 3),
+    scales=torch.rand(1000, 3),
+    quats=torch.randn(1000, 4),
+    opacities=torch.rand(1000),
+    sh0=torch.randn(1000, 3),
+    format="linear",  # or "auto", "ply", "rasterizer"
+    device="cuda"
+)
+
+# Create GSTensor from dictionary
+gstensor = GSTensor.from_dict(data_dict, format="ply", device="cuda")
+```
+
 ### Data Manipulation
 
 ```python
@@ -351,11 +402,15 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 - `plyread(file_path)` - Read PLY files
 - `plywrite(file_path, ...)` - Write PLY files
 - `detect_format(file_path)` - Detect format and SH degree
+- `create_ply_format(sh_degree)` - Create PLY format dict (log-scales, logit-opacities)
+- `create_rasterizer_format(sh_degree)` - Create rasterizer format dict (linear scales/opacities)
 - `sogread(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
 
 **GSData Container:**
 - `data.save(file_path, compressed=False)` - Save to PLY file
 - `GSData.load(file_path)` - Load from PLY file (classmethod, auto-detects format)
+- `GSData.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto')` - Create from arrays with format preset
+- `GSData.from_dict(data_dict, format='auto')` - Create from dictionary with format preset
 - `data.unpack()` - Unpack to tuple
 - `data.to_dict()` - Convert to dictionary
 - `data.copy()` - Deep copy
@@ -380,6 +435,8 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 
 **GPU Support (PyTorch):**
 - `GSTensor.load(file_path, device='cuda')` - Load from PLY file (classmethod, auto-detects format)
+- `GSTensor.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', device='cuda')` - Create from tensors with format preset
+- `GSTensor.from_dict(data_dict, format='auto', device='cuda')` - Create from dictionary with format preset
 - `gstensor.save(file_path, compressed=True)` - Save to PLY file (GPU compression by default)
 - `gstensor.save_compressed(file_path)` - Save compressed PLY (convenience alias)
 - `GSTensor.from_gsdata(data, device='cuda')` - Convert to GPU
@@ -424,7 +481,7 @@ gsply/
 │   ├── formats.py      # Format detection
 │   └── torch/          # PyTorch integration
 │       └── gstensor.py # GSTensor GPU dataclass
-├── tests/              # Unit tests (169 tests)
+├── tests/              # Unit tests (348 tests)
 ├── benchmarks/         # Performance benchmarks
 ├── docs/               # Documentation
 └── pyproject.toml      # Package configuration
@@ -434,7 +491,7 @@ gsply/
 
 ## Testing
 
-gsply has comprehensive test coverage with 169 passing tests:
+gsply has comprehensive test coverage with 348 passing tests:
 
 ```bash
 # Run all tests

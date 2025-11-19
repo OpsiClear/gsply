@@ -99,6 +99,76 @@ combined_mask = data.combine_masks(mode="and", layers=["high_opacity", "foregrou
 
 Mask layers persist through slicing, concatenation, and CPU↔GPU transfers.
 
+## Creating Data from External Sources
+
+**From Arrays (Recommended):**
+```python
+from gsply import GSData, GSTensor
+import numpy as np
+
+# Create from NumPy arrays with auto-format detection
+data = GSData.from_arrays(
+    means=means,      # (N, 3) xyz positions
+    scales=scales,    # (N, 3) scales (auto-detects log vs linear)
+    quats=quats,      # (N, 4) quaternions (wxyz order)
+    opacities=opacities,  # (N,) opacities (auto-detects logit vs linear)
+    sh0=sh0,          # (N, 3) DC spherical harmonics
+    shN=shN,          # (N, K, 3) higher-order SH (optional, auto-detects degree)
+    format="auto"     # "auto", "ply", or "linear"
+)
+
+# Explicit format specification (faster, skips detection)
+data = GSData.from_arrays(means, scales, quats, opacities, sh0, format="ply")
+
+# From dictionary
+data = GSData.from_dict({
+    "means": means,
+    "scales": scales,
+    "quats": quats,
+    "opacities": opacities,
+    "sh0": sh0,
+    "shN": shN  # optional
+}, format="auto")
+```
+
+**GPU Tensors:**
+```python
+import torch
+
+# Create GSTensor from PyTorch tensors
+gstensor = GSTensor.from_arrays(
+    means=means_tensor,      # torch.Tensor (N, 3)
+    scales=scales_tensor,    # torch.Tensor (N, 3)
+    quats=quats_tensor,      # torch.Tensor (N, 4)
+    opacities=opacities_tensor,  # torch.Tensor (N,)
+    sh0=sh0_tensor,          # torch.Tensor (N, 3)
+    shN=shN_tensor,          # torch.Tensor (N, K, 3) optional
+    format="auto",
+    device="cuda",           # Auto-converts to target device
+    dtype=torch.float32      # Auto-converts to target dtype
+)
+
+# From dictionary
+gstensor = GSTensor.from_dict({
+    "means": means_tensor,
+    "scales": scales_tensor,
+    "quats": quats_tensor,
+    "opacities": opacities_tensor,
+    "sh0": sh0_tensor,
+    "shN": shN_tensor
+}, format="ply", device="cuda")
+```
+
+**Format Presets:**
+- `"auto"` (default): Automatically detects PLY format (log-scales/logit-opacities) vs Linear format
+- `"ply"`: Explicitly sets PLY format (log-scales/logit-opacities) - use when data matches PLY file spec
+- `"linear"` or `"rasterizer"`: Explicitly sets linear format (linear scales/opacities) - use for renderer compatibility
+
+**SH Degree Inference:**
+- Automatically infers SH degree from `shN.shape[1]` if not specified
+- Valid degrees: 0 (no shN), 1 (9 bands), 2 (24 bands), 3 (45 bands)
+- Raises `ValueError` if shape doesn't match a valid degree
+
 ## Writing Data
 
 **Object-Oriented API (Recommended):**

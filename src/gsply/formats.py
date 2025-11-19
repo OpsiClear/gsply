@@ -38,75 +38,47 @@ SH_BANDS_TO_DEGREE = {
     15: 3,  # SH3: 15 bands
 }
 
+# Mapping from SH degree to number of f_rest bands
+_SH_DEGREE_TO_REST_BANDS = {
+    0: 0,
+    1: 9,
+    2: 24,
+    3: 45,
+}
+
+
+def _build_property_list(sh_degree: int) -> list[str]:
+    """Build property list for given SH degree.
+
+    :param sh_degree: SH degree (0-3)
+    :returns: List of property names in order
+    """
+    base_properties = [
+        "x",
+        "y",
+        "z",
+        "f_dc_0",
+        "f_dc_1",
+        "f_dc_2",
+    ]
+    rest_bands = _SH_DEGREE_TO_REST_BANDS[sh_degree]
+    rest_properties = [f"f_rest_{i}" for i in range(rest_bands)]
+    suffix_properties = [
+        "opacity",
+        "scale_0",
+        "scale_1",
+        "scale_2",
+        "rot_0",
+        "rot_1",
+        "rot_2",
+        "rot_3",
+    ]
+    return base_properties + rest_properties + suffix_properties
+
+
 # Expected property names in order for each SH degree
 EXPECTED_PROPERTIES_BY_SH_DEGREE: dict[int, list[str]] = {
-    0: [
-        "x",
-        "y",
-        "z",
-        "f_dc_0",
-        "f_dc_1",
-        "f_dc_2",
-        "opacity",
-        "scale_0",
-        "scale_1",
-        "scale_2",
-        "rot_0",
-        "rot_1",
-        "rot_2",
-        "rot_3",
-    ],
-    1: [
-        "x",
-        "y",
-        "z",
-        "f_dc_0",
-        "f_dc_1",
-        "f_dc_2",
-        *[f"f_rest_{i}" for i in range(9)],
-        "opacity",
-        "scale_0",
-        "scale_1",
-        "scale_2",
-        "rot_0",
-        "rot_1",
-        "rot_2",
-        "rot_3",
-    ],
-    2: [
-        "x",
-        "y",
-        "z",
-        "f_dc_0",
-        "f_dc_1",
-        "f_dc_2",
-        *[f"f_rest_{i}" for i in range(24)],
-        "opacity",
-        "scale_0",
-        "scale_1",
-        "scale_2",
-        "rot_0",
-        "rot_1",
-        "rot_2",
-        "rot_3",
-    ],
-    3: [
-        "x",
-        "y",
-        "z",
-        "f_dc_0",
-        "f_dc_1",
-        "f_dc_2",
-        *[f"f_rest_{i}" for i in range(45)],
-        "opacity",
-        "scale_0",
-        "scale_1",
-        "scale_2",
-        "rot_0",
-        "rot_1",
-        "rot_2",
-        "rot_3",
-    ],
+    degree: _build_property_list(degree) for degree in range(4)
 }
 
 # Compressed format constants
@@ -193,21 +165,54 @@ def detect_format(file_path: str | Path) -> tuple[bool, int | None]:
         return True, None
 
     # Check for uncompressed format
-    if "vertex" in elements:
-        vertex_props = elements["vertex"]["properties"]
-        property_count = len(vertex_props)
+    if "vertex" not in elements:
+        return False, None
 
-        # Try to match against known SH degrees
-        for sh_degree, expected_count in PROPERTY_COUNTS_BY_SH_DEGREE.items():
-            if property_count == expected_count:
-                # Verify property names match
-                prop_names = [p[1] for p in vertex_props]
-                expected_names = EXPECTED_PROPERTIES_BY_SH_DEGREE[sh_degree]
-                if prop_names == expected_names:
-                    return False, sh_degree
+    vertex_props = elements["vertex"]["properties"]
+    property_count = len(vertex_props)
+
+    # Try to match against known SH degrees
+    for sh_degree, expected_count in PROPERTY_COUNTS_BY_SH_DEGREE.items():
+        if property_count == expected_count:
+            # Verify property names match
+            prop_names = [prop[1] for prop in vertex_props]
+            expected_names = EXPECTED_PROPERTIES_BY_SH_DEGREE[sh_degree]
+            if prop_names == expected_names:
+                return False, sh_degree
 
     # Unknown format
     return False, None
+
+
+# Expected chunk property names for compressed format
+_EXPECTED_CHUNK_NAMES = [
+    "min_x",
+    "min_y",
+    "min_z",
+    "max_x",
+    "max_y",
+    "max_z",
+    "min_scale_x",
+    "min_scale_y",
+    "min_scale_z",
+    "max_scale_x",
+    "max_scale_y",
+    "max_scale_z",
+    "min_r",
+    "min_g",
+    "min_b",
+    "max_r",
+    "max_g",
+    "max_b",
+]
+
+# Expected vertex property names for compressed format
+_EXPECTED_VERTEX_NAMES = [
+    "packed_position",
+    "packed_rotation",
+    "packed_scale",
+    "packed_color",
+]
 
 
 def _is_compressed_format(elements: dict[str, dict[str, Any]]) -> bool:
@@ -217,7 +222,8 @@ def _is_compressed_format(elements: dict[str, dict[str, Any]]) -> bool:
     :returns: True if compressed format detected
     """
     # Must have chunk and vertex elements
-    if "chunk" not in elements or "vertex" not in elements:
+    required_elements = {"chunk", "vertex"}
+    if not required_elements.issubset(elements):
         return False
 
     chunk_elem = elements["chunk"]
@@ -228,47 +234,28 @@ def _is_compressed_format(elements: dict[str, dict[str, Any]]) -> bool:
     if len(chunk_props) != COMPRESSED_CHUNK_PROPERTIES:
         return False
 
-    expected_chunk_names = [
-        "min_x",
-        "min_y",
-        "min_z",
-        "max_x",
-        "max_y",
-        "max_z",
-        "min_scale_x",
-        "min_scale_y",
-        "min_scale_z",
-        "max_scale_x",
-        "max_scale_y",
-        "max_scale_z",
-        "min_r",
-        "min_g",
-        "min_b",
-        "max_r",
-        "max_g",
-        "max_b",
-    ]
-
-    for i, (prop_type, prop_name) in enumerate(chunk_props):
-        if prop_type != "float" or prop_name != expected_chunk_names[i]:
-            return False
+    # Verify chunk property types and names match expected format
+    if not all(
+        prop_type == "float" and prop_name == expected_name
+        for (prop_type, prop_name), expected_name in zip(
+            chunk_props, _EXPECTED_CHUNK_NAMES, strict=False
+        )
+    ):
+        return False
 
     # Check vertex element (4 uint properties)
     vertex_props = vertex_elem["properties"]
     if len(vertex_props) < COMPRESSED_VERTEX_PROPERTIES:
         return False
 
-    expected_vertex_names = [
-        "packed_position",
-        "packed_rotation",
-        "packed_scale",
-        "packed_color",
-    ]
-
-    for i in range(COMPRESSED_VERTEX_PROPERTIES):
-        prop_type, prop_name = vertex_props[i]
-        if prop_type != "uint" or prop_name != expected_vertex_names[i]:
-            return False
+    # Verify vertex property types and names match expected format
+    if not all(
+        prop_type == "uint" and prop_name == expected_name
+        for (prop_type, prop_name), expected_name in zip(
+            vertex_props[:COMPRESSED_VERTEX_PROPERTIES], _EXPECTED_VERTEX_NAMES, strict=False
+        )
+    ):
+        return False
 
     # Check chunk count matches splat count
     num_chunks = chunk_elem["count"]

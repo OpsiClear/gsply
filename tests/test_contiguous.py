@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from gsply import GSData
+from gsply.gsdata import DataFormat, _create_format_dict, _get_sh_order_format
 
 
 @pytest.fixture
@@ -11,7 +12,15 @@ def data_noncontiguous():
     """Create non-contiguous GSData (from _base)."""
     n = 1000
     base_array = np.random.randn(n, 14).astype(np.float32)
-    return GSData._recreate_from_base(base_array)
+    format_flag = _create_format_dict(
+        scales=DataFormat.SCALES_PLY,
+        opacities=DataFormat.OPACITIES_PLY,
+        sh0=DataFormat.SH0_SH,
+        sh_order=_get_sh_order_format(0),
+        means=DataFormat.MEANS_RAW,
+        quats=DataFormat.QUATS_RAW,
+    )
+    return GSData._recreate_from_base(base_array, format_flag=format_flag)
 
 
 @pytest.fixture
@@ -138,7 +147,15 @@ def test_make_contiguous_with_shN():
     """Test make_contiguous with higher-order SH coefficients."""
     n = 1000
     base_array = np.random.randn(n, 23).astype(np.float32)  # SH1: 23 properties
-    data = GSData._recreate_from_base(base_array)
+    format_flag = _create_format_dict(
+        scales=DataFormat.SCALES_PLY,
+        opacities=DataFormat.OPACITIES_PLY,
+        sh0=DataFormat.SH0_SH,
+        sh_order=_get_sh_order_format(1),
+        means=DataFormat.MEANS_RAW,
+        quats=DataFormat.QUATS_RAW,
+    )
+    data = GSData._recreate_from_base(base_array, format_flag=format_flag)
 
     # Should start non-contiguous
     assert data.is_contiguous() is False
@@ -160,7 +177,15 @@ def test_contiguous_performance_benefit():
 
     # Create non-contiguous data
     base_array = np.random.randn(n, 14).astype(np.float32)
-    data_noncontig = GSData._recreate_from_base(base_array)
+    format_flag = _create_format_dict(
+        scales=DataFormat.SCALES_PLY,
+        opacities=DataFormat.OPACITIES_PLY,
+        sh0=DataFormat.SH0_SH,
+        sh_order=_get_sh_order_format(0),
+        means=DataFormat.MEANS_RAW,
+        quats=DataFormat.QUATS_RAW,
+    )
+    data_noncontig = GSData._recreate_from_base(base_array, format_flag=format_flag)
 
     # Create contiguous version
     data_contig = data_noncontig.make_contiguous(inplace=False)

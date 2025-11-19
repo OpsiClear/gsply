@@ -11,7 +11,7 @@ This file provides context and instructions for AI coding agents working on the 
 - **Optional Dependencies**: PyTorch (GPU acceleration via GSTensor)
 - **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
 - **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support
-- **Current Version**: 0.2.5
+- **Current Version**: 0.2.6
 
 ## Development Environment Setup
 
@@ -94,7 +94,7 @@ gsply/
 │       ├── gstensor.py  # GSTensor GPU dataclass
 │       ├── compression.py  # GPU compression/decompression
 │       └── io.py        # GPU I/O (plyread_gpu, plywrite_gpu)
-├── tests/               # Test suite (281 tests)
+├── tests/               # Test suite (348 tests)
 ├── benchmarks/          # Performance benchmarks
 ├── docs/                # Documentation
 └── .github/workflows/   # CI/CD pipelines
@@ -137,7 +137,7 @@ Tests automatically generate synthetic data. Some tests use real PLY files:
 
 ### Test Count
 
-Current test count: **281 tests** (documented in README.md)
+Current test count: **348 tests** (documented in README.md)
 - Update this count in README if adding/removing tests
 
 ## Code Style and Conventions
@@ -281,6 +281,11 @@ masks:     (N,)   - boolean mask (initialized to all True)
   - Log-scales → linear scales: `exp(log_scale)`
   - Logit-opacities → linear opacities: `sigmoid(logit)`
 
+**Auto-Detection (v0.2.6+):**
+- `__post_init__` automatically detects format from data values if `_format` is not provided
+- Uses heuristics (negative values for log-scales, range for opacities) via `_detect_format_from_values()`
+- `plywrite()` validates/converts to PLY format automatically before writing
+
 **Implementation Details:**
 - **GSData**: Uses `gsply.logit()` and `gsply.sigmoid()` from `utils.py` (Numba-optimized CPU)
 - **GSTensor**: Uses `torch.logit()` and `torch.sigmoid()` (GPU-accelerated)
@@ -312,6 +317,55 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - Use `data.save()` / `GSData.load()` for cleaner object-oriented API
 - Use `gstensor.save()` / `GSTensor.load()` for GPU-accelerated I/O
 - Module-level functions (`plyread`, `plywrite`) still available for functional style
+
+### Factory Methods for External Data (v0.2.6+)
+
+**GSData and GSTensor Factory Methods:**
+- `GSData.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', sh_degree=None, sh0_format=SH0_SH)`: Create GSData from NumPy arrays with format preset
+- `GSData.from_dict(data_dict, format='auto', sh_degree=None, sh0_format=SH0_SH)`: Create GSData from dictionary with format preset
+- `GSTensor.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', sh_degree=None, sh0_format=SH0_SH, device=None, dtype=None)`: Create GSTensor from PyTorch tensors with format preset
+- `GSTensor.from_dict(data_dict, format='auto', sh_degree=None, sh0_format=SH0_SH, device='cuda', dtype=None)`: Create GSTensor from dictionary with format preset
+
+**Format Presets:**
+- `"auto"` (default): Automatically detects format from data values using heuristics
+  - Detects PLY format (log-scales/logit-opacities) vs Linear format (linear scales/opacities)
+  - Uses `_detect_format_from_values()` for statistical analysis
+- `"ply"`: Explicitly sets PLY format (log-scales/logit-opacities)
+- `"linear"` or `"rasterizer"`: Explicitly sets linear format (linear scales/opacities)
+
+**SH Degree Inference:**
+- Automatically infers SH degree from `shN.shape[1]` if `sh_degree` is not provided
+- Uses `SH_BANDS_TO_DEGREE` mapping: 0→0, 9→1, 24→2, 45→3
+- Raises `ValueError` if `shN` shape doesn't match a valid SH degree
+
+**Implementation Details:**
+- **GSData.from_arrays()**: Validates array shapes, detects/infers format and SH degree, performs format conversion if needed
+- **GSData.from_dict()**: Extracts arrays from dictionary, validates required keys (`means`, `scales`, `quats`, `opacities`, `sh0`), optional `shN`
+- **GSTensor.from_arrays()**: Same as GSData but handles PyTorch tensors, device/dtype conversion, and GPU format conversion
+- **GSTensor.from_dict()**: Same as GSData but extracts PyTorch tensors from dictionary
+- **Format Conversion**: If format preset differs from auto-detected format, automatically converts data using `normalize()` or `denormalize()`
+- **Shape Validation**: Raises `ValueError` if input arrays/tensors have inconsistent lengths (N mismatch)
+
+**When to use:**
+- `from_arrays()`: When you have individual arrays/tensors and want convenient initialization with format handling
+- `from_dict()`: When you have data in dictionary format (e.g., from JSON, other libraries, or custom loaders)
+- Use format presets when you know the data format and want to avoid auto-detection overhead
+- Use `"auto"` when format is uncertain - heuristics handle most cases correctly
+
+**Examples:**
+```python
+# Auto-detect format from arrays
+data = GSData.from_arrays(means, scales, quats, opacities, sh0)
+
+# Explicit PLY format (log/logit)
+data = GSData.from_arrays(means, scales, quats, opacities, sh0, format="ply")
+
+# From dictionary with auto-detection
+data = GSData.from_dict({"means": means, "scales": scales, ...})
+
+# GPU tensor with device specification
+gstensor = GSTensor.from_arrays(means_tensor, scales_tensor, ..., device="cuda")
+```
 
 ### Color Conversion: SH ↔ RGB Format
 
@@ -448,7 +502,7 @@ masks:     (N,)   - boolean mask (initialized to all True)
 ### Before Creating PR
 
 1. **Run pre-commit hooks**: `pre-commit run --all-files` (automatically checks formatting, linting, etc.)
-2. **Run full test suite**: `pytest` (all 281 tests must pass)
+2. **Run full test suite**: `pytest` (all 348 tests must pass)
 3. **Type check** (optional): `mypy src/` or `pre-commit run --hook-stage manual mypy --all-files`
 4. **Update test count** in README.md if you added/removed tests
 5. **Update CHANGELOG.md** with your changes
@@ -468,7 +522,7 @@ Follow conventional commits style:
 
 ### Code Review Checklist
 
-- [ ] All tests pass (281/281)
+- [ ] All tests pass (348/348)
 - [ ] No new linter warnings
 - [ ] Type hints added for new functions
 - [ ] Docstrings added for public APIs
@@ -494,8 +548,8 @@ python -m build
 
 # Check dist files
 ls dist/
-# gsply-0.2.5-py3-none-any.whl
-# gsply-0.2.5.tar.gz
+# gsply-0.2.6-py3-none-any.whl
+# gsply-0.2.6.tar.gz
 ```
 
 ### Publishing (Maintainer Only)

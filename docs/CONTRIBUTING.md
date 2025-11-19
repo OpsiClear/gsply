@@ -345,18 +345,18 @@ __version__ = "0.1.0"
 
 ```bash
 # Edit pyproject.toml
-version = "0.2.2"
+version = "0.2.6"
 
 # Edit src/gsply/__init__.py
-__version__ = "0.2.2"
+__version__ = "0.2.6"
 ```
 
 **Step 2: Update Documentation**
 
 ```bash
-# Edit docs/RELEASE_NOTES.md - Add new version section
+# Edit docs/CHANGELOG.md - Add new version section
 # Edit README.md if API changes
-# Edit docs/BUILD.md if build changes
+# Update test count if tests changed
 ```
 
 **Step 3: Commit and Tag**
@@ -364,10 +364,10 @@ __version__ = "0.2.2"
 ```bash
 # Commit changes
 git add .
-git commit -m "Release v0.2.2"
+git commit -m "Release v0.2.6"
 
 # Create annotated tag
-git tag -a v0.2.2 -m "Release v0.2.2"
+git tag -a v0.2.6 -m "Release v0.2.6"
 
 # Push commits and tags
 git push && git push --tags
@@ -376,8 +376,8 @@ git push && git push --tags
 **Step 4: Create GitHub Release**
 
 1. Go to GitHub > Releases > Create new release
-2. Choose tag: v0.2.2
-3. Write release notes (copy from RELEASE_NOTES.md)
+2. Choose tag: v0.2.6
+3. Write release notes (copy from docs/CHANGELOG.md)
 4. Publish release
 
 **Step 5: Automated Publishing**
