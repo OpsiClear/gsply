@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gsply"
-version = "0.2.4"
+version = "0.2.5"
 description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python with NumPy and Numba"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,6 +37,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+sogs = [
+    "imagecodecs>=2024.0.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -57,6 +60,7 @@ docs = [
     "sphinx-autodoc-typehints>=2.0",
 ]
 all = [
+    "imagecodecs>=2024.0.0",
     "pytest>=7.0",
     "pytest-cov",
     "build",
@@ -175,3 +179,11 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "torch.*"
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "imagecodecs>=2025.3.30",
+    "opencv-python>=4.12.0.88",
+    "pillow>=12.0.0",
+    "pyvips>=3.0.0",
+]

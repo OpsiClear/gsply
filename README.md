@@ -14,13 +14,16 @@
 
 ---
 
-## What's New in v0.2.4
+## What's New in v0.2.5
 
-- GPU I/O API: `plyread_gpu()` and `plywrite_gpu()` - Direct GPU compression/decompression (4-5x faster than CPU + transfer)
-- GPU Compression: Full GPU-accelerated compression pipeline with optimized memory transfers
-- CPU Optimization: Pre-compute ranges for compression (1.44x speedup)
+- SOG Format Support: `read_sog()` - Read SOG (Splat Ordering Grid) format files
+  - Returns `GSData` container (same as `plyread()`) for consistent API
+  - In-memory ZIP extraction: Read directly from bytes without disk I/O
+  - Uses `imagecodecs` (fastest WebP decoder) for optimal performance
+  - Compatible with PlayCanvas splat-transform format
 
 **Previous versions:**
+- v0.2.4: GPU I/O API (`plyread_gpu()`, `plywrite_gpu()`), GPU compression optimizations
 - v0.2.2: Data Concatenation, GPU Concatenation, Performance Optimization, Mask Management
 
 [Full API Reference](docs/API_REFERENCE.md) | [Changelog](docs/CHANGELOG.md)
@@ -75,9 +78,10 @@ pip install gsply
 
 **Dependencies:** NumPy and Numba (auto-installed)
 
-**Optional GPU acceleration:**
+**Optional dependencies:**
 ```bash
 pip install torch  # For GSTensor GPU features
+pip install gsply[sogs]  # For SOG format support (read_sog)
 ```
 
 ---
@@ -222,6 +226,31 @@ Chunk-based quantized format:
 - Compatible with PlayCanvas, SuperSplat, other WebGL viewers
 - Parallel compression/decompression
 
+### SOG Format (Splat Ordering Grid) - Optional
+
+WebP-based texture format for web deployment:
+- Requires `gsply[sogs]` installation
+- Uses WebP images for efficient storage
+- Codebook-based compression for scales and colors
+- Compatible with PlayCanvas splat-transform
+- Supports both `.sog` ZIP bundles and folder formats
+- **Returns GSData**: Same container as `plyread()` for consistent API
+- **In-memory ZIP extraction**: Can read directly from bytes without disk I/O
+
+```python
+from gsply import read_sog
+
+# Read from file path - returns GSData (same as plyread)
+data = read_sog("model.sog")
+positions = data.means  # Same API as GSData from plyread
+colors = data.sh0
+
+# Read from bytes (in-memory, no disk I/O)
+with open("model.sog", "rb") as f:
+    sog_bytes = f.read()
+data = read_sog(sog_bytes)  # Returns GSData - fully in-memory extraction and decoding
+```
+
 ---
 
 ## API Reference
@@ -232,12 +261,15 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 - `plyread(file_path)` - Read PLY files
 - `plywrite(file_path, ...)` - Write PLY files
 - `detect_format(file_path)` - Detect format and SH degree
+- `read_sog(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
 
 **GSData Container:**
 - `data.unpack()` - Unpack to tuple
 - `data.to_dict()` - Convert to dictionary
 - `data.copy()` - Deep copy
 - `data.consolidate()` - Optimize for slicing
+- `data.normalize(inplace=False)` - Convert to PLY format (log/logit)
+- `data.denormalize(inplace=False)` - Convert from PLY format to linear
 - `data[index]` - Indexing and slicing
 
 **Compression:**
@@ -248,11 +280,15 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 **Utilities:**
 - `sh2rgb(sh)` - SH to RGB conversion
 - `rgb2sh(rgb)` - RGB to SH conversion
+- `logit(x, eps=1e-6)` - Logit function (optimized CPU)
+- `sigmoid(x)` - Sigmoid function (optimized CPU)
 - `SH_C0` - Normalization constant
 
 **GPU Support (PyTorch):**
 - `GSTensor.from_gsdata(data, device='cuda')` - Convert to GPU
 - `gstensor.to_gsdata()` - Convert to CPU
+- `gstensor.normalize(inplace=False)` - Convert to PLY format (GPU)
+- `gstensor.denormalize(inplace=False)` - Convert from PLY format to linear (GPU)
 - Device management: `.to()`, `.cpu()`, `.cuda()`
 - Precision: `.half()`, `.float()`, `.double()`
 - Full slicing and manipulation support

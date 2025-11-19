@@ -8,12 +8,15 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
     - [`plyread(file_path)`](#plyreadfile_path)
     - [`plywrite(file_path, means, scales, quats, opacities, sh0, shN=None, compressed=False)`](#plywritefile_path-means-scales-quats-opacities-sh0-shnnone-compressedfalse)
     - [`detect_format(file_path)`](#detect_formatfile_path)
+    - [`read_sog(file_path | bytes)`](#read_sogfile_path--bytes)
   - [GSData](#gsdata)
     - [`data.unpack(include_shN=True)`](#dataunpackinclude_shntrue)
     - [`data.to_dict()`](#datato_dict)
     - [`data.copy()`](#datacopy)
     - [`data.consolidate()`](#dataconsolidate)
     - [`data[index]`](#dataindex)
+    - [`data.normalize(inplace=False)`](#datanormalizeinplacefalse)
+    - [`data.denormalize(inplace=False)`](#datadenormalizeinplacefalse)
     - [`len(data)`](#lendata)
     - [`plyread_gpu(file_path, device='cuda')`](#plyread_gpufile_path-devicecuda)
     - [`plywrite_gpu(file_path, gstensor, compressed=True)`](#plywrite_gpufile_path-gstensor-compressedtrue)
@@ -24,12 +27,16 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
   - [Utility Functions](#utility-functions)
     - [`sh2rgb(sh)`](#sh2rgbsh)
     - [`rgb2sh(rgb)`](#rgb2shrgb)
+    - [`logit(x, eps=1e-6)`](#logitx-eps1e-6)
+    - [`sigmoid(x)`](#sigmoidx)
     - [`SH_C0`](#sh_c0)
   - [GSTensor - GPU-Accelerated Dataclass](#gstensor---gpu-accelerated-dataclass)
     - [Key Features](#key-features)
     - [Performance](#performance)
     - [`GSTensor.from_gsdata(data, device='cuda', dtype=torch.float32, requires_grad=False)`](#gstensorfrom_gsdatadata-devicecuda-dtypetorchfloat32-requires_gradfalse)
     - [`gstensor.to_gsdata()`](#gstensorto_gsdata)
+    - [`gstensor.normalize(inplace=False)`](#gstensornormalizeinplacefalse)
+    - [`gstensor.denormalize(inplace=False)`](#gstensordenormalizeinplacefalse)
     - [`gstensor.to(device=None, dtype=None)`](#gstensortodevicenone-dtypenone)
     - [`gstensor.consolidate()`](#gstensorconsolidate)
     - [`gstensor.clone()`](#gstensorclone)
@@ -162,6 +169,58 @@ if is_compressed:
 else:
     print(f"Uncompressed format with SH degree {sh_degree}")
 ```
+
+---
+
+### `read_sog(file_path | bytes)`
+
+Read SOG (Splat Ordering Grid) format file.
+
+Returns `GSData` container (same as `plyread()`) for consistent API across all formats.
+Supports both `.sog` ZIP bundles and folders with separate files.
+Can also accept bytes directly for in-memory ZIP extraction.
+
+**Parameters:**
+- `file_path` (str | Path | bytes): Path to `.sog` file, folder containing SOG files, or bytes (ZIP data)
+
+**Returns:**
+`GSData` dataclass with Gaussian parameters (same structure as `plyread()`):
+- `means`: (N, 3) - Gaussian centers
+- `scales`: (N, 3) - Log scales
+- `quats`: (N, 4) - Rotations as quaternions (wxyz)
+- `opacities`: (N,) - Logit opacities
+- `sh0`: (N, 3) - DC spherical harmonics
+- `shN`: (N, K, 3) - Higher-order SH coefficients (K=0 for degree 0, K=9 for degree 1, etc.)
+- `masks`: (N,) - Boolean mask for filtering Gaussians
+
+**Requirements:**
+- Requires `gsply[sogs]` installation: `pip install gsply[sogs]`
+- Installs `imagecodecs` (fastest WebP decoder) for optimal performance
+
+**Performance:**
+- In-memory reading from bytes: ~6x faster than file path reading
+- Uses `imagecodecs` for fastest WebP decoding
+
+**Example:**
+```python
+from gsply import read_sog
+
+# Read from file path - returns GSData (same as plyread)
+data = read_sog("model.sog")
+print(f"Loaded {len(data)} Gaussians")
+positions = data.means  # Same API as GSData from plyread
+colors = data.sh0
+
+# Read from bytes (in-memory, no disk I/O)
+with open("model.sog", "rb") as f:
+    sog_bytes = f.read()
+data = read_sog(sog_bytes)  # Returns GSData - fully in-memory extraction and decoding
+
+# Compatible with all GSData operations
+means, scales, quats, opacities, sh0, shN = data.unpack()
+```
+
+**Note:** SOG format is compatible with PlayCanvas splat-transform format.
 
 ---
 
@@ -339,6 +398,74 @@ high_opacity = data[data.opacities > 0.5]
 
 # Step slicing (returns GSData)
 every_10th = data[::10]
+```
+
+---
+
+### `data.normalize(inplace=False)`
+
+Convert to PLY-compatible log/logit scaling (normalize to PLY format).
+
+Converts linear scales to log-scales and linear opacities to logit-opacities, which is the standard format for Gaussian Splatting PLY files. Uses optimized Numba-accelerated functions for performance.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+
+**Returns:**
+- `GSData`: GSData object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import GSData
+import numpy as np
+
+# Create GSData with linear scales and opacities
+data = GSData(
+    means=np.random.randn(100, 3),
+    scales=np.random.rand(100, 3) * 0.1 + 0.01,  # Linear scales
+    quats=np.random.randn(100, 4),
+    opacities=np.random.rand(100) * 0.8 + 0.1,  # Linear opacities
+    sh0=np.random.randn(100, 3),
+    shN=None
+)
+
+# Convert to PLY format in-place
+data.normalize(inplace=True)
+
+# Or create a copy
+ply_data = data.normalize(inplace=False)
+```
+
+---
+
+### `data.denormalize(inplace=False)`
+
+Convert from PLY-compatible log/logit scaling to linear format.
+
+Converts log-scales to linear scales and logit-opacities to linear opacities. Uses optimized Numba-accelerated sigmoid function for performance.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+
+**Returns:**
+- `GSData`: GSData object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import plyread
+
+# Load PLY file (contains log-scales and logit-opacities)
+data = plyread("scene.ply")
+
+# Convert to linear format in-place
+data.denormalize(inplace=True)
+
+# Now scales and opacities are in linear space
+linear_scales = data.scales  # exp(log_scales)
+linear_opacities = data.opacities  # sigmoid(logit_opacities)
+
+# Or create a copy
+linear_data = data.denormalize(inplace=False)
 ```
 
 ---
@@ -630,6 +757,83 @@ plywrite("colored.ply", means, scales, quats, opacities, sh0, None)
 
 ---
 
+### `logit(x, eps=1e-6)`
+
+Compute logit function (inverse sigmoid) with numerical stability.
+
+Optimized CPU implementation using Numba JIT compilation with parallel execution. Converts probabilities in [0, 1] range to log-odds space. Formula: `log(x / (1 - x))`
+
+**Parameters:**
+- `x` (np.ndarray | float): Input values in [0, 1] range (probabilities) - Shape (N,) or scalar
+- `eps` (float): Epsilon for numerical stability (clamping) - Default: 1e-6
+
+**Returns:**
+- `np.ndarray | float`: Logit values
+
+**Performance:**
+- Optimized with Numba parallel JIT compilation
+- Supports both scalar and array inputs
+- Automatically clamps values to [eps, 1-eps] for numerical stability
+
+**Example:**
+```python
+from gsply import logit
+import numpy as np
+
+# Scalar
+prob = 0.5
+logit_val = logit(prob)  # 0.0
+
+# Array
+probs = np.array([0.1, 0.5, 0.9])
+logit_vals = logit(probs)
+
+# Edge cases are handled automatically
+probs_edge = np.array([0.0, 1.0])
+logit_vals = logit(probs_edge)  # Clamped to finite values
+```
+
+---
+
+### `sigmoid(x)`
+
+Compute sigmoid function (inverse logit) with numerical stability.
+
+Optimized CPU implementation using Numba JIT compilation with parallel execution. Converts log-odds space to probabilities in [0, 1] range. Formula: `1 / (1 + exp(-x))`
+
+**Parameters:**
+- `x` (np.ndarray | float): Input values (logits) - Shape (N,) or scalar
+
+**Returns:**
+- `np.ndarray | float`: Values in [0, 1] range (probabilities)
+
+**Performance:**
+- Optimized with Numba parallel JIT compilation
+- Supports both scalar and array inputs
+- Uses stable sigmoid implementation (avoids overflow)
+
+**Example:**
+```python
+from gsply import sigmoid, logit
+import numpy as np
+
+# Scalar
+logit_val = 0.0
+prob = sigmoid(logit_val)  # 0.5
+
+# Array
+logit_vals = np.array([-10.0, 0.0, 10.0])
+probs = sigmoid(logit_vals)  # [~0.0, 0.5, ~1.0]
+
+# Round-trip
+probs = np.array([0.1, 0.5, 0.9])
+logit_vals = logit(probs)
+probs_restored = sigmoid(logit_vals)  # Should match original
+assert np.allclose(probs, probs_restored)
+```
+
+---
+
 ### `SH_C0`
 
 Constant for spherical harmonic DC coefficient normalization.
@@ -752,6 +956,74 @@ Convert `GSTensor` back to `GSData` (CPU NumPy).
 gstensor = GSTensor.from_gsdata(data, device='cuda')
 # ... GPU operations ...
 data_cpu = gstensor.to_gsdata()  # Back to NumPy
+```
+
+---
+
+### `gstensor.normalize(inplace=False)`
+
+Convert to PLY-compatible log/logit scaling (normalize to PLY format).
+
+Converts linear scales to log-scales and linear opacities to logit-opacities, which is the standard format for Gaussian Splatting PLY files. Uses PyTorch's optimized CUDA kernels for GPU operations.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+
+**Returns:**
+- `GSTensor`: GSTensor object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import GSTensor
+import torch
+
+# Create GSTensor with linear scales and opacities
+gstensor = GSTensor(
+    means=torch.randn(100, 3),
+    scales=torch.rand(100, 3) * 0.1 + 0.01,  # Linear scales
+    quats=torch.randn(100, 4),
+    opacities=torch.rand(100) * 0.8 + 0.1,  # Linear opacities
+    sh0=torch.randn(100, 3),
+    shN=None
+)
+
+# Convert to PLY format in-place
+gstensor.normalize(inplace=True)
+
+# Or create a copy
+ply_tensor = gstensor.normalize(inplace=False)
+```
+
+---
+
+### `gstensor.denormalize(inplace=False)`
+
+Convert from PLY-compatible log/logit scaling to linear format.
+
+Converts log-scales to linear scales and logit-opacities to linear opacities. Uses PyTorch's optimized CUDA kernels for GPU operations.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+
+**Returns:**
+- `GSTensor`: GSTensor object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import plyread_gpu
+
+# Load PLY file directly to GPU (contains log-scales and logit-opacities)
+gstensor = plyread_gpu("scene.ply", device='cuda')
+
+# Convert to linear format in-place
+gstensor.denormalize(inplace=True)
+
+# Now scales and opacities are in linear space
+linear_scales = gstensor.scales  # exp(log_scales)
+linear_opacities = gstensor.opacities  # sigmoid(logit_opacities)
+
+# Or create a copy
+linear_tensor = gstensor.denormalize(inplace=False)
 ```
 
 ---

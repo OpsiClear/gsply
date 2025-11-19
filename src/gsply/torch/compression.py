@@ -131,8 +131,7 @@ def _unpack_colors_and_opacities_gpu(
     # Convert opacity from linear to logit space
     # opacity = -log(1/x - 1)
     epsilon = 1e-7
-    co = torch.clamp(co, epsilon, 1.0 - epsilon)
-    opacities = -torch.log(1.0 / co - 1.0)
+    opacities = torch.logit(co, eps=epsilon)
 
     return sh0, opacities
 
@@ -321,14 +320,20 @@ def _compute_chunk_bounds_gpu(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute min/max bounds for each chunk using GPU reduction.
 
+    Computes bounds on actual data only (without padding), matching CPU behavior.
+    This ensures accurate quantization bounds that don't include padded values.
+
+    Uses vectorized operations with masking to handle partial last chunk efficiently.
+
     :param data: (N, D) tensor to compute bounds for
     :param num_chunks: Number of chunks
     :returns: Tuple of (min_bounds, max_bounds) with shape (num_chunks, D)
     """
+    num_gaussians = data.shape[0]
     padded_size = num_chunks * CHUNK_SIZE
-    padding_needed = padded_size - data.shape[0]
+    padding_needed = padded_size - num_gaussians
 
-    # Pad if needed
+    # Pad data for reshaping (pad with last value, but we'll mask it out)
     if padding_needed > 0:
         pad_values = data[-1:].expand(padding_needed, -1)
         data_padded = torch.cat([data, pad_values], dim=0)
@@ -338,9 +343,27 @@ def _compute_chunk_bounds_gpu(
     # Reshape to (NumChunks, 256, D)
     data_reshaped = data_padded.reshape(num_chunks, CHUNK_SIZE, -1)
 
-    # Compute bounds using reduction
-    min_bounds = data_reshaped.min(dim=1).values  # (num_chunks, D)
-    max_bounds = data_reshaped.max(dim=1).values
+    # Create mask to exclude padded values in last chunk
+    # For last chunk, mask out positions >= num_gaussians
+    chunk_indices = torch.arange(num_chunks, device=data.device)
+    chunk_starts = chunk_indices * CHUNK_SIZE
+    chunk_ends = torch.minimum(
+        chunk_starts + CHUNK_SIZE, torch.tensor(num_gaussians, device=data.device)
+    )
+
+    # Create mask: (NumChunks, 256) - True for valid data, False for padding
+    positions = torch.arange(CHUNK_SIZE, device=data.device).unsqueeze(0)  # (1, 256)
+    valid_mask = positions < (chunk_ends - chunk_starts).unsqueeze(1)  # (NumChunks, 256)
+
+    # Compute bounds with masking: set padded values to inf/-inf so they're excluded
+    data_masked = data_reshaped.clone()
+    # Set padded values to very large/small values so min/max ignores them
+    data_masked[~valid_mask] = float("inf")
+    min_bounds = data_masked.min(dim=1).values  # (num_chunks, D)
+
+    data_masked = data_reshaped.clone()
+    data_masked[~valid_mask] = float("-inf")
+    max_bounds = data_masked.max(dim=1).values  # (num_chunks, D)
 
     return min_bounds, max_bounds
 
@@ -365,10 +388,10 @@ def _pack_positions_gpu(
     normalized = (positions - min_bounds) / range_bounds
     normalized = torch.clamp(normalized, 0.0, 1.0)
 
-    # Quantize
-    px = (normalized[:, :, 0] * 2047.0).to(torch.int32)
-    py = (normalized[:, :, 1] * 1023.0).to(torch.int32)
-    pz = (normalized[:, :, 2] * 2047.0).to(torch.int32)
+    # Quantize with rounding (reduces error from ~2x to ~1x theoretical max)
+    px = torch.round(normalized[:, :, 0] * 2047.0).to(torch.int32)
+    py = torch.round(normalized[:, :, 1] * 1023.0).to(torch.int32)
+    pz = torch.round(normalized[:, :, 2] * 2047.0).to(torch.int32)
 
     # Pack bits
     return (px << 21) | (py << 11) | pz
@@ -396,9 +419,10 @@ def _pack_scales_gpu(
     normalized = (scales - min_bounds) / range_bounds
     normalized = torch.clamp(normalized, 0.0, 1.0)
 
-    sx = (normalized[:, :, 0] * 2047.0).to(torch.int32)
-    sy = (normalized[:, :, 1] * 1023.0).to(torch.int32)
-    sz = (normalized[:, :, 2] * 2047.0).to(torch.int32)
+    # Quantize with rounding (reduces error from ~2x to ~1x theoretical max)
+    sx = torch.round(normalized[:, :, 0] * 2047.0).to(torch.int32)
+    sy = torch.round(normalized[:, :, 1] * 1023.0).to(torch.int32)
+    sz = torch.round(normalized[:, :, 2] * 2047.0).to(torch.int32)
 
     return (sx << 21) | (sy << 11) | sz
 

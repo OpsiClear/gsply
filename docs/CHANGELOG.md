@@ -1,5 +1,60 @@
 # Release Notes
 
+## v0.2.5 (SOG Format Support)
+
+### New Features
+- **SOG Format Reader**: Read SOG (Splat Ordering Grid) format files
+  - `read_sog(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
+  - Returns `GSData` container (same as `plyread()`) for consistent API
+  - Supports `.sog` ZIP bundles and folder formats
+  - **In-memory ZIP extraction**: Can read directly from bytes without disk I/O
+  - Uses `imagecodecs` (fastest WebP decoder) for optimal performance
+  - Compatible with PlayCanvas splat-transform format
+
+### Improvements
+- **Simplified dependencies**: SOG support now requires only `imagecodecs` (removed fallback libraries)
+- **Performance**: In-memory reading from bytes is ~6x faster than file path reading
+- **API consistency**: SOG reader returns `GSData` container matching `plyread()` behavior
+
+### Dependencies
+- Added optional `sogs` dependency group: `pip install gsply[sogs]`
+  - Installs `imagecodecs>=2024.0.0` for WebP decoding
+
+---
+
+## Unreleased (API Improvements & Code Cleanup)
+
+### New Features
+- **Format Conversion API**: Elegant in-place operations for PLY format conversion
+  - `GSData.normalize(inplace=False)` - Convert linear scales/opacities to PLY-compatible log/logit format
+  - `GSData.denormalize(inplace=False)` - Convert PLY format back to linear scales/opacities
+  - `GSTensor.normalize(inplace=False)` - GPU version of normalize
+  - `GSTensor.denormalize(inplace=False)` - GPU version of denormalize
+  - Supports both in-place modification and copy creation
+  - Uses optimized Numba-accelerated functions (CPU) and PyTorch CUDA kernels (GPU)
+
+### API Improvements
+- **Refactored conversion methods**: `to_ply_data()` and `from_ply_data()` now use `normalize()`/`denormalize()` internally
+  - More consistent API design
+  - Better support for in-place operations
+  - Clearer method names (`normalize`/`denormalize` vs `to_ply_data`/`from_ply_data`)
+
+### Code Cleanup
+- **Removed redundant code**: Eliminated `torch/utils.py` wrapper module
+  - GPU operations now use PyTorch functions directly (`torch.logit`, `torch.sigmoid`)
+  - Reduced code duplication
+  - Simpler import structure
+- **Optimized CPU utilities**: Enhanced `logit()` and `sigmoid()` functions
+  - Numba parallel JIT compilation for better performance
+  - Both functions are now part of the public API
+
+### Documentation
+- Added comprehensive documentation for `normalize()` and `denormalize()` methods
+- Added documentation for `logit()` and `sigmoid()` utility functions
+- Updated API reference with examples
+
+---
+
 ## v0.2.4 (GPU I/O API & Performance Optimizations)
 
 ### New Features

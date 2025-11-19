@@ -31,6 +31,9 @@ Basic Usage:
     >>>
     >>> # Detect format
     >>> is_compressed, sh_degree = gsply.detect_format("model.ply")
+    >>>
+    >>> # SOG format support (requires gsply[sogs])
+    >>> data = gsply.read_sog("model.sog")
 
 Features:
     - Fast with NumPy and Numba JIT acceleration
@@ -52,10 +55,10 @@ Performance (400K Gaussians, SH0):
 from gsply.formats import detect_format
 from gsply.gsdata import GSData
 from gsply.reader import decompress_from_bytes, plyread
-from gsply.utils import SH_C0, rgb2sh, sh2rgb
+from gsply.utils import SH_C0, logit, rgb2sh, sh2rgb, sigmoid
 from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 __all__ = [
     "plyread",
     "GSData",
@@ -66,10 +69,12 @@ __all__ = [
     "detect_format",
     "sh2rgb",
     "rgb2sh",
+    "logit",
+    "sigmoid",
     "SH_C0",
     "__version__",
 ]
-# Note: GSTensor is available via lazy import but not in __all__ (it's optional)
+# Note: GSTensor and read_sog are available via lazy import but not in __all__ (they're optional)
 
 
 def __getattr__(name):
@@ -104,5 +109,16 @@ def __getattr__(name):
         except ImportError as e:
             raise ImportError(
                 "plywrite_gpu requires PyTorch to be installed.\nInstall with: pip install torch"
+            ) from e
+    elif name == "read_sog":
+        try:
+            from gsply.sog_reader import read_sog
+
+            return read_sog
+        except ImportError as e:
+            raise ImportError(
+                "read_sog requires SOG format support.\n"
+                "Install with: pip install gsply[sogs]\n"
+                "This installs imagecodecs (fastest WebP decoder)."
             ) from e
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

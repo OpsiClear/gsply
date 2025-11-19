@@ -277,6 +277,46 @@ class GSTensor:
             _base=None,
         )
 
+    def to_ply_tensor(self) -> GSTensor:
+        """Convert to GSTensor with PLY-compatible log/logit scaling.
+
+        Returns a new GSTensor with log-scales and logit-opacities.
+        Useful for GPU-accelerated writing.
+        """
+        # Constants for numerical stability
+        _MIN_SCALE = 1e-9
+        _MIN_OPACITY = 1e-4
+        _MAX_OPACITY = 1.0 - 1e-4
+
+        # Clone to avoid modifying original
+        scales = torch.log(torch.clamp(self.scales, min=_MIN_SCALE))
+
+        # Logit opacities: log(p / (1 - p))
+        opacities = torch.logit(torch.clamp(self.opacities, min=_MIN_OPACITY, max=_MAX_OPACITY))
+
+        return GSTensor(
+            means=self.means,
+            scales=scales,
+            quats=self.quats,
+            opacities=opacities,
+            sh0=self.sh0,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=None,
+        )
+
+    def to_ply_data(self) -> GSData:
+        """Convert to GSData with PLY-compatible log/logit scaling.
+
+        Converts linear scales to log-scales and linear opacities to logit-opacities,
+        which is the standard format for Gaussian Splatting PLY files.
+
+        :returns: GSData object ready for plywrite()
+        """
+        # Perform conversion using PyTorch (handles logit correctly)
+        return self.to_ply_tensor().to_gsdata()
+
     # ==========================================================================
     # Device Management
     # ==========================================================================

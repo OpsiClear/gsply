@@ -843,6 +843,92 @@ class GSData:
             "shN": self.shN,
         }
 
+    def normalize(self, inplace: bool = False) -> "GSData":
+        """Convert to PLY-compatible log/logit scaling (normalize to PLY format).
+
+        Converts linear scales to log-scales and linear opacities to logit-opacities,
+        which is the standard format for Gaussian Splatting PLY files.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSData object (self if inplace=True, new object otherwise)
+
+        Example:
+            >>> data = GSData(...)  # Linear scales and opacities
+            >>> data.normalize(inplace=True)  # Modify in-place
+            >>> # Or create a copy
+            >>> ply_data = data.normalize(inplace=False)
+        """
+        from gsply.utils import logit
+
+        # Constants for numerical stability
+        min_scale = 1e-9
+        min_opacity = 1e-4
+
+        # Convert linear scales to log-scales: log(scale)
+        scales = np.log(np.clip(self.scales, min_scale, None))
+
+        # Convert linear opacities to logit-opacities: logit(opacity)
+        opacities = logit(self.opacities, eps=min_opacity)
+
+        if inplace:
+            self.scales = scales
+            self.opacities = opacities
+            self._base = None  # Invalidate _base since we modified arrays
+            return self
+
+        return GSData(
+            means=self.means,
+            scales=scales,
+            quats=self.quats,
+            opacities=opacities,
+            sh0=self.sh0,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=None,
+        )
+
+    def denormalize(self, inplace: bool = False) -> "GSData":
+        """Convert from PLY-compatible log/logit scaling to linear format.
+
+        Converts log-scales to linear scales and logit-opacities to linear opacities.
+        Uses optimized functions for better performance.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSData object (self if inplace=True, new object otherwise)
+
+        Example:
+            >>> data = plyread("scene.ply")  # Loads with log-scales, logit-opacities
+            >>> data.denormalize(inplace=True)  # Convert to linear in-place
+            >>> # Or create a copy
+            >>> linear_data = data.denormalize(inplace=False)
+        """
+        from gsply.utils import sigmoid
+
+        # Convert log-scales back to linear: exp(log_scale)
+        scales = np.exp(self.scales)
+
+        # Convert logit-opacities back to linear: sigmoid(logit)
+        opacities = sigmoid(self.opacities)
+
+        if inplace:
+            self.scales = scales
+            self.opacities = opacities
+            self._base = None  # Invalidate _base since we modified arrays
+            return self
+
+        return GSData(
+            means=self.means,
+            scales=scales,
+            quats=self.quats,
+            opacities=opacities,
+            sh0=self.sh0,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=None,
+        )
+
     def copy_slice(self, key) -> "GSData":
         """Efficiently slice and copy in one operation.
 
