@@ -10,12 +10,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Check if sphinx_rtd_theme is available
-try:
-    import sphinx_rtd_theme
-except ImportError:
-    sphinx_rtd_theme = None
-
 # -- Path setup --------------------------------------------------------------
 
 # Read the Docs path setup
@@ -51,7 +45,6 @@ extensions = [
     "sphinx.ext.viewcode",
     "myst_parser",
     "sphinx_autodoc_typehints",
-    "sphinx_rtd_theme",
 ]
 
 templates_path = ["_templates"]
@@ -85,7 +78,7 @@ myst_enable_extensions = [
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "alabaster"
 html_static_path = ["_static"]
 html_title = "gsply Documentation"
 html_short_title = "gsply"
@@ -93,12 +86,12 @@ html_logo = None
 html_favicon = None
 
 html_theme_options = {
-    "collapse_navigation": False,
-    "sticky_navigation": True,
-    "navigation_depth": 4,
-    "includehidden": True,
-    "titles_only": False,
-    "logo_only": False,
+    "description": "Ultra-fast Gaussian Splatting PLY I/O library",
+    "github_user": "OpsiClear",
+    "github_repo": "gsply",
+    "github_button": True,
+    "show_powered_by": False,
+    "fixed_sidebar": True,
 }
 
 html_css_files = [
