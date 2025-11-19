@@ -10,6 +10,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# Check if sphinx_rtd_theme is available
+try:
+    import sphinx_rtd_theme
+except ImportError:
+    sphinx_rtd_theme = None
+
 # -- Path setup --------------------------------------------------------------
 
 # Read the Docs path setup
