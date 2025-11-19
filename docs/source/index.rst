@@ -65,5 +65,5 @@ Additional Resources
    <hr style="margin-top: 3rem; border: none; border-top: 1px solid #e0e0e0;">
    <p style="text-align: center; color: #666; font-size: 0.9em; margin-top: 2rem;">
    Documentation built with <a href="https://www.sphinx-doc.org/">Sphinx</a> and
-   <a href="https://github.com/pradyunsg/furo">Furo</a> theme.
+   <a href="https://sphinx-rtd-theme.readthedocs.io/">Read the Docs</a> theme.
    </p>
