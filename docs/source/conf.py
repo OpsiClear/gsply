@@ -45,6 +45,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "myst_parser",
     "sphinx_autodoc_typehints",
+    "sphinx_rtd_theme",
 ]
 
 templates_path = ["_templates"]
@@ -91,7 +92,6 @@ html_theme_options = {
     "navigation_depth": 4,
     "includehidden": True,
     "titles_only": False,
-    "display_version": True,
     "logo_only": False,
 }
 
