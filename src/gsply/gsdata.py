@@ -1,11 +1,110 @@
 """Gaussian Splatting data container."""
 
 from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import TypedDict
 
 import numba
 import numpy as np
 
 from gsply.formats import SH_BANDS_TO_DEGREE
+
+# Lazy imports to avoid circular dependencies
+# These are imported inside methods to break circular import cycles
+# (writer.py and reader.py import GSData, so we can't import them at module level)
+
+
+class DataFormat(Enum):
+    """Format tracking for individual attributes - each value specifies attribute and format."""
+
+    # Scales formats
+    SCALES_PLY = "scales_ply"  # log-scales (log(scale))
+    SCALES_LINEAR = "scales_linear"  # linear scales (scale)
+
+    # Opacities formats
+    OPACITIES_PLY = "opacities_ply"  # logit-opacities (logit(opacity))
+    OPACITIES_LINEAR = "opacities_linear"  # linear opacities (opacity in [0, 1])
+
+    # Spherical harmonics formats (for colors)
+    SH0_SH = "sh0_sh"  # spherical harmonics format (mathematical representation)
+    SH0_RGB = "sh0_rgb"  # RGB color format (visual representation, converted from SH)
+
+    # Spherical harmonics order (for shN)
+    SH_ORDER_0 = "sh_order_0"  # SH degree 0 (no shN, only sh0)
+    SH_ORDER_1 = "sh_order_1"  # SH degree 1 (3 bands)
+    SH_ORDER_2 = "sh_order_2"  # SH degree 2 (8 bands)
+    SH_ORDER_3 = "sh_order_3"  # SH degree 3 (15 bands)
+
+    # Raw formats (no conversion)
+    MEANS_RAW = "means_raw"  # raw format (no conversion)
+    QUATS_RAW = "quats_raw"  # raw format (no conversion)
+
+
+# Type-safe format dictionary (TypedDict for IDE autocomplete and type checking)
+class FormatDict(TypedDict, total=False):
+    """Type-safe format dictionary - provides IDE autocomplete and type checking.
+
+    All fields are optional (total=False) to allow partial format tracking.
+    """
+
+    scales: DataFormat
+    opacities: DataFormat
+    sh0: DataFormat
+    sh_order: DataFormat
+    means: DataFormat
+    quats: DataFormat
+
+
+def _create_format_dict(
+    scales: DataFormat | None = None,
+    opacities: DataFormat | None = None,
+    sh0: DataFormat | None = None,
+    sh_order: DataFormat | None = None,
+    means: DataFormat | None = None,
+    quats: DataFormat | None = None,
+) -> FormatDict:
+    """Create format dict for GSData attributes.
+
+    :param scales: Format for scales (DataFormat.SCALES_PLY or DataFormat.SCALES_LINEAR)
+    :param opacities: Format for opacities (DataFormat.OPACITIES_PLY or DataFormat.OPACITIES_LINEAR)
+    :param sh0: Format for sh0 (DataFormat.SH0_SH or DataFormat.SH0_RGB)
+    :param sh_order: SH order/degree for shN (DataFormat.SH_ORDER_0/1/2/3)
+    :param means: Format for means (DataFormat.MEANS_RAW)
+    :param quats: Format for quats (DataFormat.QUATS_RAW)
+    :returns: Format dict with all attributes
+    """
+    fmt = {}
+    if scales is not None:
+        fmt["scales"] = scales
+    if opacities is not None:
+        fmt["opacities"] = opacities
+    if sh0 is not None:
+        fmt["sh0"] = sh0
+    if sh_order is not None:
+        fmt["sh_order"] = sh_order
+    if means is not None:
+        fmt["means"] = means
+    if quats is not None:
+        fmt["quats"] = quats
+    return fmt
+
+
+def _get_sh_order_format(sh_degree: int) -> DataFormat:
+    """Get SH order format enum from SH degree.
+
+    :param sh_degree: SH degree (0-3)
+    :returns: DataFormat enum for SH order
+    """
+    if sh_degree == 0:
+        return DataFormat.SH_ORDER_0
+    if sh_degree == 1:
+        return DataFormat.SH_ORDER_1
+    if sh_degree == 2:
+        return DataFormat.SH_ORDER_2
+    if sh_degree == 3:
+        return DataFormat.SH_ORDER_3
+    raise ValueError(f"Invalid SH degree: {sh_degree}, must be 0-3")
 
 
 # Numba-optimized mask combination (37-68x faster than numpy.all())
@@ -66,13 +165,25 @@ class GSData:
     Attributes:
         means: (N, 3) - xyz positions
         scales: (N, 3) - scale parameters
+            - PLY format: log-scales (log(scale))
+            - LINEAR format: linear scales (scale)
         quats: (N, 4) - rotation quaternions
         opacities: (N,) - opacity values
-        sh0: (N, 3) - DC spherical harmonics
-        shN: (N, K, 3) - Higher-order SH coefficients (K bands)
+            - PLY format: logit-opacities (logit(opacity))
+            - LINEAR format: linear opacities (opacity in [0, 1])
+        sh0: (N, 3) - DC spherical harmonics (always SH format)
+        shN: (N, K, 3) - Higher-order SH coefficients (K bands) (always SH format)
         masks: (N,) or (N, L) - Boolean mask layers for filtering (None = no masks)
         mask_names: list[str] - Names for each mask layer (None = unnamed layers)
         _base: (N, P) - Private base array (keeps memory alive for views, None otherwise)
+        _format: FormatDict | None - Format tracking per attribute (type-safe TypedDict)
+            - Format: {"scales": DataFormat.SCALES_PLY, "opacities": DataFormat.OPACITIES_PLY, ...}
+            - Scales: DataFormat.SCALES_PLY (log-scales) or DataFormat.SCALES_LINEAR (linear scales)
+            - Opacities: DataFormat.OPACITIES_PLY (logit-opacities) or DataFormat.OPACITIES_LINEAR (linear opacities)
+            - Colors: DataFormat.SH0_SH (sh0 as SH) or DataFormat.SH0_RGB (sh0 as RGB)
+            - SH Order: DataFormat.SH_ORDER_0/1/2/3 (spherical harmonics degree for shN)
+            - Positions/Rotations: DataFormat.MEANS_RAW (means) and DataFormat.QUATS_RAW (quats) - raw format
+            - None: format unknown (manually created data)
 
     Mask Layers:
         - Single layer: masks shape (N,), mask_names = None or ["name"]
@@ -104,6 +215,9 @@ class GSData:
     masks: np.ndarray | None = None  # Boolean mask layers (N,) or (N, L)
     mask_names: list[str] | None = None  # Names for each mask layer
     _base: np.ndarray | None = None  # Private field for zero-copy views
+    _format: FormatDict | None = (
+        None  # Format tracking per attribute: {"scales": PLY, "opacities": PLY, ...}
+    )
 
     def __len__(self) -> int:
         """Return the number of Gaussians."""
@@ -354,6 +468,7 @@ class GSData:
             new_base,
             masks_array=self.masks.copy() if self.masks is not None else None,
             mask_names=self.mask_names.copy() if self.mask_names is not None else None,
+            format_flag=self._format,
         )
 
     def copy(self) -> "GSData":
@@ -370,7 +485,9 @@ class GSData:
             masks_copy = self.masks.copy() if self.masks is not None else None
             mask_names_copy = self.mask_names.copy() if self.mask_names is not None else None
 
-            result = GSData._recreate_from_base(new_base, masks_copy, mask_names_copy)
+            result = GSData._recreate_from_base(
+                new_base, masks_copy, mask_names_copy, format_flag=self._format
+            )
             if result is not None:
                 return result
 
@@ -385,6 +502,7 @@ class GSData:
             masks=self.masks.copy() if self.masks is not None else None,
             mask_names=self.mask_names.copy() if self.mask_names is not None else None,
             _base=None,
+            _format=self._format,  # Preserve format flag
         )
 
     def __add__(self, other: "GSData") -> "GSData":
@@ -504,7 +622,11 @@ class GSData:
                     combined_masks = np.concatenate([self_masks_filled, other_masks], axis=0)
                     combined_mask_names = other.mask_names.copy() if other.mask_names else None
 
-            return GSData._recreate_from_base(combined_base, combined_masks, combined_mask_names)
+            # Preserve format if both are same format (compare dicts)
+            format_flag = self._format if self._format == other._format else None
+            return GSData._recreate_from_base(
+                combined_base, combined_masks, combined_mask_names, format_flag=format_flag
+            )
 
         # Fallback: Concatenate individual arrays
         combined_shN = None  # noqa: N806
@@ -586,6 +708,9 @@ class GSData:
         sh0[:n1] = self.sh0
         sh0[n1:] = other.sh0
 
+        # Preserve format flag (both should be same format, use self's format)
+        format_flag = self._format if self._format == other._format else None
+
         return GSData(
             means=means,
             scales=scales,
@@ -596,6 +721,7 @@ class GSData:
             masks=combined_masks,
             mask_names=combined_mask_names,
             _base=None,  # Clear _base since we created new arrays
+            _format=format_flag,  # Preserve format if both are same
         )
 
     @staticmethod
@@ -673,6 +799,10 @@ class GSData:
 
             offset += n
 
+        # Preserve format flag if all arrays have same format (compare dicts)
+        formats = [arr._format for arr in arrays if arr._format is not None]
+        format_flag = formats[0] if formats and all(f == formats[0] for f in formats) else None
+
         return GSData(
             means=means,
             scales=scales,
@@ -683,6 +813,7 @@ class GSData:
             masks=None,  # Don't concatenate masks for bulk operation
             mask_names=None,
             _base=None,
+            _format=format_flag,  # Preserve format if all are same
         )
 
     def make_contiguous(self, inplace: bool = True) -> "GSData":
@@ -777,6 +908,7 @@ class GSData:
             masks=masks,
             mask_names=self.mask_names.copy() if self.mask_names else None,
             _base=None,
+            _format=self._format,  # Preserve format flag
         )
 
     def is_contiguous(self) -> bool:
@@ -885,6 +1017,11 @@ class GSData:
             self.scales = scales
             self.opacities = opacities
             self._base = None  # Invalidate _base since we modified arrays
+            # Update format dict: scales and opacities are now in PLY format
+            if self._format is None:
+                self._format = {}
+            self._format["scales"] = DataFormat.SCALES_PLY
+            self._format["opacities"] = DataFormat.OPACITIES_PLY
             return self
 
         return GSData(
@@ -897,6 +1034,21 @@ class GSData:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
+            _format=_create_format_dict(
+                scales=DataFormat.SCALES_PLY,
+                opacities=DataFormat.OPACITIES_PLY,
+                sh0=DataFormat.SH0_SH,
+                sh_order=_get_sh_order_format(self.get_sh_degree()),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
+            if self._format is None
+            else {
+                **self._format,
+                "scales": DataFormat.SCALES_PLY,
+                "opacities": DataFormat.OPACITIES_PLY,
+                "sh_order": _get_sh_order_format(self.get_sh_degree()),
+            },
         )
 
     def denormalize(self, inplace: bool = True) -> "GSData":
@@ -935,6 +1087,11 @@ class GSData:
             self.scales = scales
             self.opacities = opacities
             self._base = None  # Invalidate _base since we modified arrays
+            # Update format dict: scales and opacities are now in linear format
+            if self._format is None:
+                self._format = {}
+            self._format["scales"] = DataFormat.SCALES_LINEAR
+            self._format["opacities"] = DataFormat.OPACITIES_LINEAR
             return self
 
         return GSData(
@@ -947,6 +1104,21 @@ class GSData:
             masks=self.masks,
             mask_names=self.mask_names,
             _base=None,
+            _format=_create_format_dict(
+                scales=DataFormat.SCALES_LINEAR,
+                opacities=DataFormat.OPACITIES_LINEAR,
+                sh0=DataFormat.SH0_SH,
+                sh_order=_get_sh_order_format(self.get_sh_degree()),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
+            if self._format is None
+            else {
+                **self._format,
+                "scales": DataFormat.SCALES_LINEAR,
+                "opacities": DataFormat.OPACITIES_LINEAR,
+                "sh_order": _get_sh_order_format(self.get_sh_degree()),
+            },
         )
 
     def to_ply_format(self, inplace: bool = True) -> "GSData":
@@ -981,6 +1153,124 @@ class GSData:
         :returns: GSData object with linear scales and opacities
         """
         return self.denormalize(inplace=inplace)
+
+    def to_rgb(self, inplace: bool = True) -> "GSData":
+        """Convert sh0 from spherical harmonics (SH) format to RGB color format.
+
+        Converts SH DC coefficients to RGB colors in [0, 1] range.
+        Formula: rgb = sh0 * SH_C0 + 0.5
+
+        :param inplace: If True, modify this object in-place (default). If False, return new object.
+        :returns: GSData object (self if inplace=True, new object otherwise)
+
+        Example:
+            >>> # Load PLY file (sh0 is in SH format)
+            >>> data = gsply.plyread("scene.ply")
+            >>> # Convert to RGB format in-place
+            >>> data.to_rgb()  # or: data.to_rgb(inplace=True)
+            >>> # Now sh0 contains RGB colors [0, 1]
+            >>> print(f"RGB color range: [{data.sh0.min():.3f}, {data.sh0.max():.3f}]")
+            >>>
+            >>> # Or create a copy if you need to keep SH format
+            >>> rgb_data = data.to_rgb(inplace=False)
+        """
+        from gsply.formats import SH_C0
+        from gsply.utils import _sh2rgb_inplace_jit
+
+        if inplace:
+            # True in-place: modify self.sh0 directly using Numba JIT
+            _sh2rgb_inplace_jit(self.sh0, SH_C0)
+            self._base = None  # Invalidate _base since we modified arrays
+            # Update format dict: sh0 is now in RGB format
+            if self._format is None:
+                self._format = {}
+            self._format["sh0"] = DataFormat.SH0_RGB
+            return self
+
+        # Create copy for non-inplace operation
+        rgb = self.sh0 * SH_C0 + 0.5
+        return GSData(
+            means=self.means,
+            scales=self.scales,
+            quats=self.quats,
+            opacities=self.opacities,
+            sh0=rgb,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=None,
+            _format=_create_format_dict(
+                scales=self._format.get("scales") if self._format else DataFormat.SCALES_PLY,
+                opacities=self._format.get("opacities")
+                if self._format
+                else DataFormat.OPACITIES_PLY,
+                sh0=DataFormat.SH0_RGB,
+                sh_order=_get_sh_order_format(self.get_sh_degree()),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
+            if self._format is None
+            else {**self._format, "sh0": DataFormat.SH0_RGB},
+        )
+
+    def to_sh(self, inplace: bool = True) -> "GSData":
+        """Convert sh0 from RGB color format to spherical harmonics (SH) format.
+
+        Converts RGB colors in [0, 1] range to SH DC coefficients.
+        Formula: sh0 = (rgb - 0.5) / SH_C0
+
+        :param inplace: If True, modify this object in-place (default). If False, return new object.
+        :returns: GSData object (self if inplace=True, new object otherwise)
+
+        Example:
+            >>> # Create GSData with RGB colors
+            >>> rgb_colors = np.random.rand(1000, 3).astype(np.float32)
+            >>> data = GSData(means=..., scales=..., sh0=rgb_colors, ...)
+            >>> # Convert to SH format in-place
+            >>> data.to_sh()  # or: data.to_sh(inplace=True)
+            >>> # Now sh0 contains SH DC coefficients
+            >>>
+            >>> # Or create a copy if you need to keep RGB format
+            >>> sh_data = data.to_sh(inplace=False)
+        """
+        from gsply.formats import SH_C0
+        from gsply.utils import _rgb2sh_inplace_jit
+
+        if inplace:
+            # True in-place: modify self.sh0 directly using Numba JIT
+            _rgb2sh_inplace_jit(self.sh0, 1.0 / SH_C0)
+            self._base = None  # Invalidate _base since we modified arrays
+            # Update format dict: sh0 is now in SH format
+            if self._format is None:
+                self._format = {}
+            self._format["sh0"] = DataFormat.SH0_SH
+            return self
+
+        # Create copy for non-inplace operation
+        sh = (self.sh0 - 0.5) / SH_C0
+        return GSData(
+            means=self.means,
+            scales=self.scales,
+            quats=self.quats,
+            opacities=self.opacities,
+            sh0=sh,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=None,
+            _format=_create_format_dict(
+                scales=self._format.get("scales") if self._format else DataFormat.SCALES_PLY,
+                opacities=self._format.get("opacities")
+                if self._format
+                else DataFormat.OPACITIES_PLY,
+                sh0=DataFormat.SH0_SH,
+                sh_order=_get_sh_order_format(self.get_sh_degree()),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            )
+            if self._format is None
+            else {**self._format, "sh0": DataFormat.SH0_SH},
+        )
 
     def copy_slice(self, key) -> "GSData":
         """Efficiently slice and copy in one operation.
@@ -1039,7 +1329,9 @@ class GSData:
                 masks_copy = self.masks[key].copy() if self.masks is not None else None
                 mask_names_copy = self.mask_names.copy() if self.mask_names is not None else None
 
-                result = GSData._recreate_from_base(base_copy, masks_copy, mask_names_copy)
+                result = GSData._recreate_from_base(
+                    base_copy, masks_copy, mask_names_copy, format_flag=self._format
+                )
                 if result is not None:
                     return result
 
@@ -1054,6 +1346,7 @@ class GSData:
                 masks=self.masks[key].copy() if self.masks is not None else None,
                 mask_names=self.mask_names.copy() if self.mask_names is not None else None,
                 _base=None,
+                _format=self._format,  # Preserve format flag
             )
 
         raise TypeError(f"Invalid index type: {type(key)}")
@@ -1081,7 +1374,12 @@ class GSData:
         return self[index : index + 1]
 
     @staticmethod
-    def _recreate_from_base(base_array, masks_array=None, mask_names=None) -> "GSData":
+    def _recreate_from_base(
+        base_array,
+        masks_array=None,
+        mask_names=None,
+        format_flag: FormatDict | None = None,
+    ) -> "GSData":
         """Helper method to recreate GSData from a base array.
 
         This centralizes the view recreation logic that was duplicated
@@ -1090,6 +1388,7 @@ class GSData:
         :param base_array: The base array to create views from
         :param masks_array: Optional masks array
         :param mask_names: Optional list of mask layer names
+        :param format_flag: Optional format dict to preserve
         :returns: New GSData object with views into base_array, or None if unknown format
         """
         n_gaussians = base_array.shape[0]
@@ -1136,6 +1435,7 @@ class GSData:
             masks=masks_array,
             mask_names=mask_names,
             _base=base_array,
+            _format=format_flag,  # Preserve format dict (None if unknown)
         )
 
     def _slice_from_base(self, indices_or_mask):
@@ -1171,7 +1471,9 @@ class GSData:
         mask_names_copy = self.mask_names.copy() if self.mask_names is not None else None
 
         # Use helper to recreate views from sliced base
-        return GSData._recreate_from_base(base_subset, masks_subset, mask_names_copy)
+        return GSData._recreate_from_base(
+            base_subset, masks_subset, mask_names_copy, format_flag=self._format
+        )
 
     def __getitem__(self, key):
         """Support efficient slicing of Gaussians.
@@ -1239,6 +1541,7 @@ class GSData:
                 masks=self.masks[key] if self.masks is not None else None,
                 mask_names=self.mask_names.copy() if self.mask_names is not None else None,
                 _base=None,
+                _format=self._format,  # Preserve format flag
             )
 
         # Handle boolean array masking
@@ -1264,6 +1567,7 @@ class GSData:
                 masks=np.compress(key, self.masks, axis=0) if self.masks is not None else None,
                 mask_names=self.mask_names.copy() if self.mask_names is not None else None,
                 _base=None,
+                _format=self._format,  # Preserve format flag
             )
 
         # Handle integer array indexing
@@ -1292,6 +1596,46 @@ class GSData:
                 masks=self.masks[indices] if self.masks is not None else None,
                 mask_names=self.mask_names.copy() if self.mask_names is not None else None,
                 _base=None,
+                _format=self._format,  # Preserve format flag
             )
 
         raise TypeError(f"Invalid index type: {type(key)}")
+
+    # ==========================================================================
+    # File I/O Methods
+    # ==========================================================================
+
+    def save(self, file_path: str | Path, compressed: bool = False) -> None:
+        """Save GSData to PLY file.
+
+        Convenience method that wraps plywrite() for object-oriented API.
+
+        :param file_path: Output PLY file path
+        :param compressed: If True, write compressed format (default False)
+
+        Example:
+            >>> data = gsply.plyread("input.ply")
+            >>> data.save("output.ply")  # Uncompressed
+            >>> data.save("output.ply", compressed=True)  # Compressed
+        """
+        from gsply.writer import plywrite
+
+        plywrite(file_path, self, compressed=compressed)
+
+    @classmethod
+    def load(cls, file_path: str | Path) -> "GSData":
+        """Load GSData from PLY file.
+
+        Convenience classmethod that wraps plyread() for object-oriented API.
+        Auto-detects compressed and uncompressed formats.
+
+        :param file_path: Path to PLY file
+        :returns: GSData container with loaded data
+
+        Example:
+            >>> data = GSData.load("scene.ply")  # Auto-detect format
+            >>> print(f"Loaded {len(data)} Gaussians")
+        """
+        from gsply.reader import plyread
+
+        return plyread(file_path)

@@ -99,4 +99,30 @@ def sigmoid(x: np.ndarray | float) -> np.ndarray | float:
     return out
 
 
+@jit(nopython=True, parallel=True, fastmath=True, cache=True, nogil=True, boundscheck=False)
+def _sh2rgb_inplace_jit(sh: np.ndarray, sh_c0: float):
+    """Numba-accelerated in-place SH to RGB conversion.
+
+    :param sh: (N, 3) float32 array - modified in-place
+    :param sh_c0: SH constant (0.28209479177387814)
+    """
+    n = sh.shape[0]
+    for i in prange(n):
+        for j in range(3):
+            sh[i, j] = sh[i, j] * sh_c0 + 0.5
+
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=True, nogil=True, boundscheck=False)
+def _rgb2sh_inplace_jit(rgb: np.ndarray, inv_sh_c0: float):
+    """Numba-accelerated in-place RGB to SH conversion.
+
+    :param rgb: (N, 3) float32 array - modified in-place
+    :param inv_sh_c0: Inverse SH constant (1.0 / 0.28209479177387814)
+    """
+    n = rgb.shape[0]
+    for i in prange(n):
+        for j in range(3):
+            rgb[i, j] = (rgb[i, j] - 0.5) * inv_sh_c0
+
+
 __all__ = ["sh2rgb", "rgb2sh", "SH_C0", "sigmoid", "logit"]

@@ -36,7 +36,7 @@ from gsply.formats import (
 )
 
 # Import GSData from separate module
-from gsply.gsdata import GSData
+from gsply.gsdata import DataFormat, GSData, _create_format_dict, _get_sh_order_format
 
 logger = logging.getLogger(__name__)
 
@@ -485,6 +485,14 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:  # noqa: PLR0911
             shN=shN,
             masks=masks,
             _base=data,  # Keep alive for zero-copy views
+            _format=_create_format_dict(
+                scales=DataFormat.SCALES_PLY,
+                opacities=DataFormat.OPACITIES_PLY,
+                sh0=DataFormat.SH0_SH,
+                sh_order=_get_sh_order_format(sh_degree),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            ),  # PLY files use log-scales and logit-opacities
         )
 
     except (OSError, ValueError):
@@ -644,6 +652,13 @@ def _decompress_data_internal(
     else:
         shN = np.zeros((num_vertices, 0, 3), dtype=np.float32)  # noqa: N806
 
+    # Determine SH degree from shN shape
+    if shN_data is not None:
+        num_sh_bands = shN_data.shape[1] // 3
+        sh_degree = get_sh_degree_from_property_count(14 + num_sh_bands * 3)
+    else:
+        sh_degree = 0
+
     logger.debug(f"[Gaussian PLY] Decompressed: {num_vertices} Gaussians, SH bands {shN.shape[1]}")
 
     # Initialize masks to all True
@@ -660,6 +675,14 @@ def _decompress_data_internal(
         shN=shN,
         masks=masks,
         _base=None,
+        _format=_create_format_dict(
+            scales=DataFormat.SCALES_PLY,
+            opacities=DataFormat.OPACITIES_PLY,
+            sh0=DataFormat.SH0_SH,
+            sh_order=_get_sh_order_format(sh_degree),
+            means=DataFormat.MEANS_RAW,
+            quats=DataFormat.QUATS_RAW,
+        ),  # PLY files use log-scales and logit-opacities
     )
 
 

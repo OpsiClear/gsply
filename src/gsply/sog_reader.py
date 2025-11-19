@@ -31,7 +31,7 @@ import numba
 import numpy as np
 from numba import jit
 
-from gsply.gsdata import GSData
+from gsply.gsdata import DataFormat, GSData, _create_format_dict, _get_sh_order_format
 
 # Use imagecodecs (fastest WebP decoder)
 try:
@@ -400,9 +400,11 @@ def sogread(file_path: str | Path | bytes) -> GSData:
     sh0[:, 2] = sh0_b
 
     shn = None  # noqa: N806
+    sh_degree = 0  # Default to SH0
     if "shN" in meta:
         shn_meta = meta["shN"]  # noqa: N806
         bands = shn_meta["bands"]
+        sh_degree = bands  # bands directly maps to SH degree (0, 1, 2, 3)
         sh_coeffs = [0, 3, 8, 15][bands]
         palette_count = shn_meta["count"]
 
@@ -449,6 +451,14 @@ def sogread(file_path: str | Path | bytes) -> GSData:
         shN=shn,  # noqa: N806
         masks=np.ones(count, dtype=bool),
         _base=None,
+        _format=_create_format_dict(
+            scales=DataFormat.SCALES_LINEAR,
+            opacities=DataFormat.OPACITIES_PLY,
+            sh0=DataFormat.SH0_SH,
+            sh_order=_get_sh_order_format(sh_degree),
+            means=DataFormat.MEANS_RAW,
+            quats=DataFormat.QUATS_RAW,
+        ),  # SOG uses mixed format: linear scales but logit opacities
     )
 
 

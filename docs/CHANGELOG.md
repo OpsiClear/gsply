@@ -1,6 +1,6 @@
 # Release Notes
 
-## v0.2.5 (SOG Format Support)
+## v0.2.5 (SOG Format Support & API Improvements)
 
 ### New Features
 - **SOG Format Reader**: Read SOG (Splat Ordering Grid) format files
@@ -10,34 +10,46 @@
   - **In-memory ZIP extraction**: Can read directly from bytes without disk I/O
   - Uses `imagecodecs` (fastest WebP decoder) for optimal performance
   - Compatible with PlayCanvas splat-transform format
-
-### Improvements
-- **Simplified dependencies**: SOG support now requires only `imagecodecs` (removed fallback libraries)
-- **Performance**: In-memory reading from bytes is ~6x faster than file path reading
-- **API consistency**: SOG reader returns `GSData` container matching `plyread()` behavior
-
-### Dependencies
-- Added optional `sogs` dependency group: `pip install gsply[sogs]`
-  - Installs `imagecodecs>=2024.0.0` for WebP decoding
-
----
-
-## Unreleased (API Improvements & Code Cleanup)
-
-### New Features
+- **Object-Oriented I/O API**: Convenient save/load methods for GSData and GSTensor
+  - `data.save(file_path, compressed=False)` - Instance method wrapping `plywrite()` for object-oriented API
+  - `GSData.load(file_path)` - Classmethod wrapping `plyread()` (auto-detects format)
+  - `gstensor.save(file_path, compressed=True)` - Instance method for saving GSTensor (GPU compression by default)
+  - `gstensor.save_compressed(file_path)` - Convenience alias for compressed saves
+  - `GSTensor.load(file_path, device='cuda')` - Classmethod for loading GSTensor (auto-detects format, uses GPU decompression for compressed files)
+  - Provides cleaner object-oriented API while maintaining backward compatibility with module-level functions
 - **Format Conversion API**: Elegant in-place operations for PLY format conversion
-  - `GSData.normalize(inplace=False)` - Convert linear scales/opacities to PLY-compatible log/logit format
-  - `GSData.denormalize(inplace=False)` - Convert PLY format back to linear scales/opacities
-  - `GSTensor.normalize(inplace=False)` - GPU version of normalize
-  - `GSTensor.denormalize(inplace=False)` - GPU version of denormalize
+  - `GSData.normalize(inplace=True)` - Convert linear scales/opacities to PLY-compatible log/logit format
+  - `GSData.denormalize(inplace=True)` - Convert PLY format back to linear scales/opacities
+  - `GSTensor.normalize(inplace=True)` - GPU version of normalize
+  - `GSTensor.denormalize(inplace=True)` - GPU version of denormalize
   - Supports both in-place modification and copy creation
   - Uses optimized Numba-accelerated functions (CPU) and PyTorch CUDA kernels (GPU)
+- **Color Conversion API**: In-place SH ↔ RGB conversion methods
+  - `data.to_rgb(inplace=True)` - Convert sh0 from SH format to RGB colors (Numba-optimized CPU)
+  - `data.to_sh(inplace=True)` - Convert sh0 from RGB format to SH coefficients (Numba-optimized CPU)
+  - `gstensor.to_rgb(inplace=True)` - GPU version of to_rgb
+  - `gstensor.to_sh(inplace=True)` - GPU version of to_sh
+  - True in-place operations (modifies arrays/tensors directly without intermediate copies)
 
 ### API Improvements
+- **Object-Oriented I/O**: Added save/load methods to GSData and GSTensor for cleaner API
+  - Module-level functions (`plyread`, `plywrite`) remain available for functional style
+  - Lazy imports prevent circular dependencies with `writer.py` and `reader.py`
+  - `GSTensor.save()` uses GPU compression by default for optimal performance
 - **Refactored conversion methods**: `to_ply_data()` and `from_ply_data()` now use `normalize()`/`denormalize()` internally
   - More consistent API design
   - Better support for in-place operations
   - Clearer method names (`normalize`/`denormalize` vs `to_ply_data`/`from_ply_data`)
+- **Format tracking**: Internal `_format` dictionary tracks data format state
+  - Uses `TypedDict` for type safety and IDE autocomplete
+  - Tracks scales (PLY/linear), opacities (PLY/linear), sh0 (SH/RGB), and SH order
+  - Automatically set during I/O operations and format conversions
+- **Simplified dependencies**: SOG support now requires only `imagecodecs` (removed fallback libraries)
+- **API consistency**: SOG reader returns `GSData` container matching `plyread()` behavior
+
+### Performance Improvements
+- **SOG reading**: In-memory reading from bytes is ~6x faster than file path reading
+- **CPU utilities**: Enhanced `logit()` and `sigmoid()` functions with Numba parallel JIT compilation
 
 ### Code Cleanup
 - **Removed redundant code**: Eliminated `torch/utils.py` wrapper module
@@ -49,9 +61,16 @@
   - Both functions are now part of the public API
 
 ### Documentation
-- Added comprehensive documentation for `normalize()` and `denormalize()` methods
+- Added comprehensive documentation for `save()` and `load()` methods in README and API reference
+- Added documentation for `normalize()` and `denormalize()` methods
+- Added documentation for `to_rgb()` and `to_sh()` color conversion methods
 - Added documentation for `logit()` and `sigmoid()` utility functions
-- Updated API reference with examples
+- Updated API reference with examples for object-oriented I/O
+- Updated AGENTS.md with implementation details for save/load methods
+
+### Dependencies
+- Added optional `sogs` dependency group: `pip install gsply[sogs]`
+  - Installs `imagecodecs>=2024.0.0` for WebP decoding
 
 ---
 

@@ -292,6 +292,48 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - `normalize()`: Before saving to PLY format if you have linear data
 - `denormalize()`: After loading PLY files if you need linear values for computation/visualization
 
+### Object-Oriented I/O Methods (v0.2.5+)
+
+**GSData and GSTensor File I/O:**
+- `data.save(file_path, compressed=False)`: Instance method wrapping `plywrite()` for object-oriented API
+- `GSData.load(file_path)`: Classmethod wrapping `plyread()` for object-oriented API (auto-detects format)
+- `gstensor.save(file_path, compressed=True)`: Instance method for saving GSTensor (GPU compression by default)
+- `gstensor.save_compressed(file_path)`: Convenience alias for compressed saves
+- `GSTensor.load(file_path, device='cuda')`: Classmethod for loading GSTensor (auto-detects format, uses GPU decompression for compressed files)
+
+**Implementation Details:**
+- **GSData.save()**: Wraps `plywrite()` with module-level import to avoid circular dependencies
+- **GSData.load()**: Wraps `plyread()` with module-level import to avoid circular dependencies
+- **GSTensor.save()**: Uses `write_compressed_gpu()` for compressed saves, converts to GSData for uncompressed saves
+- **GSTensor.load()**: Uses `read_compressed_gpu()` for compressed files, `plyread()` + `from_gsdata()` for uncompressed files
+- **Lazy imports**: `plyread` and `plywrite` are imported inside methods to prevent circular dependencies with `writer.py` and `reader.py`
+
+**When to use:**
+- Use `data.save()` / `GSData.load()` for cleaner object-oriented API
+- Use `gstensor.save()` / `GSTensor.load()` for GPU-accelerated I/O
+- Module-level functions (`plyread`, `plywrite`) still available for functional style
+
+### Color Conversion: SH ↔ RGB Format
+
+**GSData and GSTensor Color Conversion Methods:**
+- `to_rgb(inplace=True)`: Convert sh0 from SH format to RGB colors
+  - SH DC coefficients → RGB colors: `rgb = sh0 * SH_C0 + 0.5`
+- `to_sh(inplace=True)`: Convert sh0 from RGB format to SH coefficients
+  - RGB colors → SH DC coefficients: `sh0 = (rgb - 0.5) / SH_C0`
+
+**Implementation Details:**
+- **GSData**: Uses Numba JIT-compiled parallel functions (`_sh2rgb_inplace_jit`, `_rgb2sh_inplace_jit`) from `utils.py`
+  - Always uses Numba for optimal performance (optimized for >100K Gaussians)
+  - True in-place operations (modifies array directly without intermediate copies)
+- **GSTensor**: Uses PyTorch in-place operations (`mul_()`, `add_()`, `sub_()`, `div_()`) for GPU acceleration
+  - True in-place operations (modifies tensor directly without intermediate copies)
+- **Default**: `inplace=True` for efficiency (modifies object in-place)
+- **Format Tracking**: Updates `_format` dict with `SH0_SH` or `SH0_RGB` enum values
+
+**When to use:**
+- `to_rgb()`: When you need RGB colors in [0, 1] range for visualization or color manipulation
+- `to_sh()`: When you have RGB colors and need to convert back to SH format for PLY file compatibility
+
 ### Compression APIs (In-Memory)
 
 **Functions: `compress_to_bytes()`, `compress_to_arrays()`, `decompress_from_bytes()`**
@@ -311,14 +353,18 @@ masks:     (N,)   - boolean mask (initialized to all True)
 **Functions: `sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `SH_C0`**
 - Located in `src/gsply/utils.py`
 - Exported in `src/gsply/__init__.py` (in `__all__`)
-- **sh2rgb()**: Convert spherical harmonics to RGB colors
-- **rgb2sh()**: Convert RGB colors to spherical harmonics
+- **sh2rgb()**: Convert spherical harmonics to RGB colors (creates new array)
+- **rgb2sh()**: Convert RGB colors to spherical harmonics (creates new array)
 - **logit()**: Compute logit function (inverse sigmoid) with numerical stability (Numba-optimized)
   - Default `eps=1e-6` for numerical stability
   - Used internally by `GSData.normalize()` with `eps=1e-4`
 - **sigmoid()**: Compute sigmoid function (inverse logit) with numerical stability (Numba-optimized)
   - Used internally by `GSData.denormalize()`
 - **SH_C0**: Constant for spherical harmonic DC coefficient normalization (0.28209479177387814)
+
+**Internal Numba Functions (for in-place operations):**
+- `_sh2rgb_inplace_jit()`: Numba JIT-compiled in-place SH to RGB conversion (used by `GSData.to_rgb()`)
+- `_rgb2sh_inplace_jit()`: Numba JIT-compiled in-place RGB to SH conversion (used by `GSData.to_sh()`)
 - All utility functions are CPU-only (Numba JIT-compiled)
 
 ### Concatenation Optimizations (v0.2.2)

@@ -634,6 +634,7 @@ def read_compressed_gpu(file_path: str | Path, device: str = "cuda") -> GSTensor
     :param device: Target GPU device (default "cuda")
     :returns: GSTensor with decompressed data on GPU
     """
+    from gsply.gsdata import DataFormat, _create_format_dict, _get_sh_order_format
     from gsply.reader import _parse_header_from_bytes
     from gsply.torch.gstensor import GSTensor
 
@@ -685,9 +686,18 @@ def read_compressed_gpu(file_path: str | Path, device: str = "cuda") -> GSTensor
         chunk_data, vertex_data, sh_data, device
     )
 
+    # Determine SH degree from shN shape
+    if shN is not None and shN.shape[1] > 0:
+        sh_bands = shN.shape[1]
+        from gsply.formats import SH_BANDS_TO_DEGREE
+
+        sh_degree = SH_BANDS_TO_DEGREE.get(int(sh_bands), 0)
+    else:
+        sh_degree = 0
+
     logger.info(f"[GPU Read] Loaded {num_vertices:,} Gaussians from {file_path.name} to {device}")
 
-    # Create GSTensor
+    # Create GSTensor with format flags (PLY format)
     return GSTensor(
         means=means,
         scales=scales,
@@ -698,6 +708,14 @@ def read_compressed_gpu(file_path: str | Path, device: str = "cuda") -> GSTensor
         masks=None,
         mask_names=None,
         _base=None,
+        _format=_create_format_dict(
+            scales=DataFormat.SCALES_PLY,  # PLY files use log-scales
+            opacities=DataFormat.OPACITIES_PLY,  # PLY files use logit-opacities
+            sh0=DataFormat.SH0_SH,  # SH format
+            sh_order=_get_sh_order_format(sh_degree),
+            means=DataFormat.MEANS_RAW,
+            quats=DataFormat.QUATS_RAW,
+        ),
     )
 
 

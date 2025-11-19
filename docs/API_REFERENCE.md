@@ -2,6 +2,14 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
+**Version:** 0.2.5
+
+**New in v0.2.5:**
+- Object-Oriented I/O API (`data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`)
+- Format Conversion API (`normalize()`, `denormalize()`)
+- Color Conversion API (`to_rgb()`, `to_sh()`)
+- SOG Format Support (`sogread()`)
+
 **Quick Navigation:**
 - [gsply API Reference](#gsply-api-reference)
   - [Core I/O](#core-io)
@@ -10,6 +18,8 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
     - [`detect_format(file_path)`](#detect_formatfile_path)
     - [`sogread(file_path | bytes)`](#sogreadfile_path--bytes)
   - [GSData](#gsdata)
+    - [`data.save(file_path, compressed=False)`](#datasavefile_path-compressedfalse)
+    - [`GSData.load(file_path)`](#gsdataloadfile_path)
     - [`data.unpack(include_shN=True)`](#dataunpackinclude_shntrue)
     - [`data.to_dict()`](#datato_dict)
     - [`data.copy()`](#datacopy)
@@ -18,6 +28,8 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
     - [Format Conversion: Linear ↔ PLY Format](#format-conversion-linear--ply-format)
     - [`data.normalize(inplace=True)` / `data.to_ply_format(inplace=True)`](#datanormalizeinplacetrue--datato_ply_formatinplacetrue)
     - [`data.denormalize(inplace=True)` / `data.from_ply_format(inplace=True)` / `data.to_linear(inplace=True)`](#datadenormalizeinplacetrue--datafrom_ply_formatinplacetrue--datato_linearinplacetrue)
+    - [`data.to_rgb(inplace=True)`](#datato_rgbinplacetrue)
+    - [`data.to_sh(inplace=True)`](#datato_shinplacetrue)
     - [`len(data)`](#lendata)
     - [`plyread_gpu(file_path, device='cuda')`](#plyread_gpufile_path-devicecuda)
     - [`plywrite_gpu(file_path, gstensor, compressed=True)`](#plywrite_gpufile_path-gstensor-compressedtrue)
@@ -34,11 +46,16 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
   - [GSTensor - GPU-Accelerated Dataclass](#gstensor---gpu-accelerated-dataclass)
     - [Key Features](#key-features)
     - [Performance](#performance)
+    - [`GSTensor.load(file_path, device='cuda')`](#gstensorloadfile_path-devicecuda)
+    - [`gstensor.save(file_path, compressed=True)`](#gstensorsavefile_path-compressedtrue)
+    - [`gstensor.save_compressed(file_path)`](#gstensorsave_compressedfile_path)
     - [`GSTensor.from_gsdata(data, device='cuda', dtype=torch.float32, requires_grad=False)`](#gstensorfrom_gsdatadata-devicecuda-dtypetorchfloat32-requires_gradfalse)
     - [`gstensor.to_gsdata()`](#gstensorto_gsdata)
     - [Format Conversion: Linear ↔ PLY Format (GSTensor)](#format-conversion-linear--ply-format-gstensor)
     - [`gstensor.normalize(inplace=True)` / `gstensor.to_ply_format(inplace=True)`](#gstensornormalizeinplacetrue--gstensorto_ply_formatinplacetrue)
     - [`gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format(inplace=True)` / `gstensor.to_linear(inplace=True)`](#gstensordenormalizeinplacetrue--gstensorfrom_ply_formatinplacetrue--gstensorto_linearinplacetrue)
+    - [`gstensor.to_rgb(inplace=True)`](#gstensorto_rgbinplacetrue)
+    - [`gstensor.to_sh(inplace=True)`](#gstensorto_shinplacetrue)
     - [`gstensor.to(device=None, dtype=None)`](#gstensortodevicenone-dtypenone)
     - [`gstensor.consolidate()`](#gstensorconsolidate)
     - [`gstensor.clone()`](#gstensorclone)
@@ -261,6 +278,58 @@ colors = data.sh0
 # Mutable - modify in place
 data.means[0] = [1, 2, 3]
 data.sh0 *= 1.5  # Make brighter
+```
+
+---
+
+### `data.save(file_path, compressed=False)`
+
+Save GSData to PLY file.
+
+Convenience method that wraps `plywrite()` for object-oriented API.
+
+**Parameters:**
+- `file_path` (str | Path): Output PLY file path
+- `compressed` (bool): If True, write compressed format (default False)
+
+**Example:**
+```python
+from gsply import plyread
+
+# Load data
+data = plyread("input.ply")
+
+# Save uncompressed
+data.save("output.ply")
+
+# Save compressed
+data.save("output.ply", compressed=True)
+```
+
+---
+
+### `GSData.load(file_path)`
+
+Load GSData from PLY file.
+
+Convenience classmethod that wraps `plyread()` for object-oriented API. Auto-detects compressed and uncompressed formats.
+
+**Parameters:**
+- `file_path` (str | Path): Path to PLY file
+
+**Returns:**
+- `GSData`: Container with loaded data
+
+**Example:**
+```python
+from gsply import GSData
+
+# Load using classmethod (auto-detects format)
+data = GSData.load("scene.ply")
+print(f"Loaded {len(data)} Gaussians")
+
+# Same as plyread()
+data2 = plyread("scene.ply")  # Equivalent
 ```
 
 ---
@@ -499,6 +568,96 @@ high_opacity = data[data.opacities > 0.5]  # Filter by linear opacity
 
 # Or create a copy if you need to keep PLY format
 linear_data = data.denormalize(inplace=False)
+```
+
+---
+
+### `data.to_rgb(inplace=True)`
+
+Convert sh0 from spherical harmonics (SH) format to RGB color format.
+
+**Converts:**
+- SH DC coefficients → RGB colors: `rgb = sh0 * SH_C0 + 0.5`
+
+**When to use:** When you need RGB colors in [0, 1] range for visualization or color manipulation.
+
+**Note:** Uses Numba JIT-compiled parallel function for optimal performance. Modifies array in-place for efficiency.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
+
+**Returns:**
+- `GSData`: GSData object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import plyread
+
+# Load PLY file (sh0 is in SH format)
+data = plyread("scene.ply")
+
+# Convert to RGB format in-place
+data.to_rgb()  # or: data.to_rgb(inplace=True)
+
+# Now sh0 contains RGB colors [0, 1]
+print(f"RGB color range: [{data.sh0.min():.3f}, {data.sh0.max():.3f}]")
+# Output: RGB color range: [0.000, 1.000]
+
+# Modify colors in RGB space
+data.sh0 *= 1.5  # Make brighter
+data.sh0 = np.clip(data.sh0, 0, 1)  # Clamp to valid range
+
+# Convert back to SH format if needed
+data.to_sh()
+
+# Or create a copy if you need to keep SH format
+rgb_data = data.to_rgb(inplace=False)
+```
+
+---
+
+### `data.to_sh(inplace=True)`
+
+Convert sh0 from RGB color format to spherical harmonics (SH) format.
+
+**Converts:**
+- RGB colors → SH DC coefficients: `sh0 = (rgb - 0.5) / SH_C0`
+
+**When to use:** When you have RGB colors and need to convert back to SH format for PLY file compatibility.
+
+**Note:** Uses Numba JIT-compiled parallel function for optimal performance. Modifies array in-place for efficiency.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
+
+**Returns:**
+- `GSData`: GSData object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import GSData, plywrite
+import numpy as np
+
+# Create GSData with RGB colors
+rgb_colors = np.random.rand(1000, 3).astype(np.float32)
+data = GSData(
+    means=np.random.randn(1000, 3).astype(np.float32),
+    scales=np.ones((1000, 3), dtype=np.float32) * 0.01,
+    quats=np.tile([1, 0, 0, 0], (1000, 1)).astype(np.float32),
+    opacities=np.ones(1000, dtype=np.float32) * 0.5,
+    sh0=rgb_colors,  # RGB colors
+    shN=None,
+)
+
+# Convert to SH format in-place
+data.to_sh()  # or: data.to_sh(inplace=True)
+
+# Now sh0 contains SH DC coefficients
+# Ready to save to PLY file
+plywrite("output.ply", data)
+
+# Or create a copy if you need to keep RGB format
+sh_data = data.to_sh(inplace=False)
 ```
 
 ---
@@ -950,6 +1109,96 @@ data_cpu = gstensor.to_gsdata()
 
 ---
 
+### `GSTensor.load(file_path, device='cuda')`
+
+Load GSTensor from PLY file.
+
+Convenience classmethod that auto-detects format and loads to GPU. Uses GPU decompression for compressed files, CPU read + GPU transfer for uncompressed.
+
+**Parameters:**
+- `file_path` (str | Path): Path to PLY file
+- `device` (str | torch.device): Target device (default "cuda")
+
+**Returns:**
+- `GSTensor`: Container with loaded data on GPU
+
+**Performance:**
+- Compressed: GPU decompression (4-5x faster than CPU)
+- Uncompressed: CPU read + GPU transfer
+
+**Example:**
+```python
+from gsply import GSTensor
+
+# Load compressed PLY directly to GPU
+gstensor = GSTensor.load("scene.compressed.ply", device="cuda")
+
+# Load uncompressed PLY (auto-detects format)
+gstensor = GSTensor.load("scene.ply", device="cuda")
+print(f"Loaded {len(gstensor):,} Gaussians on GPU")
+```
+
+---
+
+### `gstensor.save(file_path, compressed=True)`
+
+Save GSTensor to PLY file.
+
+Convenience method for saving GSTensor. Uses GPU compression when compressed=True, otherwise converts to GSData and saves uncompressed.
+
+**Parameters:**
+- `file_path` (str | Path): Output PLY file path
+- `compressed` (bool): If True, use GPU compression (default True). If False, convert to GSData and save uncompressed.
+
+**Performance:**
+- Compressed: 5-20x faster compression than CPU Numba
+- Uncompressed: Converts to GSData first (CPU transfer)
+
+**Example:**
+```python
+from gsply import GSTensor
+
+gstensor = GSTensor.from_gsdata(data, device="cuda")
+
+# Save compressed (default, uses GPU compression)
+gstensor.save("output.compressed.ply")
+
+# Save uncompressed (converts to GSData first)
+gstensor.save("output.ply", compressed=False)
+```
+
+---
+
+### `gstensor.save_compressed(file_path)`
+
+Save GSTensor to compressed PLY file using GPU compression.
+
+Convenience alias for `gstensor.save(file_path, compressed=True)`.
+
+**Parameters:**
+- `file_path` (str | Path): Output file path
+
+**Performance:**
+- 5-20x faster compression than CPU Numba
+- GPU reduction for chunk bounds (instant)
+- Minimal CPU-GPU data transfer
+
+**Format:**
+- PlayCanvas compressed PLY format
+- 3.8-14.5x compression ratio
+- 256 Gaussians per chunk with quantization
+
+**Example:**
+```python
+from gsply import GSTensor
+
+gstensor = GSTensor.from_gsdata(data, device="cuda")
+gstensor.save_compressed("output.ply_compressed")
+# File is ~14x smaller than uncompressed
+```
+
+---
+
 ### `GSTensor.from_gsdata(data, device='cuda', dtype=torch.float32, requires_grad=False)`
 
 Convert `GSData` to `GSTensor`.
@@ -1088,6 +1337,94 @@ high_opacity = gstensor[gstensor.opacities > 0.5]  # Filter by linear opacity
 
 # Or create a copy if you need to keep PLY format
 linear_tensor = gstensor.denormalize(inplace=False)
+```
+
+---
+
+### `gstensor.to_rgb(inplace=True)`
+
+Convert sh0 from spherical harmonics (SH) format to RGB color format (GPU-accelerated).
+
+**Converts:**
+- SH DC coefficients → RGB colors: `rgb = sh0 * SH_C0 + 0.5`
+
+**When to use:** When you need RGB colors in [0, 1] range for visualization or color manipulation on GPU.
+
+**Note:** Uses PyTorch in-place operations (`mul_()`, `add_()`) for GPU acceleration. Modifies tensor in-place for efficiency.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
+
+**Returns:**
+- `GSTensor`: GSTensor object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import plyread_gpu
+
+# Load PLY file to GPU (sh0 is in SH format)
+gstensor = plyread_gpu("scene.ply")
+
+# Convert to RGB format in-place
+gstensor.to_rgb()  # or: gstensor.to_rgb(inplace=True)
+
+# Now sh0 contains RGB colors [0, 1]
+print(f"RGB color range: [{gstensor.sh0.min():.3f}, {gstensor.sh0.max():.3f}]")
+
+# Modify colors in RGB space (GPU-accelerated)
+gstensor.sh0.mul_(1.5).clamp_(0, 1)  # Make brighter, clamp to valid range
+
+# Convert back to SH format if needed
+gstensor.to_sh()
+
+# Or create a copy if you need to keep SH format
+rgb_tensor = gstensor.to_rgb(inplace=False)
+```
+
+---
+
+### `gstensor.to_sh(inplace=True)`
+
+Convert sh0 from RGB color format to spherical harmonics (SH) format (GPU-accelerated).
+
+**Converts:**
+- RGB colors → SH DC coefficients: `sh0 = (rgb - 0.5) / SH_C0`
+
+**When to use:** When you have RGB colors and need to convert back to SH format for PLY file compatibility.
+
+**Note:** Uses PyTorch in-place operations (`sub_()`, `div_()`) for GPU acceleration. Modifies tensor in-place for efficiency.
+
+**Parameters:**
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
+
+**Returns:**
+- `GSTensor`: GSTensor object (self if inplace=True, new object otherwise)
+
+**Example:**
+```python
+from gsply import GSTensor, plywrite_gpu
+import torch
+
+# Create GSTensor with RGB colors
+rgb_colors = torch.rand(1000, 3, device="cuda")
+gstensor = GSTensor(
+    means=torch.randn(1000, 3, device="cuda"),
+    scales=torch.ones(1000, 3, device="cuda") * 0.01,
+    quats=torch.tile(torch.tensor([1, 0, 0, 0], device="cuda"), (1000, 1)),
+    opacities=torch.ones(1000, device="cuda") * 0.5,
+    sh0=rgb_colors,  # RGB colors
+    shN=None,
+)
+
+# Convert to SH format in-place
+gstensor.to_sh()  # or: gstensor.to_sh(inplace=True)
+
+# Now sh0 contains SH DC coefficients
+# Ready to save to PLY file
+plywrite_gpu("output.ply", gstensor)
+
+# Or create a copy if you need to keep RGB format
+sh_tensor = gstensor.to_sh(inplace=False)
 ```
 
 ---

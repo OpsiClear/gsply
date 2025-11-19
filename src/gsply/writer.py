@@ -19,6 +19,7 @@ Performance:
 import logging
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numba
 import numpy as np
@@ -27,7 +28,16 @@ import numpy as np
 from numba import jit
 
 from gsply.formats import CHUNK_SIZE, CHUNK_SIZE_SHIFT, SH_C0
-from gsply.gsdata import GSData
+from gsply.gsdata import DataFormat, GSData, _create_format_dict, _get_sh_order_format
+
+# Optional PyTorch dependency (for GSTensor support)
+try:
+    from gsply.torch.gstensor import GSTensor  # noqa: PLC0415
+except ImportError:
+    GSTensor = None  # type: ignore[assignment, misc]
+
+if TYPE_CHECKING:
+    from gsply.torch.gstensor import GSTensor  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -1092,7 +1102,7 @@ def compress_to_arrays(
 
 def plywrite(
     file_path: str | Path,
-    data: "GSData | np.ndarray",  # noqa: F821
+    data: "GSData | GSTensor | np.ndarray",  # noqa: F821
     scales: np.ndarray | None = None,
     quats: np.ndarray | None = None,
     opacities: np.ndarray | None = None,
@@ -1103,8 +1113,9 @@ def plywrite(
 ) -> None:
     """Write Gaussian splatting PLY file with automatic optimization.
 
-    The helper accepts either a :class:`gsply.GSData` instance (recommended) or
-    the individual Gaussian arrays.  When `_base` is available the writer
+    The helper accepts either a :class:`gsply.GSData` instance (recommended),
+    a :class:`gsply.GSTensor` instance (converted to GSData automatically),
+    or the individual Gaussian arrays.  When `_base` is available the writer
     streams the consolidated buffer directly to disk; otherwise it performs a
     one-time consolidation before writing.  File format selection happens
     automatically: the compressed path is chosen when `compressed=True` or when
@@ -1112,7 +1123,7 @@ def plywrite(
     `.ply_compressed`.
 
     :param file_path: Output PLY file path (extension auto-adjusted if compressed=True)
-    :param data: GSData object OR (N, 3) xyz positions array
+    :param data: GSData object, GSTensor object, OR (N, 3) xyz positions array
     :param scales: (N, 3) scale parameters (required if data is array)
     :param quats: (N, 4) rotation quaternions (required if data is array)
     :param opacities: (N,) opacity values (required if data is array)
@@ -1136,6 +1147,10 @@ def plywrite(
         >>> data = GSData(means=means, scales=scales, ...)
         >>> plywrite("output.ply", data)  # ~19ms for 400K, auto-optimized!
         >>>
+        >>> # GSTensor (converted to GSData automatically)
+        >>> gstensor = plyread_gpu("input.compressed.ply", device="cuda")
+        >>> plywrite("output.ply", gstensor, compressed=False)  # Uncompressed PLY
+        >>>
         >>> # Individual arrays (converted + auto-consolidated)
         >>> plywrite("output.ply", means, scales, quats, opacities, sh0, shN)
         >>>
@@ -1146,6 +1161,11 @@ def plywrite(
 
     file_path = Path(file_path)
 
+    # Convert GSTensor to GSData if needed
+    if GSTensor is not None and isinstance(data, GSTensor):
+        # Convert GSTensor to GSData (transfers to CPU)
+        data = data.to_gsdata()
+
     # Convert individual arrays to GSData
     if not isinstance(data, GSData):
         # data is actually means array
@@ -1154,6 +1174,20 @@ def plywrite(
                 "When passing individual arrays, all of data (means), scales, quats, "
                 "opacities, and sh0 must be provided"
             )
+        # Determine SH degree from shN shape
+        if shN is not None and shN.shape[1] > 0:
+            # Reshape if needed: (N, K*3) -> (N, K, 3)
+            if shN.ndim == 2:
+                sh_bands = shN.shape[1] // 3
+            else:
+                sh_bands = shN.shape[1]
+            # Map bands to degree: 3->1, 8->2, 15->3
+            from gsply.formats import SH_BANDS_TO_DEGREE
+
+            sh_degree = SH_BANDS_TO_DEGREE.get(sh_bands, 0)
+        else:
+            sh_degree = 0
+
         # Create GSData without _base (will auto-consolidate below)
         data = GSData(
             means=data,
@@ -1163,6 +1197,14 @@ def plywrite(
             sh0=sh0,
             shN=shN if shN is not None else np.empty((data.shape[0], 0, 3), dtype=np.float32),
             _base=None,  # No _base for manually created data
+            _format=_create_format_dict(
+                scales=DataFormat.SCALES_LINEAR,  # Assume linear for manually created data
+                opacities=DataFormat.OPACITIES_LINEAR,  # Assume linear for manually created data
+                sh0=DataFormat.SH0_SH,  # Assume SH format
+                sh_order=_get_sh_order_format(sh_degree),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            ),
         )
 
     # Auto-consolidate for uncompressed writes if no _base exists
@@ -1191,6 +1233,22 @@ def plywrite(
                 file_path = file_path.with_suffix(".compressed.ply")
             else:
                 file_path = Path(str(file_path) + ".compressed.ply")
+
+        # Ensure data is in PLY format before writing compressed (log-scales, logit-opacities)
+        # Check format flags and convert if needed
+        if data._format is not None:
+            scales_format = data._format.get("scales")
+            opacities_format = data._format.get("opacities")
+
+            # Convert to PLY format if not already in PLY format
+            if (
+                scales_format != DataFormat.SCALES_PLY
+                or opacities_format != DataFormat.OPACITIES_PLY
+            ):
+                logger.debug(
+                    f"[PLY Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
+                )
+                data = data.normalize(inplace=False)  # Create copy with PLY format
 
         # Extract arrays for compressed write (compressed write doesn't use GSData yet)
         means, scales, quats, opacities, sh0, shN = data.unpack()  # noqa: N806

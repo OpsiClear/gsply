@@ -16,11 +16,22 @@
 
 ## What's New in v0.2.5
 
-- SOG Format Support: `sogread()` - Read SOG (Splat Ordering Grid) format files
+- **SOG Format Support**: `sogread()` - Read SOG (Splat Ordering Grid) format files
   - Returns `GSData` container (same as `plyread()`) for consistent API
   - In-memory ZIP extraction: Read directly from bytes without disk I/O
   - Uses `imagecodecs` (fastest WebP decoder) for optimal performance
   - Compatible with PlayCanvas splat-transform format
+- **Object-Oriented I/O API**: Convenient save/load methods
+  - `data.save(file_path, compressed=False)` - Instance method for saving GSData
+  - `GSData.load(file_path)` - Classmethod for loading (auto-detects format)
+  - `gstensor.save(file_path, compressed=True)` - GPU compression by default
+  - `GSTensor.load(file_path, device='cuda')` - Direct GPU loading
+- **Format Conversion API**: In-place operations for PLY format conversion
+  - `normalize()` / `denormalize()` - Convert between linear and PLY formats
+  - Available for both GSData (CPU) and GSTensor (GPU)
+- **Color Conversion API**: In-place SH ↔ RGB conversion
+  - `to_rgb()` / `to_sh()` - Convert sh0 between SH and RGB formats
+  - Numba-optimized CPU and GPU-accelerated versions
 
 **Previous versions:**
 - v0.2.4: GPU I/O API (`plyread_gpu()`, `plywrite_gpu()`), GPU compression optimizations
@@ -105,6 +116,13 @@ plywrite("output.ply", means, scales, quats, opacities, sh0, shN)
 
 # Or write directly from GSData
 plywrite("output.ply", data)
+
+# Or use object-oriented API
+data.save("output.ply")  # Uncompressed
+data.save("output.ply", compressed=True)  # Compressed
+
+# Load using classmethod
+data = GSData.load("scene.ply")  # Auto-detects format
 ```
 
 ### Format Detection
@@ -152,6 +170,10 @@ plywrite_gpu("output.compressed.ply", gstensor)
 # Or convert from CPU data
 data = plyread("model.ply")
 gstensor = GSTensor.from_gsdata(data, device='cuda')
+
+# Or use object-oriented API
+gstensor = GSTensor.load("model.ply", device='cuda')  # Auto-detects format
+gstensor.save("output.compressed.ply")  # GPU compression (default)
 
 # Convert back to CPU
 data_cpu = gstensor.to_gsdata()
@@ -264,12 +286,16 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 - `sogread(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
 
 **GSData Container:**
+- `data.save(file_path, compressed=False)` - Save to PLY file
+- `GSData.load(file_path)` - Load from PLY file (classmethod, auto-detects format)
 - `data.unpack()` - Unpack to tuple
 - `data.to_dict()` - Convert to dictionary
 - `data.copy()` - Deep copy
 - `data.consolidate()` - Optimize for slicing
 - `data.normalize(inplace=True)` / `data.to_ply_format()` - Convert linear → PLY format (log/logit, modifies in-place by default)
 - `data.denormalize(inplace=True)` / `data.from_ply_format()` / `data.to_linear()` - Convert PLY format → linear (modifies in-place by default)
+- `data.to_rgb(inplace=True)` - Convert sh0 from SH format to RGB colors (Numba-optimized, modifies in-place by default)
+- `data.to_sh(inplace=True)` - Convert sh0 from RGB format to SH coefficients (Numba-optimized, modifies in-place by default)
 - `data[index]` - Indexing and slicing
 
 **Compression:**
@@ -285,10 +311,15 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 - `SH_C0` - Normalization constant
 
 **GPU Support (PyTorch):**
+- `GSTensor.load(file_path, device='cuda')` - Load from PLY file (classmethod, auto-detects format)
+- `gstensor.save(file_path, compressed=True)` - Save to PLY file (GPU compression by default)
+- `gstensor.save_compressed(file_path)` - Save compressed PLY (convenience alias)
 - `GSTensor.from_gsdata(data, device='cuda')` - Convert to GPU
 - `gstensor.to_gsdata()` - Convert to CPU
 - `gstensor.normalize(inplace=True)` / `gstensor.to_ply_format()` - Convert linear → PLY format (GPU, modifies in-place by default)
 - `gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format()` / `gstensor.to_linear()` - Convert PLY format → linear (GPU, modifies in-place by default)
+- `gstensor.to_rgb(inplace=True)` - Convert sh0 from SH format to RGB colors (GPU, modifies in-place by default)
+- `gstensor.to_sh(inplace=True)` - Convert sh0 from RGB format to SH coefficients (GPU, modifies in-place by default)
 - Device management: `.to()`, `.cpu()`, `.cuda()`
 - Precision: `.half()`, `.float()`, `.double()`
 - Full slicing and manipulation support
