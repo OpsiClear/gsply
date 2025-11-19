@@ -89,8 +89,9 @@ Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimize
 - Pure Python: NumPy + Numba (no C++ compilation)
 - Format support: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG format
 - Object-Oriented API: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
-- Format Conversion: `normalize()`, `denormalize()` for linear ↔ PLY format conversion
-- Color Conversion: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
+- Format Conversion: `normalize()`, `denormalize()` for linear ↔ PLY format conversion with in-place tracking
+- Color Conversion: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion with in-place tracking
+- Optimal GPU Transfer: 11x faster GPU transfers using zero-copy `_base` tensor optimization
 - GPU ready: Optional PyTorch integration with GSTensor
 
 ---
@@ -287,8 +288,8 @@ data.save("modified.ply")
 - Write: 29M Gaussians/sec (100K Gaussians, SH0, compressed)
 
 **GPU Transfer (400K Gaussians, RTX 3090 Ti):**
-- With optimization: 1.99ms (11.4x faster)
-- Without optimization: 22.78ms
+- With `_base` optimization (from `plyread()`): 1.99ms (11x faster, single tensor transfer)
+- Without `_base` (manual stacking): 22.78ms (CPU copy + transfer)
 
 See detailed [performance benchmarks](docs/API_REFERENCE.md#performance) for more information.
 

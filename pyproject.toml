@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gsply"
 version = "0.2.5"
-description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python with NumPy and Numba"
+description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python with NumPy and Numba. Features 11x faster GPU transfers and automatic format state tracking for seamless conversions."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -56,7 +56,7 @@ benchmark = [
 docs = [
     "sphinx>=7.2",
     "myst-parser>=2.0",
-    "sphinx-rtd-theme>=3.0",
+    "furo>=2024.0.0",
     "sphinx-autodoc-typehints>=2.0",
 ]
 all = [
@@ -69,7 +69,7 @@ all = [
     "plyfile>=0.9.0",
     "sphinx>=7.2",
     "myst-parser>=2.0",
-    "sphinx-rtd-theme>=3.0",
+    "furo>=2024.0.0",
     "sphinx-autodoc-typehints>=2.0",
 ]
 

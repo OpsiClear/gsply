@@ -6,14 +6,19 @@ to deliver industry-leading performance with a clean, Pythonic API.
 
 ## Core Design Philosophy
 
-gsply focuses on two complementary workflows:
+gsply focuses on three complementary workflows:
 
 - **Ultra-fast I/O** — Read and write uncompressed or PlayCanvas-compressed PLY files using
   vectorized NumPy kernels and Numba JIT pipelines. Zero-copy views into a shared `_base` buffer
   eliminate unnecessary memory allocations.
 
+- **Optimal GPU Transfer** — Data loaded from `plyread()` uses the `_base` tensor for **11x faster**
+  GPU transfers. Single tensor transfer eliminates CPU-side memory copies, achieving 1.99ms vs
+  22.78ms for 400K Gaussians.
+
 - **Flexible Containers** — `GSData` (CPU) and `GSTensor` (GPU) provide helpers for concatenation,
-  masking, contiguity optimization, and CPU↔GPU transfers.
+  masking, contiguity optimization, and CPU↔GPU transfers. Format state is tracked automatically
+  via `_format` dictionary for seamless in-place conversions.
 
 ## Key Capabilities
 
@@ -37,13 +42,15 @@ Convenient save/load methods for cleaner code:
 - `gstensor.save(file_path, compressed=True)` - GPU compression by default
 - `GSTensor.load(file_path, device='cuda')` - Direct GPU loading
 
-### Format Conversion
+### Format Conversion with In-Place Tracking
 
-Convert between linear and PLY formats seamlessly:
+Convert between linear and PLY formats seamlessly with automatic format state tracking:
 - `normalize()` / `denormalize()` - Convert scales/opacities between linear and PLY formats
 - `to_rgb()` / `to_sh()` - Convert sh0 between SH and RGB color formats
 - Available for both `GSData` (CPU) and `GSTensor` (GPU)
-- In-place operations by default for efficiency
+- In-place operations by default (`inplace=True`) for efficiency
+- Format state tracked automatically via `_format` dictionary (scales, opacities, sh0, sh_order)
+- Conversion methods update `_format` to reflect current data state
 
 ### Advanced Mask Management
 
@@ -57,11 +64,13 @@ Masks persist through slicing, concatenation, and CPU↔GPU transfers.
 the ≈8 operations break-even point, dramatically accelerating reductions (`sum`, `max`, etc.)
 and point-wise transforms. Up to **45x faster** for certain operations.
 
-### Seamless GPU Integration
+### Optimal GPU Transfer
 
-`GSTensor.from_gsdata()` transfers the shared base tensor to the requested device
-(CUDA or CPU) in a single operation. Mask layers persist through transfers, and
-GPU operations leverage PyTorch's parallelism for 100-1000x speedups over CPU.
+`GSTensor.from_gsdata()` uses the `_base` tensor optimization for **11x faster** GPU transfers:
+- **With `_base`** (from `plyread()`): Single tensor transfer, zero CPU copy overhead (1.99ms for 400K Gaussians)
+- **Without `_base`**: Falls back to stacking arrays on CPU then transferring (22.78ms for 400K Gaussians)
+- Mask layers persist through transfers, and GPU operations leverage PyTorch's parallelism for 100-1000x speedups over CPU
+- Format state (`_format` dict) is preserved during GPU transfers for seamless conversion tracking
 
 ## Data Layout
 

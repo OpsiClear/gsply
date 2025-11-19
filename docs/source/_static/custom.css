@@ -1,144 +1,46 @@
-/* Custom styling for gsply documentation (Read the Docs theme) */
+/* Custom styling for gsply documentation (Furo theme) */
 
-/* Typography improvements */
-body {
-    font-feature-settings: "kern" 1, "liga" 1;
-    text-rendering: optimizeLegibility;
+:root {
+  /* Make fonts slightly smaller and cleaner */
+  --font-size--small: 0.8125rem;  /* 13px */
+  --font-size--normal: 0.9375rem; /* 15px */
+
+  /* Adjust line heights for compactness */
+  --line-height--normal: 1.5;
+
+  /* Sidebar styling */
+  --sidebar-item-font-size: 0.9375rem;
+  --sidebar-caption-font-size: 0.8125rem;
+
+  /* Code block fonts */
+  --font-code: "Consolas", "Monaco", "Courier New", monospace;
+  --font-size--code: 0.875rem;
 }
 
-/* Code block styling */
-.highlight {
-    border-radius: 4px;
-    padding: 0.5rem;
-}
-
-pre {
-    border-radius: 4px;
-    padding: 1rem;
-}
-
-/* API reference styling */
-.py.class,
-.py.function,
-.py.method,
-.py.attribute {
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #ddd;
-}
-
-.py.class:last-child,
-.py.function:last-child,
-.py.method:last-child,
-.py.attribute:last-child {
-    border-bottom: none;
-}
-
-/* Signature styling */
-.sig {
-    font-family: "Consolas", "Monaco", "Courier New", monospace;
-    font-size: 0.9em;
-}
-
-.sig-name {
-    color: #2980b9;
-    font-weight: 600;
-}
-
-/* Parameter lists */
-.field-list dt {
-    font-weight: 600;
-}
-
-.field-list dd {
-    margin-left: 1.5rem;
-    margin-bottom: 0.5rem;
-}
-
-/* Admonitions */
-.admonition {
-    border-radius: 6px;
-    border-left-width: 4px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.admonition-title {
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-}
-
-/* Table styling */
+/* Improve table typography */
 table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1rem 0;
+  font-size: 0.9375rem;
 }
 
-table th {
-    background-color: #f5f5f5;
-    font-weight: 600;
-    padding: 0.75rem;
-    text-align: left;
-    border-bottom: 2px solid #ddd;
+/* Make API signatures distinct but cleaner */
+dl.class > dt,
+dl.function > dt,
+dl.method > dt,
+dl.attribute > dt {
+  font-family: var(--font-code);
+  background-color: var(--color-background-secondary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  border-left: 3px solid var(--color-brand-primary);
 }
 
-table td {
-    padding: 0.75rem;
-    border-bottom: 1px solid #ddd;
+/* Compact parameter lists */
+.field-list dd {
+  margin-left: 1rem;
+  margin-bottom: 0.5rem;
 }
 
-table tr:hover {
-    background-color: #f9f9f9;
-}
-
-/* Content spacing */
-.wy-nav-content {
-    line-height: 1.7;
-}
-
-.wy-nav-content h1 {
-    border-bottom: 3px solid #2980b9;
-    padding-bottom: 0.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.wy-nav-content h2 {
-    margin-top: 2rem;
-    margin-bottom: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid #ddd;
-}
-
-.wy-nav-content h3 {
-    margin-top: 1.5rem;
-    margin-bottom: 0.75rem;
-}
-
-/* Code inline */
-code {
-    background-color: #f5f5f5;
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-    font-size: 0.9em;
-}
-
-/* API reference module headers */
-.py.module {
-    margin-bottom: 2rem;
-}
-
-.py.module h2 {
-    color: #2980b9;
-    font-size: 1.5rem;
-}
-
-/* Responsive improvements */
-@media (max-width: 768px) {
-    .wy-nav-content {
-        padding: 1rem;
-    }
-
-    pre {
-        font-size: 0.85em;
-        overflow-x: auto;
-    }
+/* Admonition refinement */
+.admonition {
+  font-size: 0.9375rem;
 }
