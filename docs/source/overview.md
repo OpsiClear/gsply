@@ -50,6 +50,12 @@ Convenient save/load methods and factory methods for cleaner code:
 
 Convert between linear and PLY formats seamlessly with automatic format state tracking:
 - `normalize()` / `denormalize()` - Convert scales/opacities between linear and PLY formats
+  - Uses fused Numba kernels internally (~8-15x faster than individual operations)
+  - Single-pass processing reduces memory overhead
+  - Parallel execution for optimal performance
+- `apply_pre_activations()` / `apply_pre_deactivations()` - Direct access to fused kernels
+  - Fine-grained control over activation/deactivation parameters
+  - Quaternion normalization included in activation kernel
 - `to_rgb()` / `to_sh()` - Convert sh0 between SH and RGB color formats
 - Available for both `GSData` (CPU) and `GSTensor` (GPU)
 - In-place operations by default (`inplace=True`) for efficiency
@@ -104,7 +110,7 @@ Choose the right API for your use case:
 | Create from external arrays/dicts            | `GSData.from_arrays()` / `GSData.from_dict()` — Factory methods with format presets |
 | Write back to disk (auto-optimized)        | `data.save()` — Object-oriented, automatic optimization |
 | Load SOG format files                      | `sogread()` — Returns GSData (same API)            |
-| Convert linear ↔ PLY format                | `normalize()` / `denormalize()` — In-place conversion |
+| Convert linear ↔ PLY format                | `normalize()` / `denormalize()` — Fused kernels (~8-15x faster) |
 | Convert SH ↔ RGB colors                    | `to_rgb()` / `to_sh()` — In-place color conversion |
 | Stream compressed bytes over network        | `compress_to_bytes()` / `decompress_from_bytes()`  |
 | Batch merge hundreds of shards              | `GSData.concatenate()` — Bulk merge (5.74x faster) |

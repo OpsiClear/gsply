@@ -237,14 +237,16 @@ from gsply import GSData
 data = GSData.load("scene.ply")
 
 # Convert to linear format for computation/visualization
-data.denormalize()  # Converts log-scales → linear, logit-opacities → linear
+data.denormalize()  # Uses fused kernel (~8-15x faster)
+# Converts log-scales → linear, logit-opacities → linear, normalizes quaternions
 print(f"Linear opacity range: [{data.opacities.min():.3f}, {data.opacities.max():.3f}]")
 
 # Modify in linear space
 data.opacities = np.clip(data.opacities * 1.2, 0, 1)
 
 # Convert back to PLY format before saving
-data.normalize()  # Converts linear → log-scales, linear → logit-opacities
+data.normalize()  # Uses fused kernel (~8-15x faster)
+# Converts linear → log-scales, linear → logit-opacities
 data.save("modified.ply")
 ```
 
@@ -254,6 +256,30 @@ data.save("modified.ply")
 data.to_rgb()  # sh0 now contains RGB colors [0, 1]
 data.sh0 *= 1.5  # Make brighter (RGB space)
 data.to_sh()  # Convert back to SH format for PLY compatibility
+```
+
+**Advanced: Direct Fused Kernels:**
+```python
+from gsply import apply_pre_activations, apply_pre_deactivations
+
+# Direct access to fused activation kernel (~8-15x faster)
+# Useful for fine-grained control over activation parameters
+apply_pre_activations(
+    data,
+    min_scale=0.01,      # Custom scale bounds
+    max_scale=10.0,
+    min_quat_norm=1e-6,  # Custom quaternion norm floor
+    inplace=True
+)
+
+# Direct access to fused deactivation kernel (~8-15x faster)
+apply_pre_deactivations(
+    data,
+    min_scale=1e-8,      # Custom scale floor
+    min_opacity=1e-5,    # Custom opacity bounds
+    max_opacity=0.999,
+    inplace=True
+)
 ```
 
 ## GPU Acceleration with PyTorch

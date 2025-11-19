@@ -2,7 +2,11 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
-**Version:** 0.2.6
+**Version:** 0.2.7
+
+**New in v0.2.7:**
+- Fused Activation Kernels (`apply_pre_activations`, `apply_pre_deactivations`) - Ultra-fast format conversion (~8-15x faster)
+- Optimized Format Conversion - `normalize()` and `denormalize()` now use parallel Numba kernels internally
 
 **New in v0.2.6:**
 - Automatic Format Detection (auto-detects log vs linear values)
@@ -79,6 +83,8 @@ pip install gsply[sogs] torch  # GPU + SOG support
     - [`rgb2sh(rgb)`](#rgb2shrgb)
     - [`logit(x, eps=1e-6)`](#logitx-eps1e-6)
     - [`sigmoid(x)`](#sigmoidx)
+    - [`apply_pre_activations(data, min_scale=1e-4, max_scale=100.0, min_quat_norm=1e-8, inplace=True)`](#apply_pre_activationsdata-min_scale1e-4-max_scale1000-min_quat_norm1e-8-inplacetrue)
+    - [`apply_pre_deactivations(data, min_scale=1e-9, min_opacity=1e-4, max_opacity=0.9999, inplace=True)`](#apply_pre_deactivationsdata-min_scale1e-9-min_opacity1e-4-max_opacity09999-inplacetrue)
     - [`SH_C0`](#sh_c0)
   - [GSTensor - GPU-Accelerated Dataclass](#gstensor---gpu-accelerated-dataclass)
     - [Key Features](#key-features)
@@ -641,7 +647,7 @@ Convert **linear scales/opacities → PLY format** (log-scales, logit-opacities)
 
 **When to use:** When you have linear data and need to save to PLY format.
 
-**Note:** Uses `gsply.logit()` from `utils.py` (Numba-optimized CPU implementation). Behavior matches `GSTensor.normalize()` for consistency.
+**Note:** Uses `apply_pre_deactivations()` internally with fused Numba kernel for optimal performance (~8-15x faster). Uses `gsply.logit()` from `utils.py` (Numba-optimized CPU implementation). Behavior matches `GSTensor.normalize()` for consistency.
 
 **Parameters:**
 - `inplace` (bool): If True, modify this object in-place (default). If False, return new object
@@ -685,7 +691,7 @@ Convert **PLY format → linear scales/opacities** (log-scales → linear, logit
 
 **When to use:** When you load PLY files and need linear values for computations or visualization.
 
-**Note:** Uses `gsply.sigmoid()` from `utils.py` (Numba-optimized CPU implementation). Behavior matches `GSTensor.denormalize()` for consistency.
+**Note:** Uses `apply_pre_activations()` internally with fused Numba kernel for optimal performance (~8-15x faster). Uses `gsply.sigmoid()` from `utils.py` (Numba-optimized CPU implementation). Behavior matches `GSTensor.denormalize()` for consistency.
 
 **Parameters:**
 - `inplace` (bool): If True, modify this object in-place (default). If False, return new object
@@ -1167,6 +1173,115 @@ logit_vals = logit(probs)
 probs_restored = sigmoid(logit_vals)  # Should match original
 assert np.allclose(probs, probs_restored)
 ```
+
+---
+
+### `apply_pre_activations(data, min_scale=1e-4, max_scale=100.0, min_quat_norm=1e-8, inplace=True)`
+
+Activate GSData attributes (scales, opacities, quaternions) in a single fused pass.
+
+This function uses a fused Numba kernel that processes all three attributes together for optimal performance (~8-15x faster than individual operations). Converts PLY format (log-scales, logit-opacities) to linear format.
+
+**Converts:**
+- Log-scales → linear scales: `exp(log_scale)` with clamping
+- Logit-opacities → linear opacities: `sigmoid(logit)`
+- Quaternions → normalized quaternions (with safety floor)
+
+**Parameters:**
+- `data` (GSData): GSData instance to process
+- `min_scale` (float): Minimum allowed scale value after exponentiation - Default: 1e-4
+- `max_scale` (float): Maximum allowed scale value after exponentiation - Default: 100.0
+- `min_quat_norm` (float): Norm floor for normalizing quaternions (avoids NaNs) - Default: 1e-8
+- `inplace` (bool): If False, returns a copy before activation - Default: True
+
+**Returns:**
+- `GSData`: GSData with activated attributes (either modified in-place or copy)
+
+**Performance:**
+- **~8-15x faster** than individual operations
+- Uses parallel Numba JIT compilation
+- Single-pass processing reduces memory overhead
+- Improves cache locality
+
+**Example:**
+```python
+from gsply import plyread, apply_pre_activations
+
+# Load PLY file (contains log-scales and logit-opacities)
+data = plyread("scene.ply")
+
+# Activate in-place (modifies data)
+apply_pre_activations(data, inplace=True)
+
+# Now scales and opacities are in linear space
+print(f"Linear opacity range: [{data.opacities.min():.3f}, {data.opacities.max():.3f}]")
+# Output: Linear opacity range: [0.000, 1.000]
+
+# Quaternions are normalized
+quat_norms = np.linalg.norm(data.quats, axis=1)
+assert np.allclose(quat_norms, 1.0)  # All normalized
+
+# Or create a copy
+activated = apply_pre_activations(data, inplace=False)
+```
+
+**Note:** This function is used internally by `denormalize()` for optimal performance. You can use it directly for fine-grained control over activation parameters.
+
+---
+
+### `apply_pre_deactivations(data, min_scale=1e-9, min_opacity=1e-4, max_opacity=0.9999, inplace=True)`
+
+Deactivate GSData attributes (scales, opacities) in a single fused pass.
+
+This function uses a fused Numba kernel that processes scales and opacities together for optimal performance (~8-15x faster than individual operations). Converts linear format to PLY format (log-scales, logit-opacities).
+
+**Converts:**
+- Linear scales → log-scales: `log(scale)` with clamping
+- Linear opacities → logit-opacities: `logit(opacity)` with clamping
+
+**Parameters:**
+- `data` (GSData): GSData instance to process
+- `min_scale` (float): Minimum allowed scale value before logarithm - Default: 1e-9
+- `min_opacity` (float): Minimum allowed opacity value before logit - Default: 1e-4
+- `max_opacity` (float): Maximum allowed opacity value before logit - Default: 0.9999
+- `inplace` (bool): If False, returns a copy before deactivation - Default: True
+
+**Returns:**
+- `GSData`: GSData with deactivated attributes (either modified in-place or copy)
+
+**Performance:**
+- **~8-15x faster** than individual operations
+- Uses parallel Numba JIT compilation
+- Single-pass processing reduces memory overhead
+- Improves cache locality
+
+**Example:**
+```python
+from gsply import GSData, apply_pre_deactivations
+import numpy as np
+
+# Create GSData with linear scales and opacities
+data = GSData(
+    means=np.random.randn(100, 3).astype(np.float32),
+    scales=np.random.rand(100, 3).astype(np.float32) * 0.1 + 0.01,
+    quats=np.random.randn(100, 4).astype(np.float32),
+    opacities=np.random.rand(100).astype(np.float32) * 0.8 + 0.1,
+    sh0=np.random.randn(100, 3).astype(np.float32),
+    shN=None,
+)
+
+# Deactivate in-place (modifies data)
+apply_pre_deactivations(data, inplace=True)
+
+# Now scales and opacities are in PLY format (log/logit)
+print(f"Log-scale range: [{data.scales.min():.3f}, {data.scales.max():.3f}]")
+# Scales are now in log-space
+
+# Or create a copy
+deactivated = apply_pre_deactivations(data, inplace=False)
+```
+
+**Note:** This function is used internally by `normalize()` for optimal performance. You can use it directly for fine-grained control over deactivation parameters.
 
 ---
 

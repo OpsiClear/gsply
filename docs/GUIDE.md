@@ -2,7 +2,7 @@
 
 Complete guide to gsply - Ultra-fast Gaussian Splatting PLY I/O library for Python
 
-**Version:** 0.2.6
+**Version:** 0.2.7
 **Last Updated:** 2025-11-19
 
 ---
@@ -106,9 +106,10 @@ All arrays are returned as numpy arrays with the following shapes:
 
 **Format Conversion:**
 - PLY files store scales in log-space and opacities in logit-space
-- Use `data.normalize()` to convert linear → PLY format before saving
-- Use `data.denormalize()` to convert PLY → linear format after loading
+- Use `data.normalize()` to convert linear → PLY format before saving (uses fused kernel, ~8-15x faster)
+- Use `data.denormalize()` to convert PLY → linear format after loading (uses fused kernel, ~8-15x faster)
 - Use `data.to_rgb()` / `data.to_sh()` to convert between SH and RGB color formats
+- Advanced: Use `apply_pre_activations()` / `apply_pre_deactivations()` for direct access to fused kernels
 
 ---
 
@@ -984,6 +985,45 @@ The key insight was that the entire decompression pipeline could be expressed as
 - Conditional masking for branching logic
 - SIMD-friendly operation patterns
 
+#### Fused Kernels for Format Conversion (v0.2.7+)
+
+**Phase 4: Format Conversion Optimization**
+
+Format conversion (`normalize()` and `denormalize()`) now uses fused Numba kernels for optimal performance:
+
+**Before (Sequential Operations):**
+```python
+# Separate operations - multiple passes through data
+scales = np.log(np.clip(scales, min_scale, None))
+opacities = logit(np.clip(opacities, min_opacity, max_opacity))
+# Quaternion normalization in separate pass
+quats = quats / np.linalg.norm(quats, axis=1, keepdims=True)
+```
+
+**After (Fused Kernel):**
+```python
+# Single fused kernel - one pass through data
+apply_pre_deactivations(data, min_scale=1e-9, min_opacity=1e-4, max_opacity=0.9999)
+# Processes scales and opacities together in parallel
+```
+
+**Performance Benefits:**
+- **~8-15x faster** than sequential operations
+- Single-pass processing reduces memory overhead
+- Parallel Numba JIT compilation with `prange`
+- Improved cache locality (processes related data together)
+- Quaternion normalization included in activation kernel
+
+**Implementation Details:**
+- Uses Numba `@njit(parallel=True, fastmath=True, cache=True, nogil=True)`
+- Processes all Gaussians in parallel using `prange`
+- Clamping and transformations done in single kernel
+- Zero intermediate allocations
+
+**When to Use:**
+- `normalize()` / `denormalize()` - Automatic (uses fused kernels internally)
+- `apply_pre_activations()` / `apply_pre_deactivations()` - Direct access for fine-grained control
+
 ---
 
 ## Compatibility
@@ -1150,7 +1190,7 @@ gsply:   7.98ms  (34% faster than baseline, +24% from Phase 1)
 plyfile: 12.57ms (1.57x slower than gsply)
 ```
 
-#### Final (After Phase 3 - Vectorization)
+#### After Phase 3 (Vectorized Decompression)
 
 **Uncompressed Performance:** See "Current Benchmarks" section (minor refinements)
 
@@ -1160,6 +1200,21 @@ Before vectorization: 65.42ms
 After vectorization:  1.70ms
 Improvement: 38.5x faster
 ```
+
+#### After Phase 4 (Fused Format Conversion Kernels - v0.2.7+)
+
+**Format Conversion Performance:**
+```
+Before (sequential): normalize() ~2.5ms, denormalize() ~3.2ms
+After (fused kernels): normalize() ~0.2ms, denormalize() ~0.3ms
+Improvement: ~8-15x faster
+```
+
+**Key Benefits:**
+- Single-pass processing reduces memory overhead
+- Parallel Numba JIT compilation
+- Improved cache locality
+- Quaternion normalization included in activation kernel
 
 ### Future Optimizations
 

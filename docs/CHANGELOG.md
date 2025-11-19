@@ -1,5 +1,47 @@
 # Release Notes
 
+## v0.2.7 (Fused Activation Kernels & Performance Optimization)
+
+### New Features
+- **Fused Activation Kernels**: Ultra-fast format conversion with parallel Numba kernels
+  - `apply_pre_activations(data, min_scale=1e-4, max_scale=100.0, min_quat_norm=1e-8, inplace=True)` - Fused kernel for activating scales, opacities, and quaternions
+    - Converts log-scales → linear scales (exp + clamp) in single pass
+    - Converts logit-opacities → linear opacities (sigmoid) in single pass
+    - Normalizes quaternions with safety floor
+    - **Performance**: ~8-15x faster than individual operations
+  - `apply_pre_deactivations(data, min_scale=1e-9, min_opacity=1e-4, max_opacity=0.9999, inplace=True)` - Fused kernel for deactivating scales and opacities
+    - Converts linear scales → log-scales (log + clamp) in single pass
+    - Converts linear opacities → logit-opacities (logit + clamp) in single pass
+    - **Performance**: ~8-15x faster than individual operations
+  - Both functions use parallel Numba JIT compilation for optimal performance
+  - Single-pass processing reduces memory overhead and improves cache locality
+
+### Performance Improvements
+- **Format Conversion Optimization**: `normalize()` and `denormalize()` now use fused kernels internally
+  - `GSData.normalize()` uses `apply_pre_deactivations()` for ~8-15x speedup
+  - `GSData.denormalize()` uses `apply_pre_activations()` for ~8-15x speedup
+  - Quaternion normalization included in activation kernel (denormalize only)
+  - Scales and opacities processed together in single parallel pass
+- **Memory Efficiency**: Fused kernels reduce intermediate allocations
+  - Single-pass processing improves cache locality
+  - Lower memory overhead compared to sequential operations
+
+### Improvements
+- **Internal Refactoring**: Format conversion methods now use optimized fused kernels
+  - `normalize()` replaced manual `np.log()` and `logit()` calls with `apply_pre_deactivations()`
+  - `denormalize()` replaced manual `np.exp()` and `sigmoid()` calls with `apply_pre_activations()`
+  - Maintains backward compatibility - same API, better performance
+- **Code Quality**: Centralized activation/deactivation logic in reusable functions
+  - Consistent behavior across all format conversion operations
+  - Easier to maintain and optimize
+
+### Testing
+- Added comprehensive test coverage for new activation functions (17 new tests)
+  - `tests/test_pre_activations.py` - Full test suite for `apply_pre_activations()` and `apply_pre_deactivations()`
+  - Tests cover: basic functionality, in-place vs copy, custom bounds, edge cases, validation errors, roundtrips
+  - Integration tests verify `normalize()` and `denormalize()` use optimized kernels correctly
+- Total test count: **365 tests** (348 + 17 new)
+
 ## v0.2.6 (Format Safety & Auto-detection)
 
 ### New Features

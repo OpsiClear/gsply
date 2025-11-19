@@ -7,64 +7,26 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://readthedocs.org/projects/gsply/badge/?version=latest)](https://gsply.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-365%20passing-brightgreen.svg)](#testing)
 
 **93M Gaussians/sec read | 57M Gaussians/sec write | Auto-optimized**
 
+[Quick Start](#quick-start) • [Installation](#installation) • [Examples](#examples) • [API Reference](docs/API_REFERENCE.md) • [Performance](#performance)
+
 </div>
-
----
-
-## What's New in v0.2.6
-
-- **Convenience Factory Methods**: Create GSData/GSTensor from external data with format presets
-  - `GSData.from_arrays()` / `GSData.from_dict()` - Create from arrays/dictionaries with format preset
-  - `GSTensor.from_arrays()` / `GSTensor.from_dict()` - Create from tensors/dictionaries with format preset
-  - Format presets: `"auto"` (detect), `"ply"` (log/logit), `"linear"` or `"rasterizer"` (linear)
-  - Auto-detects SH degree from `shN` shape when not specified
-- **Auto-Format Detection**: Smart heuristics automatically detect if data is in PLY format (log/logit) or Linear format
-- **Format Safety**: Strict validation prevents mixing incompatible formats (e.g. linear + log) during concatenation
-- **Format Helpers**: New `create_ply_format()` and `create_rasterizer_format()` helpers
-- **Enhanced I/O**: `plywrite()` automatically converts linear data to PLY format before writing
-
-## What's New in v0.2.5
-
-- **SOG Format Support**: `sogread()` - Read SOG (Splat Ordering Grid) format files
-  - Returns `GSData` container (same as `plyread()`) for consistent API
-  - In-memory ZIP extraction: Read directly from bytes without disk I/O
-  - Uses `imagecodecs` (fastest WebP decoder) for optimal performance
-  - Compatible with PlayCanvas splat-transform format
-- **Object-Oriented I/O API**: Convenient save/load methods
-  - `data.save(file_path, compressed=False)` - Instance method for saving GSData
-  - `GSData.load(file_path)` - Classmethod for loading (auto-detects format)
-  - `gstensor.save(file_path, compressed=True)` - GPU compression by default
-  - `GSTensor.load(file_path, device='cuda')` - Direct GPU loading
-- **Format Conversion API**: In-place operations for PLY format conversion
-  - `normalize()` / `denormalize()` - Convert between linear and PLY formats
-  - Available for both GSData (CPU) and GSTensor (GPU)
-- **Color Conversion API**: In-place SH ↔ RGB conversion
-  - `to_rgb()` / `to_sh()` - Convert sh0 between SH and RGB formats
-  - Numba-optimized CPU and GPU-accelerated versions
-
-**Previous versions:**
-- v0.2.4: GPU I/O API (`plyread_gpu()`, `plywrite_gpu()`), GPU compression optimizations
-- v0.2.2: Data Concatenation, GPU Concatenation, Performance Optimization, Mask Management
-
-[Full API Reference](docs/API_REFERENCE.md) | [Changelog](docs/CHANGELOG.md)
 
 ---
 
 ## Quick Start
 
 ```python
-from gsply import GSData, GSTensor
+from gsply import plyread, GSData, GSTensor
 
 # Read PLY file (auto-detects format, zero-copy)
-data = GSData.load("model.ply")  # Object-oriented API
+data = plyread("model.ply")  # Functional API
 
-# Or use functional API
-from gsply import plyread
-data = plyread("model.ply")
+# Or use object-oriented API
+data = GSData.load("model.ply")  # Classmethod
 
 # Access fields
 positions = data.means    # (N, 3) xyz coordinates
@@ -72,22 +34,16 @@ colors = data.sh0         # (N, 3) RGB colors
 scales = data.scales      # (N, 3) scale parameters
 rotations = data.quats    # (N, 4) quaternions
 
-# Save PLY file (object-oriented API)
+# Save PLY file
 data.save("output.ply")  # Uncompressed
 data.save("output.ply", compressed=True)  # Compressed (71-74% smaller)
 
-# Or use functional API
-from gsply import plywrite
-plywrite("output.ply", data, compressed=True)
-
 # GPU acceleration (optional)
-gstensor = GSTensor.load("model.ply", device='cuda')  # Direct GPU loading
-gstensor.save("output.compressed.ply")  # GPU compression (default)
+gstensor = GSTensor.load("model.ply", device='cuda')
+gstensor.save("output.compressed.ply")  # GPU compression
 ```
 
 **Performance:** 93M Gaussians/sec read, 57M Gaussians/sec write (400K Gaussians in 6-7ms)
-
-[Installation](#installation) | [Examples](#examples) | [API Reference](docs/API_REFERENCE.md) | [Performance](#performance)
 
 ---
 
@@ -95,16 +51,18 @@ gstensor.save("output.compressed.ply")  # GPU compression (default)
 
 Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimized writes, optional GPU acceleration.
 
-**Key Features:**
-- Fast: 93M Gaussians/sec read, 57M Gaussians/sec write
-- Auto-optimized: Writes are 2.6-2.8x faster automatically
-- Pure Python: NumPy + Numba (no C++ compilation)
-- Format support: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG format
-- Object-Oriented API: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
-- Format Conversion: `normalize()`, `denormalize()` for linear ↔ PLY format conversion with in-place tracking
-- Color Conversion: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion with in-place tracking
-- Optimal GPU Transfer: 11x faster GPU transfers using zero-copy `_base` tensor optimization
-- GPU ready: Optional PyTorch integration with GSTensor
+### Key Features
+
+- **Ultra-Fast**: 93M Gaussians/sec read, 57M Gaussians/sec write
+- **Zero-Copy**: Reads use memory views for maximum performance
+- **Auto-Optimized**: Writes are 2.6-2.8x faster automatically
+- **Format Support**: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG format
+- **GPU Ready**: Optional PyTorch integration with GSTensor (11x faster transfers)
+- **Pure Python**: NumPy + Numba (no C++ compilation required)
+- **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
+- **Format Conversion**: `normalize()`, `denormalize()` with fused kernels (~8-15x faster)
+- **Color Conversion**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
+- **Comprehensive**: 365 passing tests, full type hints, extensive documentation
 
 ---
 
@@ -122,49 +80,26 @@ pip install gsply
 
 **GPU Acceleration (PyTorch):**
 ```bash
-pip install torch  # For GSTensor GPU features
+pip install torch
 ```
-
-Enables:
-- `GSTensor` - GPU-accelerated data container
-- `plyread_gpu()`, `plywrite_gpu()` - Direct GPU I/O
-- GPU compression/decompression (5-20x faster than CPU)
-- GPU format conversion (`normalize()`, `denormalize()`, `to_rgb()`, `to_sh()`)
+Enables `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, and GPU-accelerated format conversions.
 
 **SOG Format Support:**
 ```bash
-pip install gsply[sogs]  # For SOG format support (sogread)
+pip install gsply[sogs]
 ```
+Enables `sogread()` for reading SOG (Splat Ordering Grid) format files.
 
-Enables:
-- `sogread()` - Read SOG (Splat Ordering Grid) format files
-- In-memory ZIP extraction
-- PlayCanvas splat-transform compatibility
+**Full Installation:**
+```bash
+pip install gsply[sogs] torch  # GPU + SOG support
+```
 
 **Development:**
 ```bash
-pip install -e .[dev]  # Install with dev dependencies (pytest, ruff, mypy)
-```
-
-### Installation Examples
-
-```bash
-# Basic installation (CPU only)
-pip install gsply
-
-# With GPU support
-pip install gsply torch
-
-# With SOG format support
-pip install gsply[sogs]
-
-# Full installation (GPU + SOG)
-pip install gsply[sogs] torch
-
-# Development installation
 git clone https://github.com/OpsiClear/gsply.git
 cd gsply
-pip install -e .[dev]
+pip install -e .[dev]  # Includes pytest, ruff, mypy
 ```
 
 ---
@@ -174,51 +109,43 @@ pip install -e .[dev]
 ### Basic I/O
 
 ```python
-from gsply import plyread, plywrite
+from gsply import plyread, plywrite, GSData
 
-# Read and access data
+# Read PLY file
 data = plyread("model.ply")
 print(f"Loaded {len(data)} Gaussians")
+
+# Object-oriented API
+data = GSData.load("model.ply")  # Auto-detects format
+data.save("output.ply")  # Uncompressed
+data.save("output.ply", compressed=True)  # Compressed
 
 # Unpack to individual arrays
 means, scales, quats, opacities, sh0, shN = data.unpack()
 
 # Write with individual arrays
 plywrite("output.ply", means, scales, quats, opacities, sh0, shN)
-
-# Or write directly from GSData
-plywrite("output.ply", data)
-
-# Or use object-oriented API
-data.save("output.ply")  # Uncompressed
-data.save("output.ply", compressed=True)  # Compressed
-
-# Load using classmethod
-data = GSData.load("scene.ply")  # Auto-detects format
 ```
 
-### Format Detection
+### Format Conversion
 
 ```python
-from gsply import detect_format
+from gsply import GSData
+import numpy as np
 
-is_compressed, sh_degree = detect_format("model.ply")
-if is_compressed:
-    print("Compressed PlayCanvas format")
-else:
-    print(f"Uncompressed format with SH degree {sh_degree}")
-```
+# Load PLY file (log-scales, logit-opacities)
+data = GSData.load("scene.ply")
 
-### In-Memory Compression
+# Convert to linear format for easier manipulation
+data.denormalize()  # Uses fused kernel (~8-15x faster)
 
-```python
-from gsply import compress_to_bytes, decompress_from_bytes
+# Modify in linear space
+data.opacities = np.clip(data.opacities * 1.2, 0, 1)
+data.scales *= 1.1
 
-# Compress for network transfer or storage
-compressed_bytes = compress_to_bytes(data)
-
-# Decompress from bytes
-data_restored = decompress_from_bytes(compressed_bytes)
+# Convert back to PLY format before saving
+data.normalize()  # Uses fused kernel (~8-15x faster)
+data.save("modified.ply")
 ```
 
 ### GPU Acceleration
@@ -226,32 +153,28 @@ data_restored = decompress_from_bytes(compressed_bytes)
 ```python
 from gsply import GSTensor, plyread_gpu, plywrite_gpu
 
-# Direct GPU I/O (4x faster than CPU decompress + GPU transfer)
+# Direct GPU I/O (4-5x faster than CPU decompress + GPU transfer)
 gstensor = plyread_gpu("model.compressed.ply", device='cuda')
+
+# Or convert from CPU
+data = GSData.load("model.ply")
+gstensor = GSTensor.from_gsdata(data, device='cuda')
 
 # Access GPU tensors
 positions_gpu = gstensor.means  # torch.Tensor on GPU
-colors_gpu = gstensor.sh0       # torch.Tensor on GPU
+colors_gpu = gstensor.sh0        # torch.Tensor on GPU
 
 # Filter on GPU
 high_opacity = gstensor[gstensor.opacities > 0.5]
 
-# Write back to compressed PLY (GPU compression)
-plywrite_gpu("output.compressed.ply", gstensor)
+# GPU format conversion
+gstensor.denormalize()  # GPU-accelerated
 
-# Or convert from CPU data
-data = plyread("model.ply")
-gstensor = GSTensor.from_gsdata(data, device='cuda')
-
-# Or use object-oriented API
-gstensor = GSTensor.load("model.ply", device='cuda')  # Auto-detects format
-gstensor.save("output.compressed.ply")  # GPU compression (default)
-
-# Convert back to CPU
-data_cpu = gstensor.to_gsdata()
+# Write back (GPU compression)
+gstensor.save("output.compressed.ply")  # GPU compression by default
 ```
 
-### Creating GSData/GSTensor from External Data
+### Creating from External Data
 
 ```python
 from gsply import GSData, GSTensor
@@ -268,26 +191,16 @@ data = GSData.from_arrays(
     format="linear"  # or "auto", "ply", "rasterizer"
 )
 
-# Create GSData from dictionary
-data_dict = {
-    "means": means, "scales": scales, "quats": quats,
-    "opacities": opacities, "sh0": sh0, "shN": shN
-}
-data = GSData.from_dict(data_dict, format="ply")
-
-# Create GSTensor from tensors with format preset
+# Create GSTensor from tensors
 gstensor = GSTensor.from_arrays(
     means=torch.randn(1000, 3),
     scales=torch.rand(1000, 3),
     quats=torch.randn(1000, 4),
     opacities=torch.rand(1000),
     sh0=torch.randn(1000, 3),
-    format="linear",  # or "auto", "ply", "rasterizer"
+    format="linear",
     device="cuda"
 )
-
-# Create GSTensor from dictionary
-gstensor = GSTensor.from_dict(data_dict, format="ply", device="cuda")
 ```
 
 ### Data Manipulation
@@ -296,27 +209,48 @@ gstensor = GSTensor.from_dict(data_dict, format="ply", device="cuda")
 from gsply import GSData
 
 # Slicing and indexing
-subset = data[100:200]          # Slice
-first = data[0]                 # Single Gaussian
-filtered = data[data.opacities > 0.5]  # Boolean mask
+subset = data[100:200]                    # Slice
+first = data[0]                          # Single Gaussian
+filtered = data[data.opacities > 0.5]    # Boolean mask
 
 # Concatenation
-combined = data1.add(data2)     # Pairwise (1.9x faster)
-combined = data1 + data2        # Or use + operator
+combined = data1 + data2                 # Pairwise (1.9x faster)
 merged = GSData.concatenate([data1, data2, data3])  # Bulk (6.15x faster)
 
 # Optimize for faster operations
-data = data.make_contiguous()   # 2-45x speedup for operations
+data = data.make_contiguous()            # 2-45x speedup for operations
 
 # Copy and modify
 bright = data.copy()
 bright.sh0 *= 1.5  # Make brighter
+```
 
-# Format conversion before operations
-data.denormalize()  # Convert to linear for easier manipulation
-data.opacities = np.clip(data.opacities * 1.2, 0, 1)  # Modify in linear space
-data.normalize()  # Convert back to PLY format before saving
-data.save("modified.ply")
+### In-Memory Compression
+
+```python
+from gsply import compress_to_bytes, decompress_from_bytes
+
+# Compress for network transfer or storage
+compressed_bytes = compress_to_bytes(data)
+
+# Decompress from bytes
+data_restored = decompress_from_bytes(compressed_bytes)
+```
+
+### SOG Format (Optional)
+
+```python
+from gsply import sogread
+
+# Read SOG file - returns GSData (same API as plyread)
+data = sogread("model.sog")
+positions = data.means
+colors = data.sh0
+
+# Read from bytes (in-memory, no disk I/O)
+with open("model.sog", "rb") as f:
+    sog_bytes = f.read()
+data = sogread(sog_bytes)  # Fully in-memory extraction
 ```
 
 ---
@@ -339,8 +273,12 @@ data.save("modified.ply")
 - Write: 29M Gaussians/sec (100K Gaussians, SH0, compressed)
 
 **GPU Transfer (400K Gaussians, RTX 3090 Ti):**
-- With `_base` optimization (from `plyread()`): 1.99ms (11x faster, single tensor transfer)
-- Without `_base` (manual stacking): 22.78ms (CPU copy + transfer)
+- With `_base` optimization: 1.99ms (11x faster, single tensor transfer)
+- Without `_base`: 22.78ms (CPU copy + transfer)
+
+**Format Conversion (Fused Kernels):**
+- `normalize()` / `denormalize()`: ~8-15x faster with parallel Numba kernels
+- Single-pass processing reduces memory overhead
 
 See detailed [performance benchmarks](docs/API_REFERENCE.md#performance) for more information.
 
@@ -365,7 +303,7 @@ Chunk-based quantized format:
 - Automatically saves as `.compressed.ply` when `compressed=True`
 - Compression ratio: 71-74% size reduction
 - Compatible with PlayCanvas, SuperSplat, other WebGL viewers
-- Parallel compression/decompression
+- Parallel compression/decompression with Numba JIT
 
 ### SOG Format (Splat Ordering Grid) - Optional
 
@@ -375,79 +313,82 @@ WebP-based texture format for web deployment:
 - Codebook-based compression for scales and colors
 - Compatible with PlayCanvas splat-transform
 - Supports both `.sog` ZIP bundles and folder formats
-- **Returns GSData**: Same container as `plyread()` for consistent API
-- **In-memory ZIP extraction**: Can read directly from bytes without disk I/O
-
-```python
-from gsply import sogread
-
-# Read from file path - returns GSData (same as plyread)
-data = sogread("model.sog")
-positions = data.means  # Same API as GSData from plyread
-colors = data.sh0
-
-# Read from bytes (in-memory, no disk I/O)
-with open("model.sog", "rb") as f:
-    sog_bytes = f.read()
-data = sogread(sog_bytes)  # Returns GSData - fully in-memory extraction and decoding
-```
+- Returns `GSData` container (same API as `plyread()`)
+- In-memory ZIP extraction: Can read directly from bytes
 
 ---
 
 ## API Reference
 
-Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFERENCE.md):
+Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
-**Core I/O:**
-- `plyread(file_path)` - Read PLY files
+### Core I/O
+- `plyread(file_path)` - Read PLY files (auto-detects format)
 - `plywrite(file_path, ...)` - Write PLY files
 - `detect_format(file_path)` - Detect format and SH degree
-- `create_ply_format(sh_degree)` - Create PLY format dict (log-scales, logit-opacities)
-- `create_rasterizer_format(sh_degree)` - Create rasterizer format dict (linear scales/opacities)
-- `sogread(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
+- `sogread(file_path | bytes)` - Read SOG files (optional)
 
-**GSData Container:**
-- `data.save(file_path, compressed=False)` - Save to PLY file
-- `GSData.load(file_path)` - Load from PLY file (classmethod, auto-detects format)
-- `GSData.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto')` - Create from arrays with format preset
-- `GSData.from_dict(data_dict, format='auto')` - Create from dictionary with format preset
-- `data.unpack()` - Unpack to tuple
-- `data.to_dict()` - Convert to dictionary
-- `data.copy()` - Deep copy
-- `data.consolidate()` - Optimize for slicing
-- `data.normalize(inplace=True)` / `data.to_ply_format()` - Convert linear → PLY format (log/logit, modifies in-place by default)
-- `data.denormalize(inplace=True)` / `data.from_ply_format()` / `data.to_linear()` - Convert PLY format → linear (modifies in-place by default)
-- `data.to_rgb(inplace=True)` - Convert sh0 from SH format to RGB colors (Numba-optimized, modifies in-place by default)
-- `data.to_sh(inplace=True)` - Convert sh0 from RGB format to SH coefficients (Numba-optimized, modifies in-place by default)
+### GSData Container
+- `GSData.load(file_path)` - Load from PLY (classmethod)
+- `data.save(file_path, compressed=False)` - Save to PLY
+- `GSData.from_arrays(...)` - Create from arrays with format preset
+- `GSData.from_dict(...)` - Create from dictionary with format preset
+- `data.normalize()` / `data.denormalize()` - Format conversion (fused kernels, ~8-15x faster)
+- `data.to_rgb()` / `data.to_sh()` - Color conversion
 - `data[index]` - Indexing and slicing
+- `data.unpack()` - Unpack to tuple
+- `data.copy()` - Deep copy
 
-**Compression:**
+### Compression APIs
 - `compress_to_bytes(data)` - Compress to bytes
 - `compress_to_arrays(data)` - Compress to arrays
 - `decompress_from_bytes(bytes)` - Decompress from bytes
 
-**Utilities:**
-- `sh2rgb(sh)` - SH to RGB conversion
-- `rgb2sh(rgb)` - RGB to SH conversion
-- `logit(x, eps=1e-6)` - Logit function (optimized CPU)
-- `sigmoid(x)` - Sigmoid function (optimized CPU)
+### Utility Functions
+- `sh2rgb(sh)` / `rgb2sh(rgb)` - Color conversion
+- `logit(x)` / `sigmoid(x)` - Optimized CPU functions
+- `apply_pre_activations(data, ...)` - Fused activation kernel (~8-15x faster)
+- `apply_pre_deactivations(data, ...)` - Fused deactivation kernel (~8-15x faster)
 - `SH_C0` - Normalization constant
 
-**GPU Support (PyTorch):**
-- `GSTensor.load(file_path, device='cuda')` - Load from PLY file (classmethod, auto-detects format)
-- `GSTensor.from_arrays(means, scales, quats, opacities, sh0, shN=None, format='auto', device='cuda')` - Create from tensors with format preset
-- `GSTensor.from_dict(data_dict, format='auto', device='cuda')` - Create from dictionary with format preset
-- `gstensor.save(file_path, compressed=True)` - Save to PLY file (GPU compression by default)
-- `gstensor.save_compressed(file_path)` - Save compressed PLY (convenience alias)
+### GPU Support (PyTorch)
+- `GSTensor.load(file_path, device='cuda')` - Load from PLY (classmethod)
+- `gstensor.save(file_path, compressed=True)` - Save with GPU compression
+- `GSTensor.from_arrays(...)` - Create from tensors with format preset
 - `GSTensor.from_gsdata(data, device='cuda')` - Convert to GPU
 - `gstensor.to_gsdata()` - Convert to CPU
-- `gstensor.normalize(inplace=True)` / `gstensor.to_ply_format()` - Convert linear → PLY format (GPU, modifies in-place by default)
-- `gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format()` / `gstensor.to_linear()` - Convert PLY format → linear (GPU, modifies in-place by default)
-- `gstensor.to_rgb(inplace=True)` - Convert sh0 from SH format to RGB colors (GPU, modifies in-place by default)
-- `gstensor.to_sh(inplace=True)` - Convert sh0 from RGB format to SH coefficients (GPU, modifies in-place by default)
+- `gstensor.normalize()` / `gstensor.denormalize()` - GPU format conversion
+- `gstensor.to_rgb()` / `gstensor.to_sh()` - GPU color conversion
 - Device management: `.to()`, `.cpu()`, `.cuda()`
 - Precision: `.half()`, `.float()`, `.double()`
-- Full slicing and manipulation support
+
+---
+
+## What's New
+
+### v0.2.7 - Fused Activation Kernels & Performance Optimization
+
+- **Fused Activation Kernels**: Ultra-fast format conversion with parallel Numba kernels
+  - `apply_pre_activations()` - Fused kernel for activating scales, opacities, and quaternions (~8-15x faster)
+  - `apply_pre_deactivations()` - Fused kernel for deactivating scales and opacities (~8-15x faster)
+  - `normalize()` and `denormalize()` now use optimized fused kernels internally
+  - Single-pass processing reduces memory overhead and improves cache locality
+
+### v0.2.6 - Format Safety & Auto-detection
+
+- **Convenience Factory Methods**: `GSData.from_arrays()`, `GSData.from_dict()`, `GSTensor.from_arrays()`, `GSTensor.from_dict()`
+- **Auto-Format Detection**: Smart heuristics automatically detect PLY vs Linear format
+- **Format Safety**: Strict validation prevents mixing incompatible formats
+- **Format Helpers**: `create_ply_format()`, `create_rasterizer_format()`
+
+### v0.2.5 - SOG Format Support & API Improvements
+
+- **SOG Format Support**: `sogread()` - Read SOG (Splat Ordering Grid) format files
+- **Object-Oriented I/O API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
+- **Format Conversion API**: `normalize()`, `denormalize()` for linear ↔ PLY format conversion
+- **Color Conversion API**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
+
+[Full Changelog](docs/CHANGELOG.md) • [API Reference](docs/API_REFERENCE.md)
 
 ---
 
@@ -479,19 +420,18 @@ gsply/
 │   ├── reader.py       # PLY reading
 │   ├── writer.py       # PLY writing
 │   ├── formats.py      # Format detection
+│   ├── utils.py        # Utility functions (fused kernels)
 │   └── torch/          # PyTorch integration
 │       └── gstensor.py # GSTensor GPU dataclass
-├── tests/              # Unit tests (348 tests)
+├── tests/              # Unit tests (365 tests)
 ├── benchmarks/         # Performance benchmarks
 ├── docs/               # Documentation
 └── pyproject.toml      # Package configuration
 ```
 
----
+### Testing
 
-## Testing
-
-gsply has comprehensive test coverage with 348 passing tests:
+gsply has comprehensive test coverage with **365 passing tests**:
 
 ```bash
 # Run all tests
@@ -504,11 +444,7 @@ pytest tests/ -v -k "torch or gstensor"
 pytest tests/ -v --cov=gsply --cov-report=html
 ```
 
----
-
-## Benchmarking
-
-Compare gsply performance against other PLY libraries:
+### Benchmarking
 
 ```bash
 # Install benchmark dependencies
@@ -516,41 +452,27 @@ pip install -e .[benchmark]
 
 # Run benchmark
 python benchmarks/benchmark.py
-
-# Custom settings
-python benchmarks/benchmark.py --config.file path/to/model.ply --config.iterations 20
 ```
 
 ---
 
 ## Documentation
 
-- [API Reference](docs/API_REFERENCE.md) - Complete API documentation
-- [Changelog](docs/CHANGELOG.md) - Version history and release notes
-- [Contributing](.github/CONTRIBUTING.md) - Contribution guidelines
-
----
-
-## CI/CD
-
-Complete GitHub Actions pipeline:
-- Multi-platform: Ubuntu, Windows, macOS
-- Multi-version: Python 3.10, 3.11, 3.12, 3.13
-- Core + PyTorch testing
-- Automated benchmarking
-- PyPI publishing on release
+- **[API Reference](docs/API_REFERENCE.md)** - Complete API documentation
+- **[Changelog](docs/CHANGELOG.md)** - Version history and release notes
+- **[Contributing](docs/CONTRIBUTING.md)** - Contribution guidelines
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please see [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
 **Quick start:**
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes with tests
-4. Run tests and benchmarks
+4. Run tests: `pytest tests/ -v`
 5. Submit a pull request
 
 ---
@@ -589,6 +511,6 @@ If you use gsply in your research, please cite:
 
 **Made with Python and numpy**
 
-[Report Bug](https://github.com/OpsiClear/gsply/issues) | [Request Feature](https://github.com/OpsiClear/gsply/issues) | [Documentation](docs/API_REFERENCE.md)
+[Report Bug](https://github.com/OpsiClear/gsply/issues) • [Request Feature](https://github.com/OpsiClear/gsply/issues) • [Documentation](docs/API_REFERENCE.md)
 
 </div>

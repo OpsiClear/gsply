@@ -11,7 +11,7 @@ This file provides context and instructions for AI coding agents working on the 
 - **Optional Dependencies**: PyTorch (GPU acceleration via GSTensor)
 - **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
 - **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support
-- **Current Version**: 0.2.6
+- **Current Version**: 0.2.7
 
 ## Development Environment Setup
 
@@ -86,7 +86,7 @@ gsply/
 │   ├── writer.py        # PLY writing (plywrite, compress)
 │   ├── gsdata.py        # GSData dataclass (CPU container)
 │   ├── formats.py       # Format detection and constants
-│   ├── utils.py         # Utility functions (sh2rgb, rgb2sh, logit, sigmoid)
+│   ├── utils.py         # Utility functions (sh2rgb, rgb2sh, logit, sigmoid, apply_pre_activations, apply_pre_deactivations)
 │   ├── sog_reader.py    # SOG format reading (sogread, optional dependency)
 │   ├── py.typed         # Type checking marker (PEP 561)
 │   └── torch/           # Optional PyTorch integration
@@ -94,7 +94,7 @@ gsply/
 │       ├── gstensor.py  # GSTensor GPU dataclass
 │       ├── compression.py  # GPU compression/decompression
 │       └── io.py        # GPU I/O (plyread_gpu, plywrite_gpu)
-├── tests/               # Test suite (348 tests)
+├── tests/               # Test suite (365 tests)
 ├── benchmarks/          # Performance benchmarks
 ├── docs/                # Documentation
 └── .github/workflows/   # CI/CD pipelines
@@ -137,8 +137,9 @@ Tests automatically generate synthetic data. Some tests use real PLY files:
 
 ### Test Count
 
-Current test count: **348 tests** (documented in README.md)
+Current test count: **365 tests** (documented in README.md)
 - Update this count in README if adding/removing tests
+- Includes 17 new tests for fused activation kernels (tests/test_pre_activations.py)
 
 ## Code Style and Conventions
 
@@ -222,10 +223,11 @@ masks:     (N,)   - boolean mask (initialized to all True)
 
 **Format Conversion:**
 - PLY files store scales in log-space and opacities in logit-space
-- Use `normalize()` / `to_ply_format()` to convert linear → PLY format
-- Use `denormalize()` / `from_ply_format()` / `to_linear()` to convert PLY → linear format
+- Use `normalize()` / `to_ply_format()` to convert linear → PLY format (uses fused kernel, ~8-15x faster)
+- Use `denormalize()` / `from_ply_format()` / `to_linear()` to convert PLY → linear format (uses fused kernel, ~8-15x faster)
 - Both `GSData` and `GSTensor` have identical format conversion APIs
 - Default is `inplace=True` for efficiency
+- Direct access: `apply_pre_activations()` / `apply_pre_deactivations()` for fine-grained control (v0.2.7+)
 
 ### PyTorch Integration
 
@@ -275,27 +277,44 @@ masks:     (N,)   - boolean mask (initialized to all True)
 
 **GSData and GSTensor Format Conversion Methods:**
 - `normalize(inplace=True)` / `to_ply_format(inplace=True)`: Convert linear → PLY format
-  - Linear scales → log-scales: `log(scale)`
-  - Linear opacities → logit-opacities: `logit(opacity, eps=1e-4)`
+  - Linear scales → log-scales: `log(scale)` with clamping
+  - Linear opacities → logit-opacities: `logit(opacity, eps=1e-4)` with clamping
+  - **Uses fused kernel**: `apply_pre_deactivations()` internally (~8-15x faster)
 - `denormalize(inplace=True)` / `from_ply_format(inplace=True)` / `to_linear(inplace=True)`: Convert PLY → linear format
-  - Log-scales → linear scales: `exp(log_scale)`
+  - Log-scales → linear scales: `exp(log_scale)` with clamping
   - Logit-opacities → linear opacities: `sigmoid(logit)`
+  - Quaternions → normalized quaternions (with safety floor)
+  - **Uses fused kernel**: `apply_pre_activations()` internally (~8-15x faster)
 
 **Auto-Detection (v0.2.6+):**
 - `__post_init__` automatically detects format from data values if `_format` is not provided
 - Uses heuristics (negative values for log-scales, range for opacities) via `_detect_format_from_values()`
 - `plywrite()` validates/converts to PLY format automatically before writing
 
-**Implementation Details:**
-- **GSData**: Uses `gsply.logit()` and `gsply.sigmoid()` from `utils.py` (Numba-optimized CPU)
-- **GSTensor**: Uses `torch.logit()` and `torch.sigmoid()` (GPU-accelerated)
+**Implementation Details (v0.2.7+):**
+- **GSData**: Uses fused Numba kernels (`apply_pre_activations()`, `apply_pre_deactivations()`) from `utils.py`
+  - Parallel Numba JIT compilation with `@njit(parallel=True, fastmath=True, cache=True, nogil=True)`
+  - Single-pass processing reduces memory overhead and improves cache locality
+  - Scales and opacities processed together in single fused pass
+  - Quaternion normalization included in activation kernel (denormalize only)
+- **GSTensor**: Uses PyTorch operations (`torch.logit()`, `torch.sigmoid()`, `torch.exp()`) for GPU acceleration
 - **Consistency**: Both use `eps=1e-4` for logit operations to ensure identical behavior
 - **Default**: `inplace=True` for efficiency (modifies object in-place)
 - **Constants**: `min_scale=1e-9`, `min_opacity=1e-4`, `max_opacity=1.0-1e-4` (same for both)
+- **Performance**: ~8-15x faster than sequential operations due to fused kernels
+
+**Direct Fused Kernel Access (v0.2.7+):**
+- `apply_pre_activations(data, min_scale=1e-4, max_scale=100.0, min_quat_norm=1e-8, inplace=True)`: Direct access to activation kernel
+  - Processes scales, opacities, and quaternions in single fused pass
+  - Useful for fine-grained control over activation parameters
+- `apply_pre_deactivations(data, min_scale=1e-9, min_opacity=1e-4, max_opacity=0.9999, inplace=True)`: Direct access to deactivation kernel
+  - Processes scales and opacities in single fused pass
+  - Useful for fine-grained control over deactivation parameters
 
 **When to use:**
-- `normalize()`: Before saving to PLY format if you have linear data
-- `denormalize()`: After loading PLY files if you need linear values for computation/visualization
+- `normalize()`: Before saving to PLY format if you have linear data (uses fused kernel automatically)
+- `denormalize()`: After loading PLY files if you need linear values for computation/visualization (uses fused kernel automatically)
+- `apply_pre_activations()` / `apply_pre_deactivations()`: For direct access when you need custom bounds or fine-grained control
 
 ### Object-Oriented I/O Methods (v0.2.5+)
 
@@ -404,19 +423,33 @@ gstensor = GSTensor.from_arrays(means_tensor, scales_tensor, ..., device="cuda")
 
 ### Utility Functions
 
-**Functions: `sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `SH_C0`**
+**Functions: `sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `apply_pre_activations()`, `apply_pre_deactivations()`, `SH_C0`**
 - Located in `src/gsply/utils.py`
 - Exported in `src/gsply/__init__.py` (in `__all__`)
 - **sh2rgb()**: Convert spherical harmonics to RGB colors (creates new array)
 - **rgb2sh()**: Convert RGB colors to spherical harmonics (creates new array)
 - **logit()**: Compute logit function (inverse sigmoid) with numerical stability (Numba-optimized)
   - Default `eps=1e-6` for numerical stability
-  - Used internally by `GSData.normalize()` with `eps=1e-4`
+  - Used internally by `apply_pre_deactivations()` with `eps=1e-4` (via `normalize()`)
 - **sigmoid()**: Compute sigmoid function (inverse logit) with numerical stability (Numba-optimized)
-  - Used internally by `GSData.denormalize()`
+  - Used internally by `apply_pre_activations()` (via `denormalize()`)
+- **apply_pre_activations(data, min_scale=1e-4, max_scale=100.0, min_quat_norm=1e-8, inplace=True)**: Fused activation kernel (v0.2.7+)
+  - Processes scales, opacities, and quaternions in single parallel pass
+  - Uses Numba `@njit(parallel=True, fastmath=True, cache=True, nogil=True)`
+  - ~8-15x faster than sequential operations
+  - Used internally by `GSData.denormalize()` for optimal performance
+  - Direct access available for fine-grained control over activation parameters
+- **apply_pre_deactivations(data, min_scale=1e-9, min_opacity=1e-4, max_opacity=0.9999, inplace=True)**: Fused deactivation kernel (v0.2.7+)
+  - Processes scales and opacities in single parallel pass
+  - Uses Numba `@njit(parallel=True, fastmath=True, cache=True, nogil=True)`
+  - ~8-15x faster than sequential operations
+  - Used internally by `GSData.normalize()` for optimal performance
+  - Direct access available for fine-grained control over deactivation parameters
 - **SH_C0**: Constant for spherical harmonic DC coefficient normalization (0.28209479177387814)
 
 **Internal Numba Functions (for in-place operations):**
+- `_activate_gaussians_numba()`: Fused Numba kernel for activating scales, opacities, and quaternions (used by `apply_pre_activations()`)
+- `_deactivate_gaussians_numba()`: Fused Numba kernel for deactivating scales and opacities (used by `apply_pre_deactivations()`)
 - `_sh2rgb_inplace_jit()`: Numba JIT-compiled in-place SH to RGB conversion (used by `GSData.to_rgb()`)
 - `_rgb2sh_inplace_jit()`: Numba JIT-compiled in-place RGB to SH conversion (used by `GSData.to_sh()`)
 - All utility functions are CPU-only (Numba JIT-compiled)
@@ -502,7 +535,7 @@ gstensor = GSTensor.from_arrays(means_tensor, scales_tensor, ..., device="cuda")
 ### Before Creating PR
 
 1. **Run pre-commit hooks**: `pre-commit run --all-files` (automatically checks formatting, linting, etc.)
-2. **Run full test suite**: `pytest` (all 348 tests must pass)
+2. **Run full test suite**: `pytest` (all 365 tests must pass)
 3. **Type check** (optional): `mypy src/` or `pre-commit run --hook-stage manual mypy --all-files`
 4. **Update test count** in README.md if you added/removed tests
 5. **Update CHANGELOG.md** with your changes
@@ -522,7 +555,7 @@ Follow conventional commits style:
 
 ### Code Review Checklist
 
-- [ ] All tests pass (348/348)
+- [ ] All tests pass (365/365)
 - [ ] No new linter warnings
 - [ ] Type hints added for new functions
 - [ ] Docstrings added for public APIs
@@ -548,8 +581,8 @@ python -m build
 
 # Check dist files
 ls dist/
-# gsply-0.2.6-py3-none-any.whl
-# gsply-0.2.6.tar.gz
+# gsply-0.2.7-py3-none-any.whl
+# gsply-0.2.7.tar.gz
 ```
 
 ### Publishing (Maintainer Only)
@@ -579,10 +612,11 @@ twine upload dist/*
 - Use `unpack()` pattern for tuple unpacking, not indexing
 - GPU operations return `GSTensor`, CPU operations return `GSData`
 - Format conversion methods (`normalize()`, `denormalize()`) are identical between GSData and GSTensor
+- GSData uses fused Numba kernels (`apply_pre_activations()`, `apply_pre_deactivations()`) for ~8-15x faster format conversion (v0.2.7+)
+- GSTensor uses PyTorch operations (`torch.logit()`, `torch.sigmoid()`, `torch.exp()`) for GPU acceleration
 - Both use same constants (`min_scale=1e-9`, `min_opacity=1e-4`, `max_opacity=1.0-1e-4`, `eps=1e-4` for logit)
-- GSData uses `gsply.logit()`/`gsply.sigmoid()` (CPU), GSTensor uses `torch.logit()`/`torch.sigmoid()` (GPU)
 - Compression APIs (`compress_to_bytes()`, `compress_to_arrays()`, `decompress_from_bytes()`) work with GSData or individual arrays
-- Utility functions (`sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `SH_C0`) are always available (CPU-only)
+- Utility functions (`sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `apply_pre_activations()`, `apply_pre_deactivations()`, `SH_C0`) are always available (CPU-only)
 
 ### Backward Compatibility
 

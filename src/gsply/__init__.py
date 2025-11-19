@@ -55,10 +55,18 @@ Performance (400K Gaussians, SH0):
 from gsply.formats import detect_format
 from gsply.gsdata import GSData, create_linear_format, create_ply_format, create_rasterizer_format
 from gsply.reader import decompress_from_bytes, plyread
-from gsply.utils import SH_C0, logit, rgb2sh, sh2rgb, sigmoid
+from gsply.utils import (
+    SH_C0,
+    apply_pre_activations,
+    apply_pre_deactivations,
+    logit,
+    rgb2sh,
+    sh2rgb,
+    sigmoid,
+)
 from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 __all__ = [
     "plyread",
     "GSData",
@@ -74,6 +82,8 @@ __all__ = [
     "rgb2sh",
     "logit",
     "sigmoid",
+    "apply_pre_activations",
+    "apply_pre_deactivations",
     "SH_C0",
     "__version__",
 ]
