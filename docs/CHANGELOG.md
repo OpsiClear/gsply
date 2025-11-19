@@ -4,7 +4,7 @@
 
 ### New Features
 - **SOG Format Reader**: Read SOG (Splat Ordering Grid) format files
-  - `read_sog(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
+  - `sogread(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
   - Returns `GSData` container (same as `plyread()`) for consistent API
   - Supports `.sog` ZIP bundles and folder formats
   - **In-memory ZIP extraction**: Can read directly from bytes without disk I/O

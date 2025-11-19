@@ -317,6 +317,143 @@ class GSTensor:
         # Perform conversion using PyTorch (handles logit correctly)
         return self.to_ply_tensor().to_gsdata()
 
+    def normalize(self, inplace: bool = True) -> GSTensor:
+        """Convert linear scales/opacities to PLY format (log-scales, logit-opacities).
+
+        Converts:
+        - Linear scales → log-scales: log(scale)
+        - Linear opacities → logit-opacities: logit(opacity)
+
+        This is the standard format used in Gaussian Splatting PLY files.
+        Use this when you have linear data and need to save to PLY format.
+
+        :param inplace: If True, modify this object in-place (default). If False, return new object.
+        :returns: GSTensor object (self if inplace=True, new object otherwise)
+
+        Example:
+            >>> # Data with linear scales and opacities
+            >>> gstensor = GSTensor(scales=torch.tensor([[0.1, 0.2, 0.3]]), opacities=torch.tensor([0.5]), ...)
+            >>> # Convert to PLY format in-place (modifies gstensor)
+            >>> gstensor.normalize()  # or: gstensor.normalize(inplace=True)
+            >>> # Now ready to save with plywrite_gpu()
+            >>> plywrite_gpu("output.ply", gstensor)
+            >>>
+            >>> # Or create a copy if you need to keep original
+            >>> ply_tensor = gstensor.normalize(inplace=False)
+        """
+        # Constants for numerical stability
+        min_scale = 1e-9
+        min_opacity = 1e-4
+        max_opacity = 1.0 - 1e-4
+
+        # Convert linear scales to log-scales: log(scale)
+        scales = torch.log(torch.clamp(self.scales, min=min_scale))
+
+        # Convert linear opacities to logit-opacities: logit(opacity)
+        # Use eps=min_opacity to match GSData behavior (1e-4)
+        opacities = torch.logit(
+            torch.clamp(self.opacities, min=min_opacity, max=max_opacity), eps=min_opacity
+        )
+
+        if inplace:
+            self.scales = scales
+            self.opacities = opacities
+            self._base = None  # Invalidate _base since we modified tensors
+            return self
+
+        return GSTensor(
+            means=self.means,
+            scales=scales,
+            quats=self.quats,
+            opacities=opacities,
+            sh0=self.sh0,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=None,
+        )
+
+    def denormalize(self, inplace: bool = True) -> GSTensor:
+        """Convert PLY format (log-scales, logit-opacities) to linear format.
+
+        Converts:
+        - Log-scales → linear scales: exp(log_scale)
+        - Logit-opacities → linear opacities: sigmoid(logit)
+
+        Use this when you load PLY files (which use log/logit format) and need
+        linear values for computations or visualization.
+
+        :param inplace: If True, modify this object in-place (default). If False, return new object.
+        :returns: GSTensor object (self if inplace=True, new object otherwise)
+
+        Example:
+            >>> # Load PLY file (contains log-scales and logit-opacities)
+            >>> gstensor = plyread_gpu("scene.ply")
+            >>> # Convert to linear format in-place (modifies gstensor)
+            >>> gstensor.denormalize()  # or: gstensor.denormalize(inplace=True)
+            >>> # Now scales and opacities are in linear space [0, 1] for opacities
+            >>> print(f"Linear opacity range: [{gstensor.opacities.min():.3f}, {gstensor.opacities.max():.3f}]")
+            >>>
+            >>> # Or create a copy if you need to keep PLY format
+            >>> linear_tensor = gstensor.denormalize(inplace=False)
+        """
+        # Convert log-scales back to linear: exp(log_scale)
+        scales = torch.exp(self.scales)
+
+        # Convert logit-opacities back to linear: sigmoid(logit)
+        opacities = torch.sigmoid(self.opacities)
+
+        if inplace:
+            self.scales = scales
+            self.opacities = opacities
+            self._base = None  # Invalidate _base since we modified tensors
+            return self
+
+        return GSTensor(
+            means=self.means,
+            scales=scales,
+            quats=self.quats,
+            opacities=opacities,
+            sh0=self.sh0,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=None,
+        )
+
+    def to_ply_format(self, inplace: bool = True) -> GSTensor:
+        """Alias for normalize() - Convert linear scales/opacities to PLY format.
+
+        Converts linear scales → log-scales and linear opacities → logit-opacities.
+        See normalize() for full documentation.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSTensor object with PLY format (log-scales, logit-opacities)
+        """
+        return self.normalize(inplace=inplace)
+
+    def from_ply_format(self, inplace: bool = True) -> GSTensor:
+        """Alias for denormalize() - Convert PLY format to linear scales/opacities.
+
+        Converts log-scales → linear scales and logit-opacities → linear opacities.
+        See denormalize() for full documentation.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSTensor object with linear scales and opacities
+        """
+        return self.denormalize(inplace=inplace)
+
+    def to_linear(self, inplace: bool = True) -> GSTensor:
+        """Alias for denormalize() - Convert PLY format (log/logit) to linear.
+
+        Converts log-scales → linear scales and logit-opacities → linear opacities.
+        See denormalize() for full documentation.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSTensor object with linear scales and opacities
+        """
+        return self.denormalize(inplace=inplace)
+
     # ==========================================================================
     # Device Management
     # ==========================================================================

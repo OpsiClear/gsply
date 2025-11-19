@@ -280,7 +280,7 @@ def _load_webp_image(data: bytes) -> tuple[np.ndarray, int, int]:
     return rgba_flat, width, height
 
 
-def read_sog(file_path: str | Path | bytes) -> GSData:
+def sogread(file_path: str | Path | bytes) -> GSData:
     """Read SOG (Splat Ordering Grid) format file.
 
     Returns GSData container (same as plyread) for consistent API.
@@ -294,14 +294,14 @@ def read_sog(file_path: str | Path | bytes) -> GSData:
 
     Example:
         >>> # From file path - returns GSData (same as plyread)
-        >>> data = read_sog("model.sog")
+        >>> data = sogread("model.sog")
         >>> print(f"Loaded {len(data)} Gaussians")
         >>> positions = data.means  # Same API as GSData from plyread
         >>>
         >>> # From bytes (in-memory)
         >>> with open("model.sog", "rb") as f:
         ...     sog_bytes = f.read()
-        >>> data = read_sog(sog_bytes)  # Returns GSData
+        >>> data = sogread(sog_bytes)  # Returns GSData
     """
     entries: dict[str, bytes] | None = None
     path_obj: Path | None = None
@@ -452,4 +452,4 @@ def read_sog(file_path: str | Path | bytes) -> GSData:
     )
 
 
-__all__ = ["read_sog"]
+__all__ = ["sogread"]

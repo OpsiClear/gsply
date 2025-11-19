@@ -8,15 +8,16 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
     - [`plyread(file_path)`](#plyreadfile_path)
     - [`plywrite(file_path, means, scales, quats, opacities, sh0, shN=None, compressed=False)`](#plywritefile_path-means-scales-quats-opacities-sh0-shnnone-compressedfalse)
     - [`detect_format(file_path)`](#detect_formatfile_path)
-    - [`read_sog(file_path | bytes)`](#read_sogfile_path--bytes)
+    - [`sogread(file_path | bytes)`](#sogreadfile_path--bytes)
   - [GSData](#gsdata)
     - [`data.unpack(include_shN=True)`](#dataunpackinclude_shntrue)
     - [`data.to_dict()`](#datato_dict)
     - [`data.copy()`](#datacopy)
     - [`data.consolidate()`](#dataconsolidate)
     - [`data[index]`](#dataindex)
-    - [`data.normalize(inplace=False)`](#datanormalizeinplacefalse)
-    - [`data.denormalize(inplace=False)`](#datadenormalizeinplacefalse)
+    - [Format Conversion: Linear ↔ PLY Format](#format-conversion-linear--ply-format)
+    - [`data.normalize(inplace=True)` / `data.to_ply_format(inplace=True)`](#datanormalizeinplacetrue--datato_ply_formatinplacetrue)
+    - [`data.denormalize(inplace=True)` / `data.from_ply_format(inplace=True)` / `data.to_linear(inplace=True)`](#datadenormalizeinplacetrue--datafrom_ply_formatinplacetrue--datato_linearinplacetrue)
     - [`len(data)`](#lendata)
     - [`plyread_gpu(file_path, device='cuda')`](#plyread_gpufile_path-devicecuda)
     - [`plywrite_gpu(file_path, gstensor, compressed=True)`](#plywrite_gpufile_path-gstensor-compressedtrue)
@@ -35,8 +36,9 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
     - [Performance](#performance)
     - [`GSTensor.from_gsdata(data, device='cuda', dtype=torch.float32, requires_grad=False)`](#gstensorfrom_gsdatadata-devicecuda-dtypetorchfloat32-requires_gradfalse)
     - [`gstensor.to_gsdata()`](#gstensorto_gsdata)
-    - [`gstensor.normalize(inplace=False)`](#gstensornormalizeinplacefalse)
-    - [`gstensor.denormalize(inplace=False)`](#gstensordenormalizeinplacefalse)
+    - [Format Conversion: Linear ↔ PLY Format (GSTensor)](#format-conversion-linear--ply-format-gstensor)
+    - [`gstensor.normalize(inplace=True)` / `gstensor.to_ply_format(inplace=True)`](#gstensornormalizeinplacetrue--gstensorto_ply_formatinplacetrue)
+    - [`gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format(inplace=True)` / `gstensor.to_linear(inplace=True)`](#gstensordenormalizeinplacetrue--gstensorfrom_ply_formatinplacetrue--gstensorto_linearinplacetrue)
     - [`gstensor.to(device=None, dtype=None)`](#gstensortodevicenone-dtypenone)
     - [`gstensor.consolidate()`](#gstensorconsolidate)
     - [`gstensor.clone()`](#gstensorclone)
@@ -172,7 +174,7 @@ else:
 
 ---
 
-### `read_sog(file_path | bytes)`
+### `sogread(file_path | bytes)`
 
 Read SOG (Splat Ordering Grid) format file.
 
@@ -203,10 +205,10 @@ Can also accept bytes directly for in-memory ZIP extraction.
 
 **Example:**
 ```python
-from gsply import read_sog
+from gsply import sogread
 
 # Read from file path - returns GSData (same as plyread)
-data = read_sog("model.sog")
+data = sogread("model.sog")
 print(f"Loaded {len(data)} Gaussians")
 positions = data.means  # Same API as GSData from plyread
 colors = data.sh0
@@ -214,7 +216,7 @@ colors = data.sh0
 # Read from bytes (in-memory, no disk I/O)
 with open("model.sog", "rb") as f:
     sog_bytes = f.read()
-data = read_sog(sog_bytes)  # Returns GSData - fully in-memory extraction and decoding
+data = sogread(sog_bytes)  # Returns GSData - fully in-memory extraction and decoding
 
 # Compatible with all GSData operations
 means, scales, quats, opacities, sh0, shN = data.unpack()
@@ -402,50 +404,78 @@ every_10th = data[::10]
 
 ---
 
-### `data.normalize(inplace=False)`
+### Format Conversion: Linear ↔ PLY Format
 
-Convert to PLY-compatible log/logit scaling (normalize to PLY format).
+GSData provides methods to convert between linear and PLY formats:
 
-Converts linear scales to log-scales and linear opacities to logit-opacities, which is the standard format for Gaussian Splatting PLY files. Uses optimized Numba-accelerated functions for performance.
+**PLY Format** (used in `.ply` files):
+- Scales: log-space (`log(scale)`)
+- Opacities: logit-space (`logit(opacity)`)
+
+**Linear Format** (easier for computation/visualization):
+- Scales: linear values (e.g., `0.1`, `0.5`, `1.0`)
+- Opacities: linear values in range `[0, 1]`
+
+---
+
+### `data.normalize(inplace=True)` / `data.to_ply_format(inplace=True)`
+
+Convert **linear scales/opacities → PLY format** (log-scales, logit-opacities).
+
+**Converts:**
+- Linear scales → log-scales: `log(scale)`
+- Linear opacities → logit-opacities: `logit(opacity)` (uses `gsply.logit()` with `eps=1e-4`)
+
+**When to use:** When you have linear data and need to save to PLY format.
+
+**Note:** Uses `gsply.logit()` from `utils.py` (Numba-optimized CPU implementation). Behavior matches `GSTensor.normalize()` for consistency.
 
 **Parameters:**
-- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
 
 **Returns:**
 - `GSData`: GSData object (self if inplace=True, new object otherwise)
 
 **Example:**
 ```python
-from gsply import GSData
+from gsply import GSData, plywrite
 import numpy as np
 
 # Create GSData with linear scales and opacities
 data = GSData(
     means=np.random.randn(100, 3),
-    scales=np.random.rand(100, 3) * 0.1 + 0.01,  # Linear scales
+    scales=np.random.rand(100, 3) * 0.1 + 0.01,  # Linear scales: [0.01, 0.11]
     quats=np.random.randn(100, 4),
-    opacities=np.random.rand(100) * 0.8 + 0.1,  # Linear opacities
+    opacities=np.random.rand(100) * 0.8 + 0.1,  # Linear opacities: [0.1, 0.9]
     sh0=np.random.randn(100, 3),
     shN=None
 )
 
-# Convert to PLY format in-place
-data.normalize(inplace=True)
+# Convert to PLY format in-place (modifies data)
+data.normalize()  # or: data.normalize(inplace=True) or data.to_ply_format()
+# Now ready to save
+plywrite("output.ply", data)
 
-# Or create a copy
+# Or create a copy if you need to keep original
 ply_data = data.normalize(inplace=False)
 ```
 
 ---
 
-### `data.denormalize(inplace=False)`
+### `data.denormalize(inplace=True)` / `data.from_ply_format(inplace=True)` / `data.to_linear(inplace=True)`
 
-Convert from PLY-compatible log/logit scaling to linear format.
+Convert **PLY format → linear scales/opacities** (log-scales → linear, logit-opacities → linear).
 
-Converts log-scales to linear scales and logit-opacities to linear opacities. Uses optimized Numba-accelerated sigmoid function for performance.
+**Converts:**
+- Log-scales → linear scales: `exp(log_scale)`
+- Logit-opacities → linear opacities: `sigmoid(logit)` (uses `gsply.sigmoid()`)
+
+**When to use:** When you load PLY files and need linear values for computations or visualization.
+
+**Note:** Uses `gsply.sigmoid()` from `utils.py` (Numba-optimized CPU implementation). Behavior matches `GSTensor.denormalize()` for consistency.
 
 **Parameters:**
-- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
 
 **Returns:**
 - `GSData`: GSData object (self if inplace=True, new object otherwise)
@@ -457,14 +487,17 @@ from gsply import plyread
 # Load PLY file (contains log-scales and logit-opacities)
 data = plyread("scene.ply")
 
-# Convert to linear format in-place
-data.denormalize(inplace=True)
+# Convert to linear format in-place (modifies data)
+data.denormalize()  # or: data.denormalize(inplace=True) or data.from_ply_format() or data.to_linear()
 
 # Now scales and opacities are in linear space
-linear_scales = data.scales  # exp(log_scales)
-linear_opacities = data.opacities  # sigmoid(logit_opacities)
+print(f"Linear opacity range: [{data.opacities.min():.3f}, {data.opacities.max():.3f}]")
+# Output: Linear opacity range: [0.000, 1.000]
 
-# Or create a copy
+# Easier to work with linear values
+high_opacity = data[data.opacities > 0.5]  # Filter by linear opacity
+
+# Or create a copy if you need to keep PLY format
 linear_data = data.denormalize(inplace=False)
 ```
 
@@ -960,50 +993,78 @@ data_cpu = gstensor.to_gsdata()  # Back to NumPy
 
 ---
 
-### `gstensor.normalize(inplace=False)`
+### Format Conversion: Linear ↔ PLY Format (GSTensor)
 
-Convert to PLY-compatible log/logit scaling (normalize to PLY format).
+GSTensor provides the same format conversion methods as GSData for consistency:
 
-Converts linear scales to log-scales and linear opacities to logit-opacities, which is the standard format for Gaussian Splatting PLY files. Uses PyTorch's optimized CUDA kernels for GPU operations.
+**PLY Format** (used in `.ply` files):
+- Scales: log-space (`log(scale)`)
+- Opacities: logit-space (`logit(opacity)`)
+
+**Linear Format** (easier for computation/visualization):
+- Scales: linear values (e.g., `0.1`, `0.5`, `1.0`)
+- Opacities: linear values in range `[0, 1]`
+
+---
+
+### `gstensor.normalize(inplace=True)` / `gstensor.to_ply_format(inplace=True)`
+
+Convert **linear scales/opacities → PLY format** (log-scales, logit-opacities).
+
+**Converts:**
+- Linear scales → log-scales: `log(scale)`
+- Linear opacities → logit-opacities: `logit(opacity)` (uses `torch.logit()` with `eps=1e-4`)
+
+**When to use:** When you have linear data and need to save to PLY format.
+
+**Note:** Uses PyTorch's `torch.logit()` and `torch.sigmoid()` internally for GPU acceleration. Behavior matches `GSData.normalize()` for consistency.
 
 **Parameters:**
-- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
 
 **Returns:**
 - `GSTensor`: GSTensor object (self if inplace=True, new object otherwise)
 
 **Example:**
 ```python
-from gsply import GSTensor
+from gsply import GSTensor, plywrite_gpu
 import torch
 
 # Create GSTensor with linear scales and opacities
 gstensor = GSTensor(
     means=torch.randn(100, 3),
-    scales=torch.rand(100, 3) * 0.1 + 0.01,  # Linear scales
+    scales=torch.rand(100, 3) * 0.1 + 0.01,  # Linear scales: [0.01, 0.11]
     quats=torch.randn(100, 4),
-    opacities=torch.rand(100) * 0.8 + 0.1,  # Linear opacities
+    opacities=torch.rand(100) * 0.8 + 0.1,  # Linear opacities: [0.1, 0.9]
     sh0=torch.randn(100, 3),
     shN=None
 )
 
-# Convert to PLY format in-place
-gstensor.normalize(inplace=True)
+# Convert to PLY format in-place (modifies gstensor)
+gstensor.normalize()  # or: gstensor.normalize(inplace=True) or gstensor.to_ply_format()
+# Now ready to save
+plywrite_gpu("output.ply", gstensor)
 
-# Or create a copy
+# Or create a copy if you need to keep original
 ply_tensor = gstensor.normalize(inplace=False)
 ```
 
 ---
 
-### `gstensor.denormalize(inplace=False)`
+### `gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format(inplace=True)` / `gstensor.to_linear(inplace=True)`
 
-Convert from PLY-compatible log/logit scaling to linear format.
+Convert **PLY format → linear scales/opacities** (log-scales → linear, logit-opacities → linear).
 
-Converts log-scales to linear scales and logit-opacities to linear opacities. Uses PyTorch's optimized CUDA kernels for GPU operations.
+**Converts:**
+- Log-scales → linear scales: `exp(log_scale)`
+- Logit-opacities → linear opacities: `sigmoid(logit)` (uses `torch.sigmoid()`)
+
+**When to use:** When you load PLY files and need linear values for computations or visualization.
+
+**Note:** Uses PyTorch's `torch.sigmoid()` internally for GPU acceleration. Behavior matches `GSData.denormalize()` for consistency.
 
 **Parameters:**
-- `inplace` (bool): If True, modify this object in-place. If False, return new object (default: False)
+- `inplace` (bool): If True, modify this object in-place (default). If False, return new object
 
 **Returns:**
 - `GSTensor`: GSTensor object (self if inplace=True, new object otherwise)
@@ -1015,14 +1076,17 @@ from gsply import plyread_gpu
 # Load PLY file directly to GPU (contains log-scales and logit-opacities)
 gstensor = plyread_gpu("scene.ply", device='cuda')
 
-# Convert to linear format in-place
-gstensor.denormalize(inplace=True)
+# Convert to linear format in-place (modifies gstensor)
+gstensor.denormalize()  # or: gstensor.denormalize(inplace=True) or gstensor.from_ply_format() or gstensor.to_linear()
 
 # Now scales and opacities are in linear space
-linear_scales = gstensor.scales  # exp(log_scales)
-linear_opacities = gstensor.opacities  # sigmoid(logit_opacities)
+print(f"Linear opacity range: [{gstensor.opacities.min():.3f}, {gstensor.opacities.max():.3f}]")
+# Output: Linear opacity range: [0.000, 1.000]
 
-# Or create a copy
+# Easier to work with linear values
+high_opacity = gstensor[gstensor.opacities > 0.5]  # Filter by linear opacity
+
+# Or create a copy if you need to keep PLY format
 linear_tensor = gstensor.denormalize(inplace=False)
 ```
 

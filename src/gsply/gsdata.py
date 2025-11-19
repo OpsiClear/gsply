@@ -843,19 +843,28 @@ class GSData:
             "shN": self.shN,
         }
 
-    def normalize(self, inplace: bool = False) -> "GSData":
-        """Convert to PLY-compatible log/logit scaling (normalize to PLY format).
+    def normalize(self, inplace: bool = True) -> "GSData":
+        """Convert linear scales/opacities to PLY format (log-scales, logit-opacities).
 
-        Converts linear scales to log-scales and linear opacities to logit-opacities,
-        which is the standard format for Gaussian Splatting PLY files.
+        Converts:
+        - Linear scales → log-scales: log(scale)
+        - Linear opacities → logit-opacities: logit(opacity)
 
-        :param inplace: If True, modify this object in-place. If False, return new object.
+        This is the standard format used in Gaussian Splatting PLY files.
+        Use this when you have linear data and need to save to PLY format.
+
+        :param inplace: If True, modify this object in-place (default). If False, return new object.
         :returns: GSData object (self if inplace=True, new object otherwise)
 
         Example:
-            >>> data = GSData(...)  # Linear scales and opacities
-            >>> data.normalize(inplace=True)  # Modify in-place
-            >>> # Or create a copy
+            >>> # Data with linear scales and opacities
+            >>> data = GSData(scales=[0.1, 0.2, 0.3], opacities=[0.5, 0.7, 0.9], ...)
+            >>> # Convert to PLY format in-place (modifies data)
+            >>> data.normalize()  # or: data.normalize(inplace=True)
+            >>> # Now ready to save with plywrite()
+            >>> plywrite("output.ply", data)
+            >>>
+            >>> # Or create a copy if you need to keep original
             >>> ply_data = data.normalize(inplace=False)
         """
         from gsply.utils import logit
@@ -863,12 +872,14 @@ class GSData:
         # Constants for numerical stability
         min_scale = 1e-9
         min_opacity = 1e-4
+        max_opacity = 1.0 - 1e-4
 
         # Convert linear scales to log-scales: log(scale)
         scales = np.log(np.clip(self.scales, min_scale, None))
 
         # Convert linear opacities to logit-opacities: logit(opacity)
-        opacities = logit(self.opacities, eps=min_opacity)
+        # Note: logit() handles clamping internally, but we clamp here for consistency with GSTensor
+        opacities = logit(np.clip(self.opacities, min_opacity, max_opacity), eps=min_opacity)
 
         if inplace:
             self.scales = scales
@@ -888,19 +899,28 @@ class GSData:
             _base=None,
         )
 
-    def denormalize(self, inplace: bool = False) -> "GSData":
-        """Convert from PLY-compatible log/logit scaling to linear format.
+    def denormalize(self, inplace: bool = True) -> "GSData":
+        """Convert PLY format (log-scales, logit-opacities) to linear format.
 
-        Converts log-scales to linear scales and logit-opacities to linear opacities.
-        Uses optimized functions for better performance.
+        Converts:
+        - Log-scales → linear scales: exp(log_scale)
+        - Logit-opacities → linear opacities: sigmoid(logit)
 
-        :param inplace: If True, modify this object in-place. If False, return new object.
+        Use this when you load PLY files (which use log/logit format) and need
+        linear values for computations or visualization.
+
+        :param inplace: If True, modify this object in-place (default). If False, return new object.
         :returns: GSData object (self if inplace=True, new object otherwise)
 
         Example:
-            >>> data = plyread("scene.ply")  # Loads with log-scales, logit-opacities
-            >>> data.denormalize(inplace=True)  # Convert to linear in-place
-            >>> # Or create a copy
+            >>> # Load PLY file (contains log-scales and logit-opacities)
+            >>> data = plyread("scene.ply")
+            >>> # Convert to linear format in-place (modifies data)
+            >>> data.denormalize()  # or: data.denormalize(inplace=True)
+            >>> # Now scales and opacities are in linear space [0, 1] for opacities
+            >>> print(f"Linear opacity range: [{data.opacities.min():.3f}, {data.opacities.max():.3f}]")
+            >>>
+            >>> # Or create a copy if you need to keep PLY format
             >>> linear_data = data.denormalize(inplace=False)
         """
         from gsply.utils import sigmoid
@@ -928,6 +948,39 @@ class GSData:
             mask_names=self.mask_names,
             _base=None,
         )
+
+    def to_ply_format(self, inplace: bool = True) -> "GSData":
+        """Alias for normalize() - Convert linear scales/opacities to PLY format.
+
+        Converts linear scales → log-scales and linear opacities → logit-opacities.
+        See normalize() for full documentation.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSData object with PLY format (log-scales, logit-opacities)
+        """
+        return self.normalize(inplace=inplace)
+
+    def from_ply_format(self, inplace: bool = True) -> "GSData":
+        """Alias for denormalize() - Convert PLY format to linear scales/opacities.
+
+        Converts log-scales → linear scales and logit-opacities → linear opacities.
+        See denormalize() for full documentation.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSData object with linear scales and opacities
+        """
+        return self.denormalize(inplace=inplace)
+
+    def to_linear(self, inplace: bool = True) -> "GSData":
+        """Alias for denormalize() - Convert PLY format (log/logit) to linear.
+
+        Converts log-scales → linear scales and logit-opacities → linear opacities.
+        See denormalize() for full documentation.
+
+        :param inplace: If True, modify this object in-place. If False, return new object.
+        :returns: GSData object with linear scales and opacities
+        """
+        return self.denormalize(inplace=inplace)
 
     def copy_slice(self, key) -> "GSData":
         """Efficiently slice and copy in one operation.

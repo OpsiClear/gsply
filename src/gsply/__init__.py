@@ -33,7 +33,7 @@ Basic Usage:
     >>> is_compressed, sh_degree = gsply.detect_format("model.ply")
     >>>
     >>> # SOG format support (requires gsply[sogs])
-    >>> data = gsply.read_sog("model.sog")
+    >>> data = gsply.sogread("model.sog")
 
 Features:
     - Fast with NumPy and Numba JIT acceleration
@@ -74,7 +74,7 @@ __all__ = [
     "SH_C0",
     "__version__",
 ]
-# Note: GSTensor and read_sog are available via lazy import but not in __all__ (they're optional)
+# Note: GSTensor and sogread are available via lazy import but not in __all__ (they're optional)
 
 
 def __getattr__(name):
@@ -110,14 +110,14 @@ def __getattr__(name):
             raise ImportError(
                 "plywrite_gpu requires PyTorch to be installed.\nInstall with: pip install torch"
             ) from e
-    elif name == "read_sog":
+    elif name == "sogread":
         try:
-            from gsply.sog_reader import read_sog
+            from gsply.sog_reader import sogread
 
-            return read_sog
+            return sogread
         except ImportError as e:
             raise ImportError(
-                "read_sog requires SOG format support.\n"
+                "sogread requires SOG format support.\n"
                 "Install with: pip install gsply[sogs]\n"
                 "This installs imagecodecs (fastest WebP decoder)."
             ) from e

@@ -16,7 +16,7 @@
 
 ## What's New in v0.2.5
 
-- SOG Format Support: `read_sog()` - Read SOG (Splat Ordering Grid) format files
+- SOG Format Support: `sogread()` - Read SOG (Splat Ordering Grid) format files
   - Returns `GSData` container (same as `plyread()`) for consistent API
   - In-memory ZIP extraction: Read directly from bytes without disk I/O
   - Uses `imagecodecs` (fastest WebP decoder) for optimal performance
@@ -81,7 +81,7 @@ pip install gsply
 **Optional dependencies:**
 ```bash
 pip install torch  # For GSTensor GPU features
-pip install gsply[sogs]  # For SOG format support (read_sog)
+pip install gsply[sogs]  # For SOG format support (sogread)
 ```
 
 ---
@@ -238,17 +238,17 @@ WebP-based texture format for web deployment:
 - **In-memory ZIP extraction**: Can read directly from bytes without disk I/O
 
 ```python
-from gsply import read_sog
+from gsply import sogread
 
 # Read from file path - returns GSData (same as plyread)
-data = read_sog("model.sog")
+data = sogread("model.sog")
 positions = data.means  # Same API as GSData from plyread
 colors = data.sh0
 
 # Read from bytes (in-memory, no disk I/O)
 with open("model.sog", "rb") as f:
     sog_bytes = f.read()
-data = read_sog(sog_bytes)  # Returns GSData - fully in-memory extraction and decoding
+data = sogread(sog_bytes)  # Returns GSData - fully in-memory extraction and decoding
 ```
 
 ---
@@ -261,15 +261,15 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 - `plyread(file_path)` - Read PLY files
 - `plywrite(file_path, ...)` - Write PLY files
 - `detect_format(file_path)` - Detect format and SH degree
-- `read_sog(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
+- `sogread(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
 
 **GSData Container:**
 - `data.unpack()` - Unpack to tuple
 - `data.to_dict()` - Convert to dictionary
 - `data.copy()` - Deep copy
 - `data.consolidate()` - Optimize for slicing
-- `data.normalize(inplace=False)` - Convert to PLY format (log/logit)
-- `data.denormalize(inplace=False)` - Convert from PLY format to linear
+- `data.normalize(inplace=True)` / `data.to_ply_format()` - Convert linear → PLY format (log/logit, modifies in-place by default)
+- `data.denormalize(inplace=True)` / `data.from_ply_format()` / `data.to_linear()` - Convert PLY format → linear (modifies in-place by default)
 - `data[index]` - Indexing and slicing
 
 **Compression:**
@@ -287,8 +287,8 @@ Complete API documentation is available in [docs/API_REFERENCE.md](docs/API_REFE
 **GPU Support (PyTorch):**
 - `GSTensor.from_gsdata(data, device='cuda')` - Convert to GPU
 - `gstensor.to_gsdata()` - Convert to CPU
-- `gstensor.normalize(inplace=False)` - Convert to PLY format (GPU)
-- `gstensor.denormalize(inplace=False)` - Convert from PLY format to linear (GPU)
+- `gstensor.normalize(inplace=True)` / `gstensor.to_ply_format()` - Convert linear → PLY format (GPU, modifies in-place by default)
+- `gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format()` / `gstensor.to_linear()` - Convert PLY format → linear (GPU, modifies in-place by default)
 - Device management: `.to()`, `.cpu()`, `.cuda()`
 - Precision: `.half()`, `.float()`, `.double()`
 - Full slicing and manipulation support

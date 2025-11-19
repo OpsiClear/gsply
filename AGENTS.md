@@ -10,7 +10,8 @@ This file provides context and instructions for AI coding agents working on the 
 - **Core Dependencies**: NumPy, Numba (JIT acceleration)
 - **Optional Dependencies**: PyTorch (GPU acceleration via GSTensor)
 - **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
-- **Key Features**: Zero-copy optimization, compressed format support, GPU integration
+- **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support
+- **Current Version**: 0.2.5
 
 ## Development Environment Setup
 
@@ -85,11 +86,15 @@ gsply/
 │   ├── writer.py        # PLY writing (plywrite, compress)
 │   ├── gsdata.py        # GSData dataclass (CPU container)
 │   ├── formats.py       # Format detection and constants
-│   ├── utils.py         # Utility functions (sh2rgb, rgb2sh)
+│   ├── utils.py         # Utility functions (sh2rgb, rgb2sh, logit, sigmoid)
+│   ├── sog_reader.py    # SOG format reading (sogread, optional dependency)
+│   ├── py.typed         # Type checking marker (PEP 561)
 │   └── torch/           # Optional PyTorch integration
 │       ├── __init__.py  # Conditional import (checks torch availability)
-│       └── gstensor.py  # GSTensor GPU dataclass
-├── tests/               # Test suite (169 tests)
+│       ├── gstensor.py  # GSTensor GPU dataclass
+│       ├── compression.py  # GPU compression/decompression
+│       └── io.py        # GPU I/O (plyread_gpu, plywrite_gpu)
+├── tests/               # Test suite (281 tests)
 ├── benchmarks/          # Performance benchmarks
 ├── docs/                # Documentation
 └── .github/workflows/   # CI/CD pipelines
@@ -132,7 +137,7 @@ Tests automatically generate synthetic data. Some tests use real PLY files:
 
 ### Test Count
 
-Current test count: **169 tests** (documented in README.md)
+Current test count: **281 tests** (documented in README.md)
 - Update this count in README if adding/removing tests
 
 ## Code Style and Conventions
@@ -207,13 +212,20 @@ All PLY reads use zero-copy views via `_base` array:
 Standard layout for Gaussian properties:
 ```
 means:     (N, 3) - xyz positions
-scales:    (N, 3) - log scales
+scales:    (N, 3) - log scales (PLY format) or linear scales
 quats:     (N, 4) - quaternions (wxyz order)
-opacities: (N,)   - logit opacities
+opacities: (N,)   - logit opacities (PLY format) or linear opacities
 sh0:       (N, 3) - DC spherical harmonics
 shN:       (N, K, 3) - Higher-order SH (K=0/9/24/45 for degree 0/1/2/3)
 masks:     (N,)   - boolean mask (initialized to all True)
 ```
+
+**Format Conversion:**
+- PLY files store scales in log-space and opacities in logit-space
+- Use `normalize()` / `to_ply_format()` to convert linear → PLY format
+- Use `denormalize()` / `from_ply_format()` / `to_linear()` to convert PLY → linear format
+- Both `GSData` and `GSTensor` have identical format conversion APIs
+- Default is `inplace=True` for efficiency
 
 ### PyTorch Integration
 
@@ -239,11 +251,75 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - **Tests**: `tests/test_gpu_io_api.py` (5 tests covering API, roundtrip, lazy import)
 - **Implementation**: Uses `read_compressed_gpu()` and `write_compressed_gpu()` from `compression.py`
 
+### SOG Format Support (v0.2.5+)
+
+**SOG Reader: `sogread()`**
+- Located in `src/gsply/sog_reader.py`
+- Exported via lazy import in `src/gsply/__init__.py` (optional dependency)
+- Reads SOG (Splat Ordering Grid) format files (PlayCanvas splat-transform compatible)
+- **Returns**: `GSData` container (same as `plyread()`) for consistent API
+- **Supports**: Both `.sog` ZIP bundles and folder formats
+- **In-memory**: Can read directly from bytes without disk I/O
+- **Dependencies**: Requires `gsply[sogs]` which installs `imagecodecs` (fastest WebP decoder)
+- **Performance**: ~6x faster when reading from bytes vs file path
+- **API**: `sogread(file_path | bytes) -> GSData`
+
 ### Numba JIT Acceleration
 
 - Numba is **required** dependency for performance
 - Used for parallel bit packing/unpacking in compressed format
 - Functions decorated with `@numba.jit` should be pure functions
+- Also used for SOG format decoding (means, scales, quats, colors, SHN)
+
+### Format Conversion: Linear ↔ PLY Format (v0.2.5+)
+
+**GSData and GSTensor Format Conversion Methods:**
+- `normalize(inplace=True)` / `to_ply_format(inplace=True)`: Convert linear → PLY format
+  - Linear scales → log-scales: `log(scale)`
+  - Linear opacities → logit-opacities: `logit(opacity, eps=1e-4)`
+- `denormalize(inplace=True)` / `from_ply_format(inplace=True)` / `to_linear(inplace=True)`: Convert PLY → linear format
+  - Log-scales → linear scales: `exp(log_scale)`
+  - Logit-opacities → linear opacities: `sigmoid(logit)`
+
+**Implementation Details:**
+- **GSData**: Uses `gsply.logit()` and `gsply.sigmoid()` from `utils.py` (Numba-optimized CPU)
+- **GSTensor**: Uses `torch.logit()` and `torch.sigmoid()` (GPU-accelerated)
+- **Consistency**: Both use `eps=1e-4` for logit operations to ensure identical behavior
+- **Default**: `inplace=True` for efficiency (modifies object in-place)
+- **Constants**: `min_scale=1e-9`, `min_opacity=1e-4`, `max_opacity=1.0-1e-4` (same for both)
+
+**When to use:**
+- `normalize()`: Before saving to PLY format if you have linear data
+- `denormalize()`: After loading PLY files if you need linear values for computation/visualization
+
+### Compression APIs (In-Memory)
+
+**Functions: `compress_to_bytes()`, `compress_to_arrays()`, `decompress_from_bytes()`**
+- Located in `src/gsply/writer.py` and `src/gsply/reader.py`
+- Exported in `src/gsply/__init__.py` (in `__all__`)
+- Provides in-memory compression/decompression without disk I/O
+- **Use cases**: Network transfer, streaming, custom storage solutions
+- **Performance**: Same as file-based compression (uses same JIT-accelerated code)
+- **API**:
+  - `compress_to_bytes(data: GSData) -> bytes`: Compress GSData to bytes
+  - `compress_to_arrays(data: GSData) -> tuple`: Returns (header, chunks, packed, sh) arrays
+  - `decompress_from_bytes(bytes) -> GSData`: Decompress bytes to GSData
+- **Backward compatibility**: Also accepts individual arrays (not just GSData)
+
+### Utility Functions
+
+**Functions: `sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `SH_C0`**
+- Located in `src/gsply/utils.py`
+- Exported in `src/gsply/__init__.py` (in `__all__`)
+- **sh2rgb()**: Convert spherical harmonics to RGB colors
+- **rgb2sh()**: Convert RGB colors to spherical harmonics
+- **logit()**: Compute logit function (inverse sigmoid) with numerical stability (Numba-optimized)
+  - Default `eps=1e-6` for numerical stability
+  - Used internally by `GSData.normalize()` with `eps=1e-4`
+- **sigmoid()**: Compute sigmoid function (inverse logit) with numerical stability (Numba-optimized)
+  - Used internally by `GSData.denormalize()`
+- **SH_C0**: Constant for spherical harmonic DC coefficient normalization (0.28209479177387814)
+- All utility functions are CPU-only (Numba JIT-compiled)
 
 ### Concatenation Optimizations (v0.2.2)
 
@@ -326,7 +402,7 @@ masks:     (N,)   - boolean mask (initialized to all True)
 ### Before Creating PR
 
 1. **Run pre-commit hooks**: `pre-commit run --all-files` (automatically checks formatting, linting, etc.)
-2. **Run full test suite**: `pytest` (all 169 tests must pass)
+2. **Run full test suite**: `pytest` (all 281 tests must pass)
 3. **Type check** (optional): `mypy src/` or `pre-commit run --hook-stage manual mypy --all-files`
 4. **Update test count** in README.md if you added/removed tests
 5. **Update CHANGELOG.md** with your changes
@@ -346,7 +422,7 @@ Follow conventional commits style:
 
 ### Code Review Checklist
 
-- [ ] All tests pass (169/169)
+- [ ] All tests pass (281/281)
 - [ ] No new linter warnings
 - [ ] Type hints added for new functions
 - [ ] Docstrings added for public APIs
@@ -354,6 +430,7 @@ Follow conventional commits style:
 - [ ] Performance not regressed (if applicable)
 - [ ] Cross-platform compatible (Windows, macOS, Linux)
 - [ ] Python 3.10-3.13 compatible
+- [ ] Format conversion consistency: GSData and GSTensor use same constants/eps values
 
 ### Commits
 
@@ -371,8 +448,8 @@ python -m build
 
 # Check dist files
 ls dist/
-# gsply-0.2.2-py3-none-any.whl
-# gsply-0.2.2.tar.gz
+# gsply-0.2.5-py3-none-any.whl
+# gsply-0.2.5.tar.gz
 ```
 
 ### Publishing (Maintainer Only)
@@ -390,16 +467,22 @@ twine upload dist/*
 1. Update version in `pyproject.toml`
 2. Update `__version__` in `src/gsply/__init__.py`
 3. Update CHANGELOG.md with release notes
-4. Create git tag: `git tag v0.2.2`
+4. Update test count in README.md and AGENTS.md if tests changed
+5. Create git tag: `git tag v0.2.X`
 
 ## API Design Principles
 
 ### Consistency
 
-- All read operations return `GSData` dataclass
+- All read operations return `GSData` dataclass (`plyread()`, `sogread()`)
 - All write operations accept individual arrays OR GSData
 - Use `unpack()` pattern for tuple unpacking, not indexing
 - GPU operations return `GSTensor`, CPU operations return `GSData`
+- Format conversion methods (`normalize()`, `denormalize()`) are identical between GSData and GSTensor
+- Both use same constants (`min_scale=1e-9`, `min_opacity=1e-4`, `max_opacity=1.0-1e-4`, `eps=1e-4` for logit)
+- GSData uses `gsply.logit()`/`gsply.sigmoid()` (CPU), GSTensor uses `torch.logit()`/`torch.sigmoid()` (GPU)
+- Compression APIs (`compress_to_bytes()`, `compress_to_arrays()`, `decompress_from_bytes()`) work with GSData or individual arrays
+- Utility functions (`sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `SH_C0`) are always available (CPU-only)
 
 ### Backward Compatibility
 
@@ -424,12 +507,13 @@ twine upload dist/*
 
 ### Adding a New Feature
 
-1. Add implementation in appropriate module (`reader.py`, `writer.py`, etc.)
+1. Add implementation in appropriate module (`reader.py`, `writer.py`, `utils.py`, etc.)
 2. Export in `src/gsply/__init__.py` if public API
-3. Add to `__all__` list
+3. Add to `__all__` list (or use lazy import via `__getattr__` for optional dependencies)
 4. Write tests in `tests/test_*.py`
 5. Add documentation to README.md API Reference section
 6. Update CHANGELOG.md
+7. Update AGENTS.md if adding new major features or APIs
 
 ### Fixing a Bug
 
@@ -451,8 +535,13 @@ twine upload dist/*
 - **Windows Path Handling**: Use `Path` from pathlib for cross-platform compatibility
 - **Numba Compatibility**: Some NumPy operations not supported in JIT functions
 - **PyTorch Versions**: Test with PyTorch 2.0+ if modifying GSTensor
+- **Python 3.13**: PyTorch not yet supported - exclude from torch test matrix
 - **Memory**: Large files (>1M Gaussians) need testing for memory efficiency
 - **SH Degrees**: Support degrees 0-3 only (14, 23, 38, 59 properties)
+- **Optional Dependencies**:
+  - PyTorch: Required only for `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`
+  - `gsply[sogs]`: Required only for `sogread()` (installs `imagecodecs`)
+- **Type Checking**: `py.typed` marker file exists for PEP 561 compliance
 
 ## Contact
 
