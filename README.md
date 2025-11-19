@@ -44,9 +44,13 @@
 ## Quick Start
 
 ```python
-from gsply import plyread, plywrite
+from gsply import GSData, GSTensor
 
 # Read PLY file (auto-detects format, zero-copy)
+data = GSData.load("model.ply")  # Object-oriented API
+
+# Or use functional API
+from gsply import plyread
 data = plyread("model.ply")
 
 # Access fields
@@ -55,11 +59,17 @@ colors = data.sh0         # (N, 3) RGB colors
 scales = data.scales      # (N, 3) scale parameters
 rotations = data.quats    # (N, 4) quaternions
 
-# Write PLY file (automatically optimized)
-plywrite("output.ply", data)
+# Save PLY file (object-oriented API)
+data.save("output.ply")  # Uncompressed
+data.save("output.ply", compressed=True)  # Compressed (71-74% smaller)
 
-# Write compressed (71-74% smaller)
+# Or use functional API
+from gsply import plywrite
 plywrite("output.ply", data, compressed=True)
+
+# GPU acceleration (optional)
+gstensor = GSTensor.load("model.ply", device='cuda')  # Direct GPU loading
+gstensor.save("output.compressed.ply")  # GPU compression (default)
 ```
 
 **Performance:** 93M Gaussians/sec read, 57M Gaussians/sec write (400K Gaussians in 6-7ms)
@@ -76,23 +86,71 @@ Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimize
 - Fast: 93M Gaussians/sec read, 57M Gaussians/sec write
 - Auto-optimized: Writes are 2.6-2.8x faster automatically
 - Pure Python: NumPy + Numba (no C++ compilation)
-- Format support: Uncompressed PLY + PlayCanvas compressed (71-74% smaller)
+- Format support: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG format
+- Object-Oriented API: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
+- Format Conversion: `normalize()`, `denormalize()` for linear ↔ PLY format conversion
+- Color Conversion: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
 - GPU ready: Optional PyTorch integration with GSTensor
 
 ---
 
 ## Installation
 
+### Basic Installation
+
 ```bash
 pip install gsply
 ```
 
-**Dependencies:** NumPy and Numba (auto-installed)
+**Core dependencies:** NumPy and Numba (automatically installed)
 
-**Optional dependencies:**
+### Optional Features
+
+**GPU Acceleration (PyTorch):**
 ```bash
 pip install torch  # For GSTensor GPU features
+```
+
+Enables:
+- `GSTensor` - GPU-accelerated data container
+- `plyread_gpu()`, `plywrite_gpu()` - Direct GPU I/O
+- GPU compression/decompression (5-20x faster than CPU)
+- GPU format conversion (`normalize()`, `denormalize()`, `to_rgb()`, `to_sh()`)
+
+**SOG Format Support:**
+```bash
 pip install gsply[sogs]  # For SOG format support (sogread)
+```
+
+Enables:
+- `sogread()` - Read SOG (Splat Ordering Grid) format files
+- In-memory ZIP extraction
+- PlayCanvas splat-transform compatibility
+
+**Development:**
+```bash
+pip install -e .[dev]  # Install with dev dependencies (pytest, ruff, mypy)
+```
+
+### Installation Examples
+
+```bash
+# Basic installation (CPU only)
+pip install gsply
+
+# With GPU support
+pip install gsply torch
+
+# With SOG format support
+pip install gsply[sogs]
+
+# Full installation (GPU + SOG)
+pip install gsply[sogs] torch
+
+# Development installation
+git clone https://github.com/OpsiClear/gsply.git
+cd gsply
+pip install -e .[dev]
 ```
 
 ---
@@ -182,6 +240,8 @@ data_cpu = gstensor.to_gsdata()
 ### Data Manipulation
 
 ```python
+from gsply import GSData
+
 # Slicing and indexing
 subset = data[100:200]          # Slice
 first = data[0]                 # Single Gaussian
@@ -198,6 +258,12 @@ data = data.make_contiguous()   # 2-45x speedup for operations
 # Copy and modify
 bright = data.copy()
 bright.sh0 *= 1.5  # Make brighter
+
+# Format conversion before operations
+data.denormalize()  # Convert to linear for easier manipulation
+data.opacities = np.clip(data.opacities * 1.2, 0, 1)  # Modify in linear space
+data.normalize()  # Convert back to PLY format before saving
+data.save("modified.ply")
 ```
 
 ---

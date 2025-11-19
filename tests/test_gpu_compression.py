@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 pytest.importorskip("torch")
-import torch  # noqa: E402
 
 from gsply import GSData, compress_to_bytes, decompress_from_bytes, plyread  # noqa: E402
 from gsply.torch import GSTensor  # noqa: E402
@@ -340,68 +339,6 @@ def test_gpu_compression_small_dataset():
 
         data_restored = plyread(tmp_path)
         assert len(data_restored) == n
-
-    finally:
-        if Path(tmp_path).exists():
-            Path(tmp_path).unlink()
-
-
-# =============================================================================
-# Performance Comparison (Optional - only if CUDA available)
-# =============================================================================
-
-
-@pytest.mark.skipif(
-    True, reason="Performance test disabled - requires CUDA and proper benchmarking"
-)
-def test_gpu_compression_performance_comparison():
-    """Compare GPU vs CPU compression speed (requires CUDA)."""
-    import time
-
-    n = 100000  # Large dataset
-    means = np.random.randn(n, 3).astype(np.float32)
-    scales = np.random.randn(n, 3).astype(np.float32)
-    quats = np.random.randn(n, 4).astype(np.float32)
-    quats /= np.linalg.norm(quats, axis=1, keepdims=True)
-    opacities = np.random.randn(n).astype(np.float32)
-    sh0 = np.random.randn(n, 3).astype(np.float32) * 0.1
-    shN = np.zeros((n, 0, 3), dtype=np.float32)
-
-    data = GSData(
-        means=means,
-        scales=scales,
-        quats=quats,
-        opacities=opacities,
-        sh0=sh0,
-        shN=shN,
-        masks=np.ones(n, dtype=bool),
-        _base=None,
-    )
-
-    # CPU compression
-    start = time.time()
-    _ = compress_to_bytes(data)
-    cpu_time = time.time() - start
-
-    # GPU compression
-    gstensor = GSTensor.from_gsdata(data, device="cuda")
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".ply_compressed") as tmp:
-        tmp_path = tmp.name
-
-    try:
-        torch.cuda.synchronize()
-        start = time.time()
-        gstensor.save_compressed(tmp_path)
-        torch.cuda.synchronize()
-        gpu_time = time.time() - start
-
-        print(f"\nCPU compression: {cpu_time * 1000:.2f} ms")
-        print(f"GPU compression: {gpu_time * 1000:.2f} ms")
-        print(f"Speedup: {cpu_time / gpu_time:.2f}x")
-
-        # GPU should be faster for large datasets
-        assert gpu_time < cpu_time * 2  # Allow some overhead
 
     finally:
         if Path(tmp_path).exists():

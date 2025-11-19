@@ -97,6 +97,9 @@ addopts = [
     "--strict-markers",
     "--strict-config",
 ]
+markers = [
+    "benchmark: marks tests as benchmark tests (deselect with '-m \"not benchmark\"')",
+]
 
 [tool.coverage.run]
 source = ["gsply"]

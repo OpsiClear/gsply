@@ -6,12 +6,39 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
 **New in v0.2.5:**
 - Object-Oriented I/O API (`data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`)
-- Format Conversion API (`normalize()`, `denormalize()`)
-- Color Conversion API (`to_rgb()`, `to_sh()`)
-- SOG Format Support (`sogread()`)
+- Format Conversion API (`normalize()`, `denormalize()`) - Convert between linear and PLY formats
+- Color Conversion API (`to_rgb()`, `to_sh()`) - Convert between SH and RGB color formats
+- SOG Format Support (`sogread()`) - Read SOG (Splat Ordering Grid) format files
+
+## Installation
+
+**Basic installation:**
+```bash
+pip install gsply
+```
+
+**Optional features:**
+
+GPU acceleration (PyTorch):
+```bash
+pip install torch
+```
+Enables `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, and GPU-accelerated format conversions.
+
+SOG format support:
+```bash
+pip install gsply[sogs]
+```
+Enables `sogread()` for reading SOG format files.
+
+**Full installation:**
+```bash
+pip install gsply[sogs] torch  # GPU + SOG support
+```
 
 **Quick Navigation:**
 - [gsply API Reference](#gsply-api-reference)
+  - [Installation](#installation)
   - [Core I/O](#core-io)
     - [`plyread(file_path)`](#plyreadfile_path)
     - [`plywrite(file_path, means, scales, quats, opacities, sh0, shN=None, compressed=False)`](#plywritefile_path-means-scales-quats-opacities-sh0-shnnone-compressedfalse)

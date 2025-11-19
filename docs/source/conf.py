@@ -29,8 +29,8 @@ else:
 project = "gsply"
 author = "OpsiClear"
 copyright = f"{datetime.now().year}, {author}"
-version = "0.2.4"
-release = "0.2.4"
+version = "0.2.5"
+release = "0.2.5"
 
 
 # -- General configuration ---------------------------------------------------
@@ -78,7 +78,7 @@ myst_enable_extensions = [
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "furo"
+html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 html_title = "gsply Documentation"
 html_short_title = "gsply"
@@ -86,28 +86,13 @@ html_logo = None
 html_favicon = None
 
 html_theme_options = {
-    "announcement": None,
-    "sidebar_hide_name": False,
-    "light_logo": None,
-    "dark_logo": None,
-    "light_css_variables": {
-        "color-brand-primary": "#2563eb",
-        "color-brand-content": "#1e40af",
-        "color-admonition-background": "#f0f9ff",
-        "font-stack": "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-        "font-stack--monospace": "'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace",
-    },
-    "dark_css_variables": {
-        "color-brand-primary": "#60a5fa",
-        "color-brand-content": "#93c5fd",
-        "color-admonition-background": "#1e3a5f",
-        "font-stack": "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-        "font-stack--monospace": "'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace",
-    },
-    "navigation_with_keys": True,
-    "source_repository": "https://github.com/OpsiClear/gsply",
-    "source_branch": "master",
-    "source_directory": "docs/source/",
+    "collapse_navigation": False,
+    "sticky_navigation": True,
+    "navigation_depth": 4,
+    "includehidden": True,
+    "titles_only": False,
+    "display_version": True,
+    "logo_only": False,
 }
 
 html_css_files = [

@@ -2,8 +2,8 @@
 
 Complete guide to gsply - Ultra-fast Gaussian Splatting PLY I/O library for Python
 
-**Version:** 0.1.0
-**Last Updated:** 2025-11-10
+**Version:** 0.2.5
+**Last Updated:** 2025-11-19
 
 ---
 
@@ -53,20 +53,43 @@ pip install -e .
 
 ### Basic Usage
 
+**Object-Oriented API (Recommended):**
 ```python
-import gsply
+from gsply import GSData, GSTensor
 
 # Read PLY file (auto-detects format)
-means, scales, quats, opacities, sh0, shN = gsply.plyread("model.ply")
+data = GSData.load("model.ply")
+
+# Access fields
+positions = data.means    # (N, 3) xyz coordinates
+colors = data.sh0         # (N, 3) RGB colors
+scales = data.scales      # (N, 3) scale parameters
+
+# Save PLY file
+data.save("output.ply")  # Uncompressed
+data.save("output.ply", compressed=True)  # Compressed (71-74% smaller)
+
+# GPU acceleration (optional)
+gstensor = GSTensor.load("model.ply", device='cuda')
+gstensor.save("output.compressed.ply")  # GPU compression
+```
+
+**Functional API (Alternative):**
+```python
+from gsply import plyread, plywrite
+
+# Read PLY file (auto-detects format)
+data = plyread("model.ply")
 
 # Write uncompressed PLY file
-gsply.plywrite("output.ply", means, scales, quats, opacities, sh0, shN)
+plywrite("output.ply", data)
 
 # Write compressed PLY file (3.8-14.5x smaller)
-gsply.plywrite("output.ply", means, scales, quats, opacities, sh0, shN, compressed=True)
+plywrite("output.ply", data, compressed=True)
 
 # Detect format before reading
-is_compressed, sh_degree = gsply.detect_format("model.ply")
+from gsply import detect_format
+is_compressed, sh_degree = detect_format("model.ply")
 print(f"Compressed: {is_compressed}, SH degree: {sh_degree}")
 ```
 
@@ -75,11 +98,17 @@ print(f"Compressed: {is_compressed}, SH degree: {sh_degree}")
 All arrays are returned as numpy arrays with the following shapes:
 
 - `means`: (N, 3) - Gaussian centers (x, y, z)
-- `scales`: (N, 3) - Log-space scales (sx, sy, sz)
+- `scales`: (N, 3) - Log-space scales (PLY format) or linear scales
 - `quats`: (N, 4) - Rotations as quaternions (w, x, y, z)
-- `opacities`: (N,) - Logit-space opacities
-- `sh0`: (N, 3) - DC spherical harmonic coefficients
+- `opacities`: (N,) - Logit-space opacities (PLY format) or linear opacities
+- `sh0`: (N, 3) - DC spherical harmonic coefficients (SH format) or RGB colors
 - `shN`: (N, K, 3) or None - Higher-order SH coefficients (K=0 for degree 0)
+
+**Format Conversion:**
+- PLY files store scales in log-space and opacities in logit-space
+- Use `data.normalize()` to convert linear → PLY format before saving
+- Use `data.denormalize()` to convert PLY → linear format after loading
+- Use `data.to_rgb()` / `data.to_sh()` to convert between SH and RGB color formats
 
 ---
 

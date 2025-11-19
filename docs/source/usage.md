@@ -1,18 +1,35 @@
 # Usage Guide
 
 This guide covers the most common workflows: installation, reading/writing Gaussian splats,
-and moving between CPU and GPU containers.
+format conversion, color conversion, and moving between CPU and GPU containers.
 
 ## Installation
 
-Install gsply from PyPI:
-
+**Basic installation:**
 ```bash
 pip install gsply
 ```
 
-For development work:
+**Optional features:**
 
+GPU acceleration (PyTorch):
+```bash
+pip install torch
+```
+Enables `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, and GPU-accelerated format conversions.
+
+SOG format support:
+```bash
+pip install gsply[sogs]
+```
+Enables `sogread()` for reading SOG format files.
+
+**Full installation:**
+```bash
+pip install gsply[sogs] torch  # GPU + SOG support
+```
+
+**Development:**
 ```bash
 # Editable install with development extras
 pip install -e ".[dev]"
@@ -23,25 +40,43 @@ pip install -e ".[docs]"
 
 **Requirements**: Python 3.10+ with NumPy and Numba (auto-installed).
 
-**Optional**: PyTorch for `GSTensor` GPU workflows.
-
 ## Reading Gaussian Splats
 
-The `plyread()` function automatically detects and reads both compressed and uncompressed PLY formats:
-
+**Object-Oriented API (Recommended):**
 ```python
-from gsply import plyread
+from gsply import GSData
 
 # Auto-detects format (compressed or uncompressed)
-data = plyread("scene.ply")
+data = GSData.load("scene.ply")
 
 print(f"Loaded {len(data):,} Gaussians")
 print(f"SH degree: {data.get_sh_degree()}")
 print(f"Contiguous: {data.is_contiguous()}")
 ```
 
+**Functional API:**
+```python
+from gsply import plyread
+
+# Auto-detects format (compressed or uncompressed)
+data = plyread("scene.ply")
+```
+
 The returned `GSData` object exposes vector-friendly NumPy arrays. All reads use zero-copy
 views into a shared `_base` buffer, so slicing and masking operations don't duplicate memory.
+
+**SOG Format Support:**
+```python
+from gsply import sogread
+
+# Read SOG format (requires gsply[sogs])
+data = sogread("model.sog")  # Returns GSData (same API as plyread)
+
+# In-memory reading from bytes
+with open("model.sog", "rb") as f:
+    sog_bytes = f.read()
+data = sogread(sog_bytes)  # No disk I/O
+```
 
 ### Mask Management
 
@@ -66,8 +101,22 @@ Mask layers persist through slicing, concatenation, and CPU↔GPU transfers.
 
 ## Writing Data
 
-The `plywrite()` function automatically optimizes writes based on the data structure:
+**Object-Oriented API (Recommended):**
+```python
+from gsply import GSData, GSTensor
 
+# Save uncompressed (auto-optimized)
+data.save("output.ply")
+
+# Save compressed format
+data.save("output.ply", compressed=True)
+
+# GPU acceleration
+gstensor = GSTensor.load("model.ply", device='cuda')
+gstensor.save("output.compressed.ply")  # GPU compression (default)
+```
+
+**Functional API:**
 ```python
 from gsply import plywrite
 
@@ -87,6 +136,7 @@ plywrite("output.compressed.ply", data)
 - **Auto-consolidation**: Without `_base`, arrays are automatically consolidated for 2.4x faster writes
 - **Format detection**: Compression is selected when `compressed=True` or when the file extension
   is `.compressed.ply` / `.ply_compressed`
+- **Format conversion**: Automatically converts to PLY format (log-scales, logit-opacities) before writing
 
 ## In-Memory Compression
 
@@ -106,15 +156,63 @@ assert round_trip.means.shape == data.means.shape
 Ideal for network transport, streaming, or custom storage backends.
 Achieves 71-74% size reduction with PlayCanvas format.
 
+## Format Conversion
+
+PLY files store scales in log-space and opacities in logit-space. Convert between formats as needed:
+
+```python
+from gsply import GSData
+
+# Load PLY file (contains log-scales and logit-opacities)
+data = GSData.load("scene.ply")
+
+# Convert to linear format for computation/visualization
+data.denormalize()  # Converts log-scales → linear, logit-opacities → linear
+print(f"Linear opacity range: [{data.opacities.min():.3f}, {data.opacities.max():.3f}]")
+
+# Modify in linear space
+data.opacities = np.clip(data.opacities * 1.2, 0, 1)
+
+# Convert back to PLY format before saving
+data.normalize()  # Converts linear → log-scales, linear → logit-opacities
+data.save("modified.ply")
+```
+
+**Color Conversion (SH ↔ RGB):**
+```python
+# Convert sh0 from SH format to RGB colors
+data.to_rgb()  # sh0 now contains RGB colors [0, 1]
+data.sh0 *= 1.5  # Make brighter (RGB space)
+data.to_sh()  # Convert back to SH format for PLY compatibility
+```
+
 ## GPU Acceleration with PyTorch
 
-Transfer data to GPU for training or rendering:
-
+**Object-Oriented API (Recommended):**
 ```python
 from gsply import GSTensor
 
+# Direct GPU loading (auto-detects format)
+gstensor = GSTensor.load("model.ply", device="cuda")
+
+# Save with GPU compression
+gstensor.save("output.compressed.ply")  # GPU compression (default)
+
+# GPU format conversion
+gstensor.denormalize()  # GPU-accelerated (uses torch.exp, torch.sigmoid)
+gstensor.to_rgb()  # GPU-accelerated SH → RGB conversion
+```
+
+**Functional API:**
+```python
+from gsply import GSTensor, plyread_gpu, plywrite_gpu
+
 # Transfer to GPU (11x faster with zero-copy base tensor)
 gstensor = GSTensor.from_gsdata(data, device="cuda", requires_grad=False)
+
+# Direct GPU I/O
+gstensor = plyread_gpu("model.compressed.ply", device="cuda")
+plywrite_gpu("output.compressed.ply", gstensor)
 
 # GPU-optimized mask operations (100-1000x faster than CPU)
 mask = gstensor.combine_masks(mode="and")

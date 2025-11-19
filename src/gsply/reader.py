@@ -30,6 +30,7 @@ from numba import jit
 
 from gsply.formats import (
     EXPECTED_PROPERTIES_BY_SH_DEGREE,
+    SH_BANDS_TO_DEGREE,
     SH_C0,
     detect_format,
     get_sh_degree_from_property_count,
@@ -649,14 +650,18 @@ def _decompress_data_internal(
 
         # Reshape to (N, num_bands, 3)
         shN = sh_flat.reshape(num_vertices, num_sh_bands, 3)  # noqa: N806
+
+        # Determine SH degree from number of bands
+        # Use SH_BANDS_TO_DEGREE mapping (more reliable than property count)
+        sh_degree = SH_BANDS_TO_DEGREE.get(num_sh_bands, None)
+        # Fallback to property count if bands mapping doesn't work
+        if sh_degree is None:
+            sh_degree = get_sh_degree_from_property_count(14 + num_sh_bands * 3)
+        # Default to 0 if still None (shouldn't happen, but be safe)
+        if sh_degree is None:
+            sh_degree = 0
     else:
         shN = np.zeros((num_vertices, 0, 3), dtype=np.float32)  # noqa: N806
-
-    # Determine SH degree from shN shape
-    if shN_data is not None:
-        num_sh_bands = shN_data.shape[1] // 3
-        sh_degree = get_sh_degree_from_property_count(14 + num_sh_bands * 3)
-    else:
         sh_degree = 0
 
     logger.debug(f"[Gaussian PLY] Decompressed: {num_vertices} Gaussians, SH bands {shN.shape[1]}")

@@ -26,7 +26,24 @@ memory overhead; auto-consolidation optimizes writes automatically.
 ### Format Flexibility
 
 `detect_format()` auto-detects PLY layout. `plywrite()` selects compressed output when
-`compressed=True` or when the file extension is `.compressed.ply`.
+`compressed=True` or when the file extension is `.compressed.ply`. Supports uncompressed PLY,
+PlayCanvas compressed PLY, and SOG (Splat Ordering Grid) formats.
+
+### Object-Oriented API
+
+Convenient save/load methods for cleaner code:
+- `data.save(file_path, compressed=False)` - Instance method for saving
+- `GSData.load(file_path)` - Classmethod for loading (auto-detects format)
+- `gstensor.save(file_path, compressed=True)` - GPU compression by default
+- `GSTensor.load(file_path, device='cuda')` - Direct GPU loading
+
+### Format Conversion
+
+Convert between linear and PLY formats seamlessly:
+- `normalize()` / `denormalize()` - Convert scales/opacities between linear and PLY formats
+- `to_rgb()` / `to_sh()` - Convert sh0 between SH and RGB color formats
+- Available for both `GSData` (CPU) and `GSTensor` (GPU)
+- In-place operations by default for efficiency
 
 ### Advanced Mask Management
 
@@ -70,11 +87,15 @@ Choose the right API for your use case:
 
 | Scenario                                    | Recommended API                                    |
 |---------------------------------------------|-----------------------------------------------------|
-| Load a PLY file (any format)                | `plyread()` — Auto-detects format                  |
-| Write back to disk (auto-optimized)        | `plywrite()` — Automatic zero-copy optimization    |
+| Load a PLY file (any format)                | `GSData.load()` — Object-oriented, auto-detects format |
+| Write back to disk (auto-optimized)        | `data.save()` — Object-oriented, automatic optimization |
+| Load SOG format files                      | `sogread()` — Returns GSData (same API)            |
+| Convert linear ↔ PLY format                | `normalize()` / `denormalize()` — In-place conversion |
+| Convert SH ↔ RGB colors                    | `to_rgb()` / `to_sh()` — In-place color conversion |
 | Stream compressed bytes over network        | `compress_to_bytes()` / `decompress_from_bytes()`  |
 | Batch merge hundreds of shards              | `GSData.concatenate()` — Bulk merge (5.74x faster) |
-| GPU training / rendering loops              | `GSTensor.from_gsdata()` + `apply_masks()`         |
+| GPU training / rendering loops              | `GSTensor.load()` — Direct GPU loading             |
+| GPU compression                            | `gstensor.save()` — GPU compression (default)      |
 | Filter data with multiple conditions        | `add_mask_layer()` + `combine_masks()`             |
 | Optimize for many array operations         | `make_contiguous()` — Up to 45x speedup           |
 

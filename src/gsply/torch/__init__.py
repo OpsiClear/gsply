@@ -11,7 +11,9 @@ try:
     import torch
 
     TORCH_AVAILABLE = True
-except ImportError:
+except (ImportError, RuntimeError):
+    # Catch both ImportError (not installed) and RuntimeError (import issues)
+    # RuntimeError can occur with PyTorch version incompatibilities or bugs
     TORCH_AVAILABLE = False
     torch = None
 

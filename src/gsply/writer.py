@@ -30,12 +30,6 @@ from numba import jit
 from gsply.formats import CHUNK_SIZE, CHUNK_SIZE_SHIFT, SH_C0
 from gsply.gsdata import DataFormat, GSData, _create_format_dict, _get_sh_order_format
 
-# Optional PyTorch dependency (for GSTensor support)
-try:
-    from gsply.torch.gstensor import GSTensor  # noqa: PLC0415
-except ImportError:
-    GSTensor = None  # type: ignore[assignment, misc]
-
 if TYPE_CHECKING:
     from gsply.torch.gstensor import GSTensor  # noqa: F401
 
@@ -1161,10 +1155,16 @@ def plywrite(
 
     file_path = Path(file_path)
 
-    # Convert GSTensor to GSData if needed
-    if GSTensor is not None and isinstance(data, GSTensor):
-        # Convert GSTensor to GSData (transfers to CPU)
-        data = data.to_gsdata()
+    # Convert GSTensor to GSData if needed (lazy import to avoid torch import issues)
+    try:
+        from gsply.torch.gstensor import GSTensor  # noqa: PLC0415
+
+        if isinstance(data, GSTensor):
+            # Convert GSTensor to GSData (transfers to CPU)
+            data = data.to_gsdata()
+    except (ImportError, RuntimeError):
+        # PyTorch not available or has import issues, skip GSTensor check
+        pass
 
     # Convert individual arrays to GSData
     if not isinstance(data, GSData):
