@@ -85,7 +85,30 @@ html_short_title = "gsply"
 html_logo = None
 html_favicon = None
 
-html_theme_options = {}
+html_theme_options = {
+    "announcement": None,
+    "sidebar_hide_name": False,
+    "light_logo": None,
+    "dark_logo": None,
+    "light_css_variables": {
+        "color-brand-primary": "#2563eb",
+        "color-brand-content": "#1e40af",
+        "color-admonition-background": "#f0f9ff",
+        "font-stack": "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        "font-stack--monospace": "'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#60a5fa",
+        "color-brand-content": "#93c5fd",
+        "color-admonition-background": "#1e3a5f",
+        "font-stack": "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        "font-stack--monospace": "'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace",
+    },
+    "navigation_with_keys": True,
+    "source_repository": "https://github.com/OpsiClear/gsply",
+    "source_branch": "master",
+    "source_directory": "docs/source/",
+}
 
 html_css_files = [
     "custom.css",
