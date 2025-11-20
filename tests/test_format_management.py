@@ -1210,3 +1210,193 @@ class TestFormatPresetEdgeCases:
         assert data_linear._format == data_rasterizer._format
         assert data_linear._format["scales"] == DataFormat.SCALES_LINEAR
         assert data_rasterizer._format["scales"] == DataFormat.SCALES_LINEAR
+
+
+# =============================================================================
+# Format Metadata Isolation Tests
+# =============================================================================
+
+
+class TestFormatIsolation:
+    """Ensure format metadata is not shared across copies or clones."""
+
+    def test_gsdata_copy_keeps_source_format(self):
+        """In-place ops on a GSData copy should not mutate the original format dict."""
+        format_dict = create_rasterizer_format(sh_degree=0)
+        means = np.zeros((2, 3), dtype=np.float32)
+        scales = np.full((2, 3), 0.5, dtype=np.float32)
+        quats = np.tile(np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float32), (2, 1))
+        opacities = np.full(2, 0.5, dtype=np.float32)
+        sh0 = np.zeros((2, 3), dtype=np.float32)
+        shN = np.empty((2, 0, 3), dtype=np.float32)
+
+        base = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            _format=format_dict,
+        )
+        copied = base.copy()
+        copied.normalize(inplace=True)
+
+        assert base._format is not copied._format
+        assert base._format["scales"] == DataFormat.SCALES_LINEAR
+        assert base._format["opacities"] == DataFormat.OPACITIES_LINEAR
+        assert copied._format["scales"] == DataFormat.SCALES_PLY
+        assert copied._format["opacities"] == DataFormat.OPACITIES_PLY
+
+    def test_gstensor_clone_keeps_source_format(self):
+        """In-place ops on a GSTensor clone should not mutate the original format dict."""
+        format_dict = create_rasterizer_format(sh_degree=0)
+        means = torch.zeros((2, 3), dtype=torch.float32)
+        scales = torch.full((2, 3), 0.5, dtype=torch.float32)
+        quats = torch.tensor([[0.0, 0.0, 0.0, 1.0]], dtype=torch.float32)
+        quats = quats.repeat(2, 1)
+        opacities = torch.full((2,), 0.5, dtype=torch.float32)
+        sh0 = torch.zeros((2, 3), dtype=torch.float32)
+        shN = torch.empty((2, 0, 3), dtype=torch.float32)
+
+        base = GSTensor(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            _format=format_dict,
+            masks=None,
+            mask_names=None,
+            _base=None,
+        )
+        clone = base.clone()
+        clone.normalize(inplace=True)
+
+        assert base._format is not clone._format
+        assert base._format["scales"] == DataFormat.SCALES_LINEAR
+        assert base._format["opacities"] == DataFormat.OPACITIES_LINEAR
+        assert clone._format["scales"] == DataFormat.SCALES_PLY
+        assert clone._format["opacities"] == DataFormat.OPACITIES_PLY
+
+    def test_gsdata_normalize_non_inplace_uses_separate_format(self):
+        """Non-inplace normalize should return a copy with independent format dict."""
+        format_dict = create_rasterizer_format(sh_degree=0)
+        means = np.zeros((1, 3), dtype=np.float32)
+        scales = np.full((1, 3), 0.5, dtype=np.float32)
+        quats = np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
+        opacities = np.array([0.5], dtype=np.float32)
+        sh0 = np.zeros((1, 3), dtype=np.float32)
+        shN = np.empty((1, 0, 3), dtype=np.float32)
+
+        base = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            _format=format_dict,
+        )
+        normalized = base.normalize(inplace=False)
+
+        assert normalized is not base
+        assert base._format is not normalized._format
+        assert base._format["scales"] == DataFormat.SCALES_LINEAR
+        assert base._format["opacities"] == DataFormat.OPACITIES_LINEAR
+        assert normalized._format["scales"] == DataFormat.SCALES_PLY
+        assert normalized._format["opacities"] == DataFormat.OPACITIES_PLY
+
+    def test_gstensor_normalize_non_inplace_uses_separate_format(self):
+        """Non-inplace normalize should return a clone with independent format dict."""
+        format_dict = create_rasterizer_format(sh_degree=0)
+        means = torch.zeros((1, 3), dtype=torch.float32)
+        scales = torch.full((1, 3), 0.5, dtype=torch.float32)
+        quats = torch.tensor([[0.0, 0.0, 0.0, 1.0]], dtype=torch.float32)
+        opacities = torch.tensor([0.5], dtype=torch.float32)
+        sh0 = torch.zeros((1, 3), dtype=torch.float32)
+        shN = torch.empty((1, 0, 3), dtype=torch.float32)
+
+        base = GSTensor(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            _format=format_dict,
+            masks=None,
+            mask_names=None,
+            _base=None,
+        )
+        normalized = base.normalize(inplace=False)
+
+        assert normalized is not base
+        assert base._format is not normalized._format
+        assert base._format["scales"] == DataFormat.SCALES_LINEAR
+        assert base._format["opacities"] == DataFormat.OPACITIES_LINEAR
+        assert normalized._format["scales"] == DataFormat.SCALES_PLY
+        assert normalized._format["opacities"] == DataFormat.OPACITIES_PLY
+
+    def test_gsdata_apply_masks_non_inplace_preserves_source_format(self):
+        """Masking without inplace should keep source format dict untouched."""
+        format_dict = create_rasterizer_format(sh_degree=0)
+        means = np.zeros((3, 3), dtype=np.float32)
+        scales = np.full((3, 3), 0.5, dtype=np.float32)
+        quats = np.tile(np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float32), (3, 1))
+        opacities = np.array([0.1, 0.9, 0.2], dtype=np.float32)
+        sh0 = np.zeros((3, 3), dtype=np.float32)
+        shN = np.empty((3, 0, 3), dtype=np.float32)
+
+        base = GSData(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            masks=np.array([True, False, True]),
+            _format=format_dict,
+        )
+
+        masked = base.apply_masks(inplace=False)
+
+        assert masked is not base
+        assert base._format is not masked._format
+        assert base._format["scales"] == DataFormat.SCALES_LINEAR
+        assert base._format["opacities"] == DataFormat.OPACITIES_LINEAR
+        assert masked._format["scales"] == DataFormat.SCALES_LINEAR
+        assert masked._format["opacities"] == DataFormat.OPACITIES_LINEAR
+
+    def test_gstensor_apply_masks_non_inplace_preserves_source_format(self):
+        """Masking without inplace should keep source format dict untouched."""
+        format_dict = create_rasterizer_format(sh_degree=0)
+        means = torch.zeros((3, 3), dtype=torch.float32)
+        scales = torch.full((3, 3), 0.5, dtype=torch.float32)
+        quats = torch.tensor([[0.0, 0.0, 0.0, 1.0]], dtype=torch.float32).repeat(3, 1)
+        opacities = torch.tensor([0.1, 0.9, 0.2], dtype=torch.float32)
+        sh0 = torch.zeros((3, 3), dtype=torch.float32)
+        shN = torch.empty((3, 0, 3), dtype=torch.float32)
+
+        base = GSTensor(
+            means=means,
+            scales=scales,
+            quats=quats,
+            opacities=opacities,
+            sh0=sh0,
+            shN=shN,
+            masks=torch.tensor([True, False, True]),
+            _format=format_dict,
+            mask_names=None,
+            _base=None,
+        )
+
+        masked = base.apply_masks(inplace=False)
+
+        assert masked is not base
+        assert base._format is not masked._format
+        assert base._format["scales"] == DataFormat.SCALES_LINEAR
+        assert base._format["opacities"] == DataFormat.OPACITIES_LINEAR
+        assert masked._format["scales"] == DataFormat.SCALES_LINEAR
+        assert masked._format["opacities"] == DataFormat.OPACITIES_LINEAR

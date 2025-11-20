@@ -85,6 +85,9 @@ class GSTensor:
 
     def __post_init__(self):
         """Auto-detect format if not provided."""
+        # Copy format dict to avoid sharing mutable state between instances
+        self._format = dict(self._format)
+
         # If _format is empty dict, auto-detect from values
         if not self._format:
             # Convert tensors to numpy for format detection
