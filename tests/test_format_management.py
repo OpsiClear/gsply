@@ -1400,3 +1400,773 @@ class TestFormatIsolation:
         assert base._format["opacities"] == DataFormat.OPACITIES_LINEAR
         assert masked._format["scales"] == DataFormat.SCALES_LINEAR
         assert masked._format["opacities"] == DataFormat.OPACITIES_LINEAR
+
+
+# =============================================================================
+# Format Query Property Tests (v0.2.8)
+# =============================================================================
+
+
+class TestGSDataFormatQueryProperties:
+    """Test format query properties for GSData."""
+
+    def test_is_scales_ply(self):
+        """Test is_scales_ply property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_scales_ply is True
+        assert data.is_scales_linear is False
+
+    def test_is_scales_linear(self):
+        """Test is_scales_linear property."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.rand(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.rand(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_scales_linear is True
+        assert data.is_scales_ply is False
+
+    def test_is_opacities_ply(self):
+        """Test is_opacities_ply property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_opacities_ply is True
+        assert data.is_opacities_linear is False
+
+    def test_is_opacities_linear(self):
+        """Test is_opacities_linear property."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.rand(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.rand(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_opacities_linear is True
+        assert data.is_opacities_ply is False
+
+    def test_is_sh0_sh(self):
+        """Test is_sh0_sh property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_sh0_sh is True
+        assert data.is_sh0_rgb is False
+
+    def test_is_sh0_rgb(self):
+        """Test is_sh0_rgb property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0, sh0_format=DataFormat.SH0_RGB)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.rand(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_sh0_rgb is True
+        assert data.is_sh0_sh is False
+
+    def test_is_sh_order_0(self):
+        """Test is_sh_order_0 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_sh_order_0 is True
+        assert data.is_sh_order_1 is False
+        assert data.is_sh_order_2 is False
+        assert data.is_sh_order_3 is False
+
+    def test_is_sh_order_1(self):
+        """Test is_sh_order_1 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=1)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.random.randn(n, 3, 3).astype(np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_sh_order_0 is False
+        assert data.is_sh_order_1 is True
+        assert data.is_sh_order_2 is False
+        assert data.is_sh_order_3 is False
+
+    def test_is_sh_order_2(self):
+        """Test is_sh_order_2 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=2)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.random.randn(n, 8, 3).astype(np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_sh_order_0 is False
+        assert data.is_sh_order_1 is False
+        assert data.is_sh_order_2 is True
+        assert data.is_sh_order_3 is False
+
+    def test_is_sh_order_3(self):
+        """Test is_sh_order_3 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=3)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.random.randn(n, 15, 3).astype(np.float32),
+            _format=format_dict,
+        )
+
+        assert data.is_sh_order_0 is False
+        assert data.is_sh_order_1 is False
+        assert data.is_sh_order_2 is False
+        assert data.is_sh_order_3 is True
+
+    def test_properties_update_after_normalize(self):
+        """Test that properties update correctly after normalize()."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.rand(n, 3).astype(np.float32) * 5.0,
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.rand(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        # Before normalize
+        assert data.is_scales_linear is True
+        assert data.is_opacities_linear is True
+
+        # After normalize
+        data.normalize(inplace=True)
+        assert data.is_scales_ply is True
+        assert data.is_opacities_ply is True
+        assert data.is_scales_linear is False
+        assert data.is_opacities_linear is False
+
+    def test_properties_update_after_denormalize(self):
+        """Test that properties update correctly after denormalize()."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        # Before denormalize
+        assert data.is_scales_ply is True
+        assert data.is_opacities_ply is True
+
+        # After denormalize
+        data.denormalize(inplace=True)
+        assert data.is_scales_linear is True
+        assert data.is_opacities_linear is True
+        assert data.is_scales_ply is False
+        assert data.is_opacities_ply is False
+
+    def test_properties_update_after_to_rgb(self):
+        """Test that properties update correctly after to_rgb()."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        # Before to_rgb
+        assert data.is_sh0_sh is True
+        assert data.is_sh0_rgb is False
+
+        # After to_rgb
+        data.to_rgb(inplace=True)
+        assert data.is_sh0_rgb is True
+        assert data.is_sh0_sh is False
+
+    def test_properties_update_after_to_sh(self):
+        """Test that properties update correctly after to_sh()."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0, sh0_format=DataFormat.SH0_RGB)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.rand(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        # Before to_sh
+        assert data.is_sh0_rgb is True
+        assert data.is_sh0_sh is False
+
+        # After to_sh
+        data.to_sh(inplace=True)
+        assert data.is_sh0_sh is True
+        assert data.is_sh0_rgb is False
+
+
+class TestGSTensorFormatQueryProperties:
+    """Test format query properties for GSTensor."""
+
+    def test_is_scales_ply(self):
+        """Test is_scales_ply property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        assert gstensor.is_scales_ply is True
+        assert gstensor.is_scales_linear is False
+
+    def test_is_scales_linear(self):
+        """Test is_scales_linear property."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.rand(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.rand(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        assert gstensor.is_scales_linear is True
+        assert gstensor.is_scales_ply is False
+
+    def test_is_opacities_ply(self):
+        """Test is_opacities_ply property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        assert gstensor.is_opacities_ply is True
+        assert gstensor.is_opacities_linear is False
+
+    def test_is_opacities_linear(self):
+        """Test is_opacities_linear property."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.rand(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.rand(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        assert gstensor.is_opacities_linear is True
+        assert gstensor.is_opacities_ply is False
+
+    def test_is_sh0_sh(self):
+        """Test is_sh0_sh property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        assert gstensor.is_sh0_sh is True
+        assert gstensor.is_sh0_rgb is False
+
+    def test_is_sh0_rgb(self):
+        """Test is_sh0_rgb property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0, sh0_format=DataFormat.SH0_RGB)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.rand(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        assert gstensor.is_sh0_rgb is True
+        assert gstensor.is_sh0_sh is False
+
+    def test_is_sh_order_0(self):
+        """Test is_sh_order_0 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        assert gstensor.is_sh_order_0 is True
+        assert gstensor.is_sh_order_1 is False
+        assert gstensor.is_sh_order_2 is False
+        assert gstensor.is_sh_order_3 is False
+
+    def test_is_sh_order_1(self):
+        """Test is_sh_order_1 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=1)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=torch.randn(n, 3, 3).float(),
+            _format=format_dict,
+        )
+
+        assert gstensor.is_sh_order_0 is False
+        assert gstensor.is_sh_order_1 is True
+        assert gstensor.is_sh_order_2 is False
+        assert gstensor.is_sh_order_3 is False
+
+    def test_is_sh_order_2(self):
+        """Test is_sh_order_2 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=2)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=torch.randn(n, 8, 3).float(),
+            _format=format_dict,
+        )
+
+        assert gstensor.is_sh_order_0 is False
+        assert gstensor.is_sh_order_1 is False
+        assert gstensor.is_sh_order_2 is True
+        assert gstensor.is_sh_order_3 is False
+
+    def test_is_sh_order_3(self):
+        """Test is_sh_order_3 property."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=3)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=torch.randn(n, 15, 3).float(),
+            _format=format_dict,
+        )
+
+        assert gstensor.is_sh_order_0 is False
+        assert gstensor.is_sh_order_1 is False
+        assert gstensor.is_sh_order_2 is False
+        assert gstensor.is_sh_order_3 is True
+
+    def test_properties_update_after_normalize(self):
+        """Test that properties update correctly after normalize()."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.rand(n, 3).float() * 5.0,
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.rand(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        # Before normalize
+        assert gstensor.is_scales_linear is True
+        assert gstensor.is_opacities_linear is True
+
+        # After normalize
+        gstensor.normalize(inplace=True)
+        assert gstensor.is_scales_ply is True
+        assert gstensor.is_opacities_ply is True
+        assert gstensor.is_scales_linear is False
+        assert gstensor.is_opacities_linear is False
+
+    def test_properties_update_after_denormalize(self):
+        """Test that properties update correctly after denormalize()."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        # Before denormalize
+        assert gstensor.is_scales_ply is True
+        assert gstensor.is_opacities_ply is True
+
+        # After denormalize
+        gstensor.denormalize(inplace=True)
+        assert gstensor.is_scales_linear is True
+        assert gstensor.is_opacities_linear is True
+        assert gstensor.is_scales_ply is False
+        assert gstensor.is_opacities_ply is False
+
+    def test_properties_update_after_to_rgb(self):
+        """Test that properties update correctly after to_rgb()."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        # Before to_rgb
+        assert gstensor.is_sh0_sh is True
+        assert gstensor.is_sh0_rgb is False
+
+        # After to_rgb
+        gstensor.to_rgb(inplace=True)
+        assert gstensor.is_sh0_rgb is True
+        assert gstensor.is_sh0_sh is False
+
+    def test_properties_update_after_to_sh(self):
+        """Test that properties update correctly after to_sh()."""
+        n = 10
+        format_dict = create_ply_format(sh_degree=0, sh0_format=DataFormat.SH0_RGB)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.rand(n, 3).float(),
+            shN=None,
+            _format=format_dict,
+        )
+
+        # Before to_sh
+        assert gstensor.is_sh0_rgb is True
+        assert gstensor.is_sh0_sh is False
+
+        # After to_sh
+        gstensor.to_sh(inplace=True)
+        assert gstensor.is_sh0_sh is True
+        assert gstensor.is_sh0_rgb is False
+
+    def test_properties_preserved_through_device_transfer(self):
+        """Test that properties are preserved through device transfer."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=1)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.rand(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.rand(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=torch.randn(n, 3, 3).float(),
+            _format=format_dict,
+        )
+
+        # Transfer to CPU (stays on CPU)
+        gstensor_cpu = gstensor.cpu()
+
+        assert gstensor_cpu.is_scales_linear is True
+        assert gstensor_cpu.is_opacities_linear is True
+        assert gstensor_cpu.is_sh0_sh is True
+        assert gstensor_cpu.is_sh_order_1 is True
+
+
+class TestFormatQueryPropertiesEdgeCases:
+    """Test edge cases for format query properties."""
+
+    def test_gsdata_properties_with_auto_detected_format(self):
+        """Test properties work correctly with auto-detected format."""
+        n = 100
+        # Create data that looks like linear format
+        scales = np.random.rand(n, 3).astype(np.float32) * 5.0
+        opacities = np.random.rand(n).astype(np.float32)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=scales,
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=opacities,
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+        )
+
+        # Should auto-detect linear format
+        assert data.is_scales_linear is True
+        assert data.is_opacities_linear is True
+
+    def test_gstensor_properties_with_auto_detected_format(self):
+        """Test properties work correctly with auto-detected format."""
+        n = 100
+        # Create data that looks like linear format
+        scales = torch.rand(n, 3).float() * 5.0
+        opacities = torch.rand(n).float()
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=scales,
+            quats=torch.randn(n, 4).float(),
+            opacities=opacities,
+            sh0=torch.randn(n, 3).float(),
+            shN=None,
+        )
+
+        # Should auto-detect linear format
+        assert gstensor.is_scales_linear is True
+        assert gstensor.is_opacities_linear is True
+
+    def test_gsdata_properties_preserved_through_copy(self):
+        """Test that properties are preserved through copy()."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=2)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.rand(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.rand(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.random.randn(n, 8, 3).astype(np.float32),
+            _format=format_dict,
+        )
+
+        copied = data.copy()
+
+        assert copied.is_scales_linear is True
+        assert copied.is_opacities_linear is True
+        assert copied.is_sh0_sh is True
+        assert copied.is_sh_order_2 is True
+
+    def test_gstensor_properties_preserved_through_clone(self):
+        """Test that properties are preserved through clone()."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=3)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.rand(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.rand(n).float(),
+            sh0=torch.randn(n, 3).float(),
+            shN=torch.randn(n, 15, 3).float(),
+            _format=format_dict,
+        )
+
+        cloned = gstensor.clone()
+
+        assert cloned.is_scales_linear is True
+        assert cloned.is_opacities_linear is True
+        assert cloned.is_sh0_sh is True
+        assert cloned.is_sh_order_3 is True
+
+    def test_gsdata_properties_preserved_through_slice(self):
+        """Test that properties are preserved through slicing."""
+        n = 100
+        format_dict = create_ply_format(sh_degree=1, sh0_format=DataFormat.SH0_RGB)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.randn(n, 3).astype(np.float32),
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.randn(n).astype(np.float32),
+            sh0=np.random.rand(n, 3).astype(np.float32),
+            shN=np.random.randn(n, 3, 3).astype(np.float32),
+            _format=format_dict,
+        )
+
+        sliced = data[10:50]
+
+        assert sliced.is_scales_ply is True
+        assert sliced.is_opacities_ply is True
+        assert sliced.is_sh0_rgb is True
+        assert sliced.is_sh_order_1 is True
+
+    def test_gstensor_properties_preserved_through_slice(self):
+        """Test that properties are preserved through slicing."""
+        n = 100
+        format_dict = create_ply_format(sh_degree=2, sh0_format=DataFormat.SH0_RGB)
+
+        gstensor = GSTensor(
+            means=torch.randn(n, 3).float(),
+            scales=torch.randn(n, 3).float(),
+            quats=torch.randn(n, 4).float(),
+            opacities=torch.randn(n).float(),
+            sh0=torch.rand(n, 3).float(),
+            shN=torch.randn(n, 8, 3).float(),
+            _format=format_dict,
+        )
+
+        sliced = gstensor[10:50]
+
+        assert sliced.is_scales_ply is True
+        assert sliced.is_opacities_ply is True
+        assert sliced.is_sh0_rgb is True
+        assert sliced.is_sh_order_2 is True
+
+    def test_non_inplace_conversion_returns_correct_properties(self):
+        """Test that non-inplace conversions return correct properties."""
+        n = 10
+        format_dict = create_rasterizer_format(sh_degree=0)
+
+        data = GSData(
+            means=np.random.randn(n, 3).astype(np.float32),
+            scales=np.random.rand(n, 3).astype(np.float32) * 5.0,
+            quats=np.random.randn(n, 4).astype(np.float32),
+            opacities=np.random.rand(n).astype(np.float32),
+            sh0=np.random.randn(n, 3).astype(np.float32),
+            shN=np.empty((n, 0, 3), dtype=np.float32),
+            _format=format_dict,
+        )
+
+        # Non-inplace normalize
+        normalized = data.normalize(inplace=False)
+
+        # Original should be unchanged
+        assert data.is_scales_linear is True
+        assert data.is_opacities_linear is True
+
+        # Normalized should have PLY format
+        assert normalized.is_scales_ply is True
+        assert normalized.is_opacities_ply is True

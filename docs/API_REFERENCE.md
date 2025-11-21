@@ -2,7 +2,10 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
-**Version:** 0.2.7
+**Version:** 0.2.8
+
+**New in v0.2.8:**
+- Format Query Properties (`is_scales_ply`, `is_scales_linear`, `is_opacities_ply`, `is_opacities_linear`, `is_sh0_sh`, `is_sh0_rgb`, `is_sh_order_0/1/2/3`) - Convenient boolean properties to check current data format
 
 **New in v0.2.7:**
 - Fused Activation Kernels (`apply_pre_activations`, `apply_pre_deactivations`) - Ultra-fast format conversion (~8-15x faster)

@@ -335,6 +335,7 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 - `GSData.from_dict(...)` - Create from dictionary with format preset
 - `data.normalize()` / `data.denormalize()` - Format conversion (fused kernels, ~8-15x faster)
 - `data.to_rgb()` / `data.to_sh()` - Color conversion
+- Format query: `is_scales_ply`, `is_scales_linear`, `is_opacities_ply`, `is_opacities_linear`, `is_sh0_sh`, `is_sh0_rgb`, `is_sh_order_0/1/2/3`
 - `data[index]` - Indexing and slicing
 - `data.unpack()` - Unpack to tuple
 - `data.copy()` - Deep copy
@@ -359,12 +360,22 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 - `gstensor.to_gsdata()` - Convert to CPU
 - `gstensor.normalize()` / `gstensor.denormalize()` - GPU format conversion
 - `gstensor.to_rgb()` / `gstensor.to_sh()` - GPU color conversion
+- Format query: `is_scales_ply`, `is_scales_linear`, `is_opacities_ply`, `is_opacities_linear`, `is_sh0_sh`, `is_sh0_rgb`, `is_sh_order_0/1/2/3`
 - Device management: `.to()`, `.cpu()`, `.cuda()`
 - Precision: `.half()`, `.float()`, `.double()`
 
 ---
 
 ## What's New
+
+### v0.2.8 - Format Query Properties
+
+- **Format Query Properties**: Convenient boolean properties to check current data format
+  - `is_scales_ply`, `is_scales_linear` - Check scale format
+  - `is_opacities_ply`, `is_opacities_linear` - Check opacity format
+  - `is_sh0_sh`, `is_sh0_rgb` - Check color format
+  - `is_sh_order_0/1/2/3` - Check SH degree
+  - Available on both `GSData` and `GSTensor`
 
 ### v0.2.7 - Fused Activation Kernels & Performance Optimization
 

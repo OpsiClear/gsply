@@ -1,5 +1,40 @@
 # Release Notes
 
+## v0.2.8 (Format Query Properties)
+
+### New Features
+- **Format Query Properties**: Convenient boolean properties to check current data format
+  - Scale format: `is_scales_ply`, `is_scales_linear`
+  - Opacity format: `is_opacities_ply`, `is_opacities_linear`
+  - Color format: `is_sh0_sh`, `is_sh0_rgb`
+  - SH degree: `is_sh_order_0`, `is_sh_order_1`, `is_sh_order_2`, `is_sh_order_3`
+  - Available on both `GSData` and `GSTensor` classes
+  - Properties update automatically during format conversions (`normalize()`, `denormalize()`, `to_rgb()`, `to_sh()`)
+
+### Usage Example
+```python
+data = gsply.plyread("scene.ply")
+
+# Check format before operations
+if data.is_scales_ply:
+    data.denormalize()  # Convert to linear
+
+if data.is_sh0_sh:
+    data.to_rgb()  # Convert to RGB colors
+
+# Check SH degree
+if data.is_sh_order_3:
+    print("High-quality SH3 data")
+```
+
+### Implementation Details
+- Properties use safe `.get()` access on `_format` dict
+- All conversion methods properly update format tracking
+- Format is preserved through copy, slice, concatenate, and device transfer operations
+- Format validation in `add()` and `concatenate()` raises clear errors for mismatches
+
+---
+
 ## v0.2.7 (Fused Activation Kernels & Performance Optimization)
 
 ### New Features

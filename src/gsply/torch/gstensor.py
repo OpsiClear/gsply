@@ -136,6 +136,90 @@ class GSTensor:
         return self.shN is not None and self.shN.shape[1] > 0
 
     # ==========================================================================
+    # Format Query Properties
+    # ==========================================================================
+
+    @property
+    def is_scales_ply(self) -> bool:
+        """Check if scales are in PLY format (log-scales).
+
+        :returns: True if scales are log-scales
+        """
+        return self._format.get("scales") == DataFormat.SCALES_PLY
+
+    @property
+    def is_scales_linear(self) -> bool:
+        """Check if scales are in linear format.
+
+        :returns: True if scales are linear
+        """
+        return self._format.get("scales") == DataFormat.SCALES_LINEAR
+
+    @property
+    def is_opacities_ply(self) -> bool:
+        """Check if opacities are in PLY format (logit-opacities).
+
+        :returns: True if opacities are logit-opacities
+        """
+        return self._format.get("opacities") == DataFormat.OPACITIES_PLY
+
+    @property
+    def is_opacities_linear(self) -> bool:
+        """Check if opacities are in linear format [0, 1].
+
+        :returns: True if opacities are linear
+        """
+        return self._format.get("opacities") == DataFormat.OPACITIES_LINEAR
+
+    @property
+    def is_sh0_sh(self) -> bool:
+        """Check if sh0 is in spherical harmonics format.
+
+        :returns: True if sh0 is in SH format
+        """
+        return self._format.get("sh0") == DataFormat.SH0_SH
+
+    @property
+    def is_sh0_rgb(self) -> bool:
+        """Check if sh0 is in RGB color format.
+
+        :returns: True if sh0 is in RGB format
+        """
+        return self._format.get("sh0") == DataFormat.SH0_RGB
+
+    @property
+    def is_sh_order_0(self) -> bool:
+        """Check if SH degree is 0 (only sh0, no shN).
+
+        :returns: True if SH degree is 0
+        """
+        return self._format.get("sh_order") == DataFormat.SH_ORDER_0
+
+    @property
+    def is_sh_order_1(self) -> bool:
+        """Check if SH degree is 1 (3 bands).
+
+        :returns: True if SH degree is 1
+        """
+        return self._format.get("sh_order") == DataFormat.SH_ORDER_1
+
+    @property
+    def is_sh_order_2(self) -> bool:
+        """Check if SH degree is 2 (8 bands).
+
+        :returns: True if SH degree is 2
+        """
+        return self._format.get("sh_order") == DataFormat.SH_ORDER_2
+
+    @property
+    def is_sh_order_3(self) -> bool:
+        """Check if SH degree is 3 (15 bands).
+
+        :returns: True if SH degree is 3
+        """
+        return self._format.get("sh_order") == DataFormat.SH_ORDER_3
+
+    # ==========================================================================
     # Conversion Methods (GSData <-> GSTensor)
     # ==========================================================================
 
