@@ -49,6 +49,33 @@ _INV_SH_C0 = 1.0 / SH_C0  # 1.0 / 0.28209479177387814 = 3.544907701811032
 # Cache keyed by device to avoid global state issues
 _QUAT_PERM_TABLE_CACHE: dict[str, torch.Tensor] = {}
 
+
+# ======================================================================================
+# HELPER FUNCTIONS
+# ======================================================================================
+
+
+def _compute_chunk_boundaries_gpu(
+    num_chunks: int, num_gaussians: int, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute chunk start and end indices for chunked GPU processing.
+
+    Each chunk contains CHUNK_SIZE Gaussians, except possibly the last chunk
+    which may be smaller if num_gaussians is not a multiple of CHUNK_SIZE.
+
+    :param num_chunks: Number of chunks
+    :param num_gaussians: Total number of Gaussians
+    :param device: Device to create tensors on
+    :returns: Tuple of (chunk_starts, chunk_ends) tensors of shape (num_chunks,)
+    """
+    chunk_indices = torch.arange(num_chunks, device=device)
+    chunk_starts = chunk_indices * CHUNK_SIZE
+    chunk_ends = torch.minimum(
+        chunk_starts + CHUNK_SIZE, torch.tensor(num_gaussians, device=device)
+    )
+    return chunk_starts, chunk_ends
+
+
 # ======================================================================================
 # GPU DECOMPRESSION (READ)
 # ======================================================================================
@@ -345,11 +372,7 @@ def _compute_chunk_bounds_gpu(
 
     # Create mask to exclude padded values in last chunk
     # For last chunk, mask out positions >= num_gaussians
-    chunk_indices = torch.arange(num_chunks, device=data.device)
-    chunk_starts = chunk_indices * CHUNK_SIZE
-    chunk_ends = torch.minimum(
-        chunk_starts + CHUNK_SIZE, torch.tensor(num_gaussians, device=data.device)
-    )
+    chunk_starts, chunk_ends = _compute_chunk_boundaries_gpu(num_chunks, num_gaussians, data.device)
 
     # Create mask: (NumChunks, 256) - True for valid data, False for padding
     positions = torch.arange(CHUNK_SIZE, device=data.device).unsqueeze(0)  # (1, 256)

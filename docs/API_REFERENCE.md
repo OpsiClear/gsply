@@ -2,7 +2,12 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
-**Version:** 0.2.8
+**Version:** 0.2.9
+
+**New in v0.2.9:**
+- Protocol Interfaces (`FormatAware`, `Normalizable`, `GaussianContainer`) - Type-safe interfaces for format management
+- Format Management API (`format_state`, `copy_format_from()`, `with_format()`) - Advanced format control
+- Performance optimizations (removed auto-consolidate overhead, in-place format conversion)
 
 **New in v0.2.8:**
 - Format Query Properties (`is_scales_ply`, `is_scales_linear`, `is_opacities_ply`, `is_opacities_linear`, `is_sh0_sh`, `is_sh0_rgb`, `is_sh_order_0/1/2/3`) - Convenient boolean properties to check current data format

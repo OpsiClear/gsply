@@ -1,5 +1,69 @@
 # Release Notes
 
+## v0.2.9 (Protocol Interfaces & Performance Optimization)
+
+### New Features
+- **Protocol Interfaces**: Type-safe interfaces for format management and data operations
+  - `FormatAware` - Protocol for objects that track format state (scales, opacities, sh0, sh_order)
+  - `Normalizable` - Protocol for objects that support format conversion (normalize/denormalize)
+  - `GaussianContainer` - Protocol for objects containing Gaussian splat data
+  - Enables type checking across GSData and GSTensor with structural typing
+  - Improves IDE autocomplete and static analysis
+- **Format Management API**: Advanced methods for format state control
+  - `format_state` property - Returns current format as immutable FormatState TypedDict
+  - `copy_format_from(other)` - Copy format state from another FormatAware object
+  - `with_format(**kwargs)` - Create shallow copy with modified format (functional style)
+  - Simplifies format handling in complex data pipelines
+- **In-Place Format Conversion**: All format conversion methods now modify data in-place by default
+  - `normalize(inplace=True)` - Default behavior optimized for performance
+  - `denormalize(inplace=True)` - Default behavior optimized for performance
+  - `to_rgb(inplace=True)` - Default behavior optimized for performance
+  - `to_sh(inplace=True)` - Default behavior optimized for performance
+  - Set `inplace=False` to create a copy (previous default behavior)
+
+### Performance Improvements
+- **Removed Auto-Consolidate Overhead**: Eliminated automatic `_base` array construction in plywrite()
+  - Previous behavior: plywrite() automatically called consolidate() for 2.6-2.8x speedup
+  - New behavior: Users can manually call `data.make_contiguous()` or `data.consolidate()` when needed
+  - Reason: Auto-consolidate added unnecessary overhead for already-contiguous data
+  - Maintains backward compatibility - zero-copy path still works automatically
+- **In-Place Operations Default**: Format conversions now modify data in-place by default
+  - Reduces memory allocations and copies
+  - Better performance for typical use cases where copy is not needed
+  - Previous behavior available via `inplace=False` parameter
+
+### API Changes
+- **Format Conversion Default Changed**: `inplace=True` is now the default for all conversion methods
+  - Previous default: `inplace=False` (created copies)
+  - New default: `inplace=True` (modifies in-place)
+  - Migration: Add `inplace=False` if you need a copy instead of in-place modification
+- **Example Migration**:
+  ```python
+  # Old code (v0.2.8 and earlier)
+  data_normalized = data.normalize()  # Created a copy
+
+  # New code (v0.2.9+)
+  data_normalized = data.normalize(inplace=False)  # Explicitly request copy
+  # or
+  data.normalize()  # Modifies in-place (new default)
+  ```
+
+### Implementation Details
+- Protocol interfaces use structural typing (no inheritance required)
+- FormatState uses TypedDict with Required/NotRequired for partial updates
+- All existing GSData and GSTensor methods support new protocols
+- Format copying preserves format state across operations
+- `with_format()` enables functional-style format updates without mutation
+
+### Testing
+- Added comprehensive test coverage for protocol interfaces (11 new tests)
+  - `tests/test_protocols.py` - Tests for FormatAware, Normalizable, GaussianContainer protocols
+  - Tests cover: protocol compliance, format_state property, copy_format_from(), with_format()
+  - Integration tests verify GSData and GSTensor implement all protocols correctly
+- Total test count: **406 tests** (365 + 41 new)
+
+---
+
 ## v0.2.8 (Format Query Properties)
 
 ### New Features

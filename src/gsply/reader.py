@@ -50,6 +50,30 @@ _INV_2047 = 1.0 / 2047.0  # 11-bit unpacking
 _INV_1023 = 1.0 / 1023.0  # 10-bit unpacking
 _INV_255 = 1.0 / 255.0  # 8-bit unpacking
 
+# Bit masks for extracting packed values
+_MASK_11_BIT = 0x7FF  # 2^11 - 1 = 2047 (11-bit mask for X and Z coordinates)
+_MASK_10_BIT = 0x3FF  # 2^10 - 1 = 1023 (10-bit mask for Y coordinate and quaternions)
+_MASK_8_BIT = 0xFF  # 2^8 - 1 = 255 (8-bit mask for RGB and opacity)
+_MASK_2_BIT = 0x3  # 2^2 - 1 = 3 (2-bit mask for quaternion index)
+
+# Bit shift positions for unpacking 32-bit integers
+# Position/Scale unpacking: (X:11 bits)(Y:10 bits)(Z:11 bits)
+_POSITION_X_SHIFT = 21  # bits 31-21: X coordinate (11 bits)
+_POSITION_Y_SHIFT = 11  # bits 20-11: Y coordinate (10 bits)
+_POSITION_Z_SHIFT = 0  # bits 10-0: Z coordinate (11 bits)
+
+# Quaternion unpacking: (largest_idx:2 bits)(qa:10 bits)(qb:10 bits)(qc:10 bits)
+_QUAT_INDEX_SHIFT = 30  # bits 31-30: largest component index (2 bits)
+_QUAT_A_SHIFT = 20  # bits 29-20: first remaining component (10 bits)
+_QUAT_B_SHIFT = 10  # bits 19-10: second remaining component (10 bits)
+_QUAT_C_SHIFT = 0  # bits 9-0: third remaining component (10 bits)
+
+# Color unpacking: (R:8 bits)(G:8 bits)(B:8 bits)(Opacity:8 bits)
+_COLOR_R_SHIFT = 24  # bits 31-24: red channel (8 bits)
+_COLOR_G_SHIFT = 16  # bits 23-16: green channel (8 bits)
+_COLOR_B_SHIFT = 8  # bits 15-8: blue channel (8 bits)
+_COLOR_O_SHIFT = 0  # bits 7-0: opacity (8 bits)
+
 # Quaternion norm constant
 _QUAT_NORM = 1.4142135623730951  # 1.0 / (sqrt(2) * 0.5) = sqrt(2)
 
@@ -259,30 +283,36 @@ def _unpack_all_jit(
         # Compute chunk index inline (256 Gaussians per chunk)
         chunk_idx = i >> _CHUNK_SIZE_SHIFT
 
-        # Unpack positions (11-10-11 bits) - use multiplication instead of division
+        # ======================================================================
+        # SECTION 1: Unpack positions (11-10-11 bits)
+        # ======================================================================
         p_packed = packed_position[i]
-        px = float((p_packed >> 21) & 0x7FF) * _INV_2047
-        py = float((p_packed >> 11) & 0x3FF) * _INV_1023
-        pz = float(p_packed & 0x7FF) * _INV_2047
+        px = float((p_packed >> _POSITION_X_SHIFT) & _MASK_11_BIT) * _INV_2047
+        py = float((p_packed >> _POSITION_Y_SHIFT) & _MASK_10_BIT) * _INV_1023
+        pz = float((p_packed >> _POSITION_Z_SHIFT) & _MASK_11_BIT) * _INV_2047
         means[i, 0] = min_x[chunk_idx] + px * range_x[chunk_idx]
         means[i, 1] = min_y[chunk_idx] + py * range_y[chunk_idx]
         means[i, 2] = min_z[chunk_idx] + pz * range_z[chunk_idx]
 
-        # Unpack scales (11-10-11 bits) - use multiplication instead of division
+        # ======================================================================
+        # SECTION 2: Unpack scales (11-10-11 bits)
+        # ======================================================================
         s_packed = packed_scale[i]
-        sx = float((s_packed >> 21) & 0x7FF) * _INV_2047
-        sy = float((s_packed >> 11) & 0x3FF) * _INV_1023
-        sz = float(s_packed & 0x7FF) * _INV_2047
+        sx = float((s_packed >> _POSITION_X_SHIFT) & _MASK_11_BIT) * _INV_2047
+        sy = float((s_packed >> _POSITION_Y_SHIFT) & _MASK_10_BIT) * _INV_1023
+        sz = float((s_packed >> _POSITION_Z_SHIFT) & _MASK_11_BIT) * _INV_2047
         scales[i, 0] = min_sx[chunk_idx] + sx * range_sx[chunk_idx]
         scales[i, 1] = min_sy[chunk_idx] + sy * range_sy[chunk_idx]
         scales[i, 2] = min_sz[chunk_idx] + sz * range_sz[chunk_idx]
 
-        # Unpack colors (8-8-8-8 bits) - use multiplication instead of division
+        # ======================================================================
+        # SECTION 3: Unpack colors (8-8-8-8 bits)
+        # ======================================================================
         c_packed = packed_color[i]
-        cr = float((c_packed >> 24) & 0xFF) * _INV_255
-        cg = float((c_packed >> 16) & 0xFF) * _INV_255
-        cb = float((c_packed >> 8) & 0xFF) * _INV_255
-        co = float(c_packed & 0xFF) * _INV_255
+        cr = float((c_packed >> _COLOR_R_SHIFT) & _MASK_8_BIT) * _INV_255
+        cg = float((c_packed >> _COLOR_G_SHIFT) & _MASK_8_BIT) * _INV_255
+        cb = float((c_packed >> _COLOR_B_SHIFT) & _MASK_8_BIT) * _INV_255
+        co = float((c_packed >> _COLOR_O_SHIFT) & _MASK_8_BIT) * _INV_255
 
         color_r = min_r[chunk_idx] + cr * range_r[chunk_idx]
         color_g = min_g[chunk_idx] + cg * range_g[chunk_idx]
@@ -292,7 +322,7 @@ def _unpack_all_jit(
         sh0[i, 1] = (color_g - 0.5) * _INV_SH_C0
         sh0[i, 2] = (color_b - 0.5) * _INV_SH_C0
 
-        # Opacity conversion
+        # --- Step 3.1: Opacity conversion ---
         if co > 0.0 and co < 1.0:
             opacities[i] = -np.log(1.0 / co - 1.0)
         elif co >= 1.0:
@@ -300,16 +330,21 @@ def _unpack_all_jit(
         else:
             opacities[i] = -10.0
 
-        # Unpack quaternions (2+10-10-10 bits) - use pre-computed norm constant
+        # ======================================================================
+        # SECTION 4: Unpack quaternions (2+10-10-10 bits)
+        # ======================================================================
         r_packed = packed_rotation[i]
-        a = (float((r_packed >> 20) & 0x3FF) * _INV_1023 - 0.5) * _QUAT_NORM
-        b = (float((r_packed >> 10) & 0x3FF) * _INV_1023 - 0.5) * _QUAT_NORM
-        c = (float(r_packed & 0x3FF) * _INV_1023 - 0.5) * _QUAT_NORM
+        # --- Step 4.1: Extract three smallest components ---
+        a = (float((r_packed >> _QUAT_A_SHIFT) & _MASK_10_BIT) * _INV_1023 - 0.5) * _QUAT_NORM
+        b = (float((r_packed >> _QUAT_B_SHIFT) & _MASK_10_BIT) * _INV_1023 - 0.5) * _QUAT_NORM
+        c = (float((r_packed >> _QUAT_C_SHIFT) & _MASK_10_BIT) * _INV_1023 - 0.5) * _QUAT_NORM
 
+        # --- Step 4.2: Compute missing component ---
         m_squared = 1.0 - (a * a + b * b + c * c)
         m = np.sqrt(max(0.0, m_squared))
-        which = r_packed >> 30
+        which = (r_packed >> _QUAT_INDEX_SHIFT) & _MASK_2_BIT
 
+        # --- Step 4.3: Reconstruct full quaternion based on which component was largest ---
         if which == 0:
             quats[i, 0] = m
             quats[i, 1] = a

@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://readthedocs.org/projects/gsply/badge/?version=latest)](https://gsply.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-365%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-406%20passing-brightgreen.svg)](#testing)
 
 **93M Gaussians/sec read | 57M Gaussians/sec write | Auto-optimized**
 
@@ -62,7 +62,7 @@ Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimize
 - **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
 - **Format Conversion**: `normalize()`, `denormalize()` with fused kernels (~8-15x faster)
 - **Color Conversion**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
-- **Comprehensive**: 365 passing tests, full type hints, extensive documentation
+- **Comprehensive**: 406 passing tests, full type hints, extensive documentation
 
 ---
 
@@ -368,6 +368,22 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ## What's New
 
+### v0.2.9 - Protocol Interfaces & Performance Optimization
+
+- **Protocol Interfaces**: Type-safe interfaces for format management
+  - `FormatAware` - Protocol for objects that track format state
+  - `Normalizable` - Protocol for objects that support format conversion
+  - `GaussianContainer` - Protocol for objects containing Gaussian splat data
+  - Enables structural typing across GSData and GSTensor
+- **Format Management API**: Advanced format control methods
+  - `format_state` property - Returns current format as immutable dictionary
+  - `copy_format_from(other)` - Copy format state from another object
+  - `with_format(**kwargs)` - Create shallow copy with modified format
+- **Performance Optimizations**: Improved efficiency for common operations
+  - Removed auto-consolidate overhead in plywrite() - users can call `make_contiguous()` manually when needed
+  - In-place format conversion now default (`inplace=True`) - reduces memory allocations
+  - Better performance for already-contiguous data
+
 ### v0.2.8 - Format Query Properties
 
 - **Format Query Properties**: Convenient boolean properties to check current data format
@@ -442,7 +458,7 @@ gsply/
 
 ### Testing
 
-gsply has comprehensive test coverage with **365 passing tests**:
+gsply has comprehensive test coverage with **406 passing tests**:
 
 ```bash
 # Run all tests

@@ -220,6 +220,73 @@ class GSTensor:
         return self._format.get("sh_order") == DataFormat.SH_ORDER_3
 
     # ==========================================================================
+    # Format Management API (Public)
+    # ==========================================================================
+
+    @property
+    def format_state(self) -> FormatDict:
+        """Get a read-only copy of the format state.
+
+        Returns a copy of the internal format dict for inspection.
+        Use copy_format_from() to copy format between objects.
+
+        :returns: Copy of the format dict (modifications won't affect original)
+
+        Example:
+            >>> gstensor = GSTensor.from_gsdata(data, device='cuda')
+            >>> fmt = gstensor.format_state
+            >>> print(fmt)  # {'scales': DataFormat.SCALES_PLY, ...}
+        """
+        return dict(self._format)
+
+    def copy_format_from(self, other: GSTensor | GSData) -> None:
+        """Copy format tracking from another GSTensor or GSData object.
+
+        This is the public API for copying format state between objects.
+        Use this instead of directly accessing _format dict.
+
+        :param other: Source GSTensor or GSData to copy format from
+
+        Example:
+            >>> # After processing that might lose format
+            >>> processed.copy_format_from(original)
+        """
+        self._format = dict(other._format)
+
+    def with_format(self, **updates) -> GSTensor:
+        """Create a copy with updated format settings.
+
+        Returns a new GSTensor with the same data but updated format dict.
+        This is useful for explicitly setting format after operations.
+
+        :param updates: Format updates (keys: scales, opacities, sh0, sh_order)
+        :returns: New GSTensor with updated format
+
+        Example:
+            >>> # Mark data as having linear opacities after conversion
+            >>> linear_tensor = tensor.with_format(opacities=DataFormat.OPACITIES_LINEAR)
+        """
+        new_format = dict(self._format)
+        for key, value in updates.items():
+            if key in ("scales", "opacities", "sh0", "sh_order", "means", "quats"):
+                new_format[key] = value
+            else:
+                raise ValueError(f"Unknown format key: {key}")
+
+        return GSTensor(
+            means=self.means,
+            scales=self.scales,
+            quats=self.quats,
+            opacities=self.opacities,
+            sh0=self.sh0,
+            shN=self.shN,
+            masks=self.masks,
+            mask_names=self.mask_names,
+            _base=self._base,
+            _format=new_format,
+        )
+
+    # ==========================================================================
     # Conversion Methods (GSData <-> GSTensor)
     # ==========================================================================
 
