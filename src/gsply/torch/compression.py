@@ -64,9 +64,13 @@ def _compute_chunk_boundaries_gpu(
     which may be smaller if num_gaussians is not a multiple of CHUNK_SIZE.
 
     :param num_chunks: Number of chunks
+    :type num_chunks: int
     :param num_gaussians: Total number of Gaussians
+    :type num_gaussians: int
     :param device: Device to create tensors on
-    :returns: Tuple of (chunk_starts, chunk_ends) tensors of shape (num_chunks,)
+    :type device: torch.device
+    :return: Tuple of (chunk_starts, chunk_ends) tensors of shape (num_chunks,)
+    :rtype: tuple[torch.Tensor, torch.Tensor]
     """
     chunk_indices = torch.arange(num_chunks, device=device)
     chunk_starts = chunk_indices * CHUNK_SIZE

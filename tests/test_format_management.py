@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from gsply import GSData, create_linear_format, create_ply_format, create_rasterizer_format
+from gsply import GSData, create_ply_format, create_rasterizer_format
 from gsply.gsdata import DataFormat
 
 # Check if PyTorch is available
@@ -55,12 +55,6 @@ class TestFormatHelperFunctions:
         assert format_dict["scales"] == DataFormat.SCALES_LINEAR
         assert format_dict["opacities"] == DataFormat.OPACITIES_LINEAR
         assert format_dict["sh_order"] == DataFormat.SH_ORDER_1
-
-    def test_create_linear_format_alias(self):
-        """Test that create_linear_format is an alias for create_rasterizer_format."""
-        format_linear = create_linear_format(sh_degree=2)
-        format_rasterizer = create_rasterizer_format(sh_degree=2)
-        assert format_linear == format_rasterizer
 
 
 # =============================================================================

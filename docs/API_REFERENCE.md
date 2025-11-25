@@ -62,7 +62,6 @@ pip install gsply[sogs] torch  # GPU + SOG support
     - [`detect_format(file_path)`](#detect_formatfile_path)
     - [`create_ply_format(sh_degree=0)`](#create_ply_formatsh_degree0)
     - [`create_rasterizer_format(sh_degree=0)`](#create_rasterizer_formatsh_degree0)
-    - [`create_linear_format(sh_degree=0)`](#create_linear_formatsh_degree0)
     - [`sogread(file_path | bytes)`](#sogreadfile_path--bytes)
   - [GSData](#gsdata)
     - [`data.save(file_path, compressed=False)`](#datasavefile_path-compressedfalse)
@@ -75,8 +74,8 @@ pip install gsply[sogs] torch  # GPU + SOG support
     - [`data.consolidate()`](#dataconsolidate)
     - [`data[index]`](#dataindex)
     - [Format Conversion: Linear ↔ PLY Format](#format-conversion-linear--ply-format)
-    - [`data.normalize(inplace=True)` / `data.to_ply_format(inplace=True)`](#datanormalizeinplacetrue--datato_ply_formatinplacetrue)
-    - [`data.denormalize(inplace=True)` / `data.from_ply_format(inplace=True)` / `data.to_linear(inplace=True)`](#datadenormalizeinplacetrue--datafrom_ply_formatinplacetrue--datato_linearinplacetrue)
+    - [`data.normalize(inplace=True)`](#datanormalizeinplacetrue)
+    - [`data.denormalize(inplace=True)`](#datadenormalizeinplacetrue)
     - [`data.to_rgb(inplace=True)`](#datato_rgbinplacetrue)
     - [`data.to_sh(inplace=True)`](#datato_shinplacetrue)
     - [`len(data)`](#lendata)
@@ -105,8 +104,8 @@ pip install gsply[sogs] torch  # GPU + SOG support
     - [`GSTensor.from_gsdata(data, device='cuda', dtype=torch.float32, requires_grad=False)`](#gstensorfrom_gsdatadata-devicecuda-dtypetorchfloat32-requires_gradfalse)
     - [`gstensor.to_gsdata()`](#gstensorto_gsdata)
     - [Format Conversion: Linear ↔ PLY Format (GSTensor)](#format-conversion-linear--ply-format-gstensor)
-    - [`gstensor.normalize(inplace=True)` / `gstensor.to_ply_format(inplace=True)`](#gstensornormalizeinplacetrue--gstensorto_ply_formatinplacetrue)
-    - [`gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format(inplace=True)` / `gstensor.to_linear(inplace=True)`](#gstensordenormalizeinplacetrue--gstensorfrom_ply_formatinplacetrue--gstensorto_linearinplacetrue)
+    - [`gstensor.normalize(inplace=True)`](#gstensornormalizeinplacetrue)
+    - [`gstensor.denormalize(inplace=True)`](#gstensordenormalizeinplacetrue)
     - [`gstensor.to_rgb(inplace=True)`](#gstensorto_rgbinplacetrue)
     - [`gstensor.to_sh(inplace=True)`](#gstensorto_shinplacetrue)
     - [`gstensor.to(device=None, dtype=None)`](#gstensortodevicenone-dtypenone)
@@ -262,19 +261,13 @@ Use this when creating GSData from data that matches PLY file format or when you
 
 Create format dictionary for rasterizer format (linear scales, linear opacities).
 
-Use this when creating GSData for rasterization or when you have linear values. Alias: `create_linear_format`.
+Use this when creating GSData for rasterization or when you have linear values.
 
 **Parameters:**
 - `sh_degree` (int): Spherical harmonics degree (0-3)
 
 **Returns:**
 - `FormatDict`: Format dictionary with linear settings
-
----
-
-### `create_linear_format(sh_degree=0)`
-
-Alias for `create_rasterizer_format`.
 
 ---
 
@@ -645,7 +638,7 @@ GSData provides methods to convert between linear and PLY formats:
 
 ---
 
-### `data.normalize(inplace=True)` / `data.to_ply_format(inplace=True)`
+### `data.normalize(inplace=True)`
 
 Convert **linear scales/opacities → PLY format** (log-scales, logit-opacities).
 
@@ -679,7 +672,7 @@ data = GSData(
 )
 
 # Convert to PLY format in-place (modifies data)
-data.normalize()  # or: data.normalize(inplace=True) or data.to_ply_format()
+data.normalize()  # or: data.normalize(inplace=True)
 # Now ready to save
 plywrite("output.ply", data)
 
@@ -689,7 +682,7 @@ ply_data = data.normalize(inplace=False)
 
 ---
 
-### `data.denormalize(inplace=True)` / `data.from_ply_format(inplace=True)` / `data.to_linear(inplace=True)`
+### `data.denormalize(inplace=True)`
 
 Convert **PLY format → linear scales/opacities** (log-scales → linear, logit-opacities → linear).
 
@@ -715,7 +708,7 @@ from gsply import plyread
 data = plyread("scene.ply")
 
 # Convert to linear format in-place (modifies data)
-data.denormalize()  # or: data.denormalize(inplace=True) or data.from_ply_format() or data.to_linear()
+data.denormalize()  # or: data.denormalize(inplace=True)
 
 # Now scales and opacities are in linear space
 print(f"Linear opacity range: [{data.opacities.min():.3f}, {data.opacities.max():.3f}]")
@@ -1598,7 +1591,7 @@ GSTensor provides the same format conversion methods as GSData for consistency:
 
 ---
 
-### `gstensor.normalize(inplace=True)` / `gstensor.to_ply_format(inplace=True)`
+### `gstensor.normalize(inplace=True)`
 
 Convert **linear scales/opacities → PLY format** (log-scales, logit-opacities).
 
@@ -1632,7 +1625,7 @@ gstensor = GSTensor(
 )
 
 # Convert to PLY format in-place (modifies gstensor)
-gstensor.normalize()  # or: gstensor.normalize(inplace=True) or gstensor.to_ply_format()
+gstensor.normalize()  # or: gstensor.normalize(inplace=True)
 # Now ready to save
 plywrite_gpu("output.ply", gstensor)
 
@@ -1642,7 +1635,7 @@ ply_tensor = gstensor.normalize(inplace=False)
 
 ---
 
-### `gstensor.denormalize(inplace=True)` / `gstensor.from_ply_format(inplace=True)` / `gstensor.to_linear(inplace=True)`
+### `gstensor.denormalize(inplace=True)`
 
 Convert **PLY format → linear scales/opacities** (log-scales → linear, logit-opacities → linear).
 
@@ -1668,7 +1661,7 @@ from gsply import plyread_gpu
 gstensor = plyread_gpu("scene.ply", device='cuda')
 
 # Convert to linear format in-place (modifies gstensor)
-gstensor.denormalize()  # or: gstensor.denormalize(inplace=True) or gstensor.from_ply_format() or gstensor.to_linear()
+gstensor.denormalize()  # or: gstensor.denormalize(inplace=True)
 
 # Now scales and opacities are in linear space
 print(f"Linear opacity range: [{gstensor.opacities.min():.3f}, {gstensor.opacities.max():.3f}]")

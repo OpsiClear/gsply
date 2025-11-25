@@ -690,7 +690,14 @@ def _ensure_numpy_arrays(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
     """Convert inputs to numpy arrays if they aren't already.
 
-    :returns: Tuple of arrays (may be converted to float32 if not already numpy arrays)
+    :param means: Gaussian centers (any array-like)
+    :param scales: Log scales (any array-like)
+    :param quats: Rotations as quaternions (any array-like)
+    :param opacities: Logit opacities (any array-like)
+    :param sh0: DC spherical harmonics (any array-like)
+    :param shn: Higher-order SH coefficients or None (any array-like or None)
+    :return: Tuple of numpy arrays (may be converted to float32 if not already numpy arrays)
+    :rtype: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]
     """
     if not isinstance(means, np.ndarray):
         means = np.asarray(means, dtype=np.float32)
@@ -717,7 +724,20 @@ def _convert_to_float32(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
     """Convert arrays to float32 dtype if needed (avoids copy when already float32).
 
-    :returns: Tuple of float32 arrays
+    :param means: Gaussian centers array
+    :type means: np.ndarray
+    :param scales: Log scales array
+    :type scales: np.ndarray
+    :param quats: Rotations as quaternions array
+    :type quats: np.ndarray
+    :param opacities: Logit opacities array
+    :type opacities: np.ndarray
+    :param sh0: DC spherical harmonics array
+    :type sh0: np.ndarray
+    :param shn: Higher-order SH coefficients or None
+    :type shn: np.ndarray | None
+    :return: Tuple of float32 arrays
+    :rtype: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]
     """
     # Fast path: check if all arrays are already float32
     all_float32 = (
@@ -757,7 +777,18 @@ def _validate_array_shapes(
 ) -> None:
     """Validate that all arrays have the expected shapes.
 
+    :param means: Gaussian centers array, shape (N, 3)
+    :type means: np.ndarray
+    :param scales: Log scales array, shape (N, 3)
+    :type scales: np.ndarray
+    :param quats: Rotations as quaternions array, shape (N, 4)
+    :type quats: np.ndarray
+    :param opacities: Logit opacities array, shape (N,)
+    :type opacities: np.ndarray
+    :param sh0: DC spherical harmonics array, shape (N, 3)
+    :type sh0: np.ndarray
     :param num_gaussians: Expected number of Gaussians (N)
+    :type num_gaussians: int
     :raises AssertionError: If any array has incorrect shape
     """
     assert means.shape == (num_gaussians, 3), (
@@ -786,8 +817,11 @@ def _flatten_shn(shn: np.ndarray | None, validate: bool) -> np.ndarray | None:
     """Flatten shN array from (N, K, 3) to (N, K*3) if needed.
 
     :param shn: Higher-order SH coefficients or None
+    :type shn: np.ndarray | None
     :param validate: Whether to validate the shape
-    :returns: Flattened shN array or None
+    :type validate: bool
+    :return: Flattened shN array or None
+    :rtype: np.ndarray | None
     """
     if shn is not None and shn.ndim == 3:
         n_gaussians, n_bands, n_components = shn.shape
@@ -804,8 +838,11 @@ def _compute_chunk_boundaries(num_chunks: int, num_gaussians: int) -> tuple[np.n
     which may be smaller if num_gaussians is not a multiple of CHUNK_SIZE.
 
     :param num_chunks: Number of chunks
+    :type num_chunks: int
     :param num_gaussians: Total number of Gaussians
-    :returns: Tuple of (chunk_starts, chunk_ends) arrays of shape (num_chunks,)
+    :type num_gaussians: int
+    :return: Tuple of (chunk_starts, chunk_ends) arrays of shape (num_chunks,)
+    :rtype: tuple[np.ndarray, np.ndarray]
     """
     chunk_starts = np.arange(num_chunks, dtype=np.int32) * CHUNK_SIZE
     chunk_ends = np.minimum(chunk_starts + CHUNK_SIZE, num_gaussians)
@@ -824,13 +861,21 @@ def _validate_and_normalize_inputs(
     """Validate and normalize input arrays to float32 format.
 
     :param means: Gaussian centers, shape (N, 3)
+    :type means: np.ndarray
     :param scales: Log scales, shape (N, 3)
+    :type scales: np.ndarray
     :param quats: Rotations as quaternions (wxyz), shape (N, 4)
+    :type quats: np.ndarray
     :param opacities: Logit opacities, shape (N,)
+    :type opacities: np.ndarray
     :param sh0: DC spherical harmonics, shape (N, 3)
+    :type sh0: np.ndarray
     :param shn: Higher-order SH coefficients, shape (N, K, 3) or None
+    :type shn: np.ndarray | None
     :param validate: Whether to validate shapes
-    :returns: Tuple of normalized arrays (all float32)
+    :type validate: bool
+    :return: Tuple of normalized arrays (all float32)
+    :rtype: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]
     """
     # Step 1: Ensure all inputs are numpy arrays
     means, scales, quats, opacities, sh0, shn = _ensure_numpy_arrays(

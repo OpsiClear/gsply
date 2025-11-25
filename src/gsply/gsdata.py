@@ -274,31 +274,6 @@ def create_rasterizer_format(
     )
 
 
-def create_linear_format(
-    sh_degree: int = 0, sh0_format: DataFormat = DataFormat.SH0_SH
-) -> FormatDict:
-    """Create format dict for linear format (linear scales, linear opacities).
-
-    Alias for `create_rasterizer_format()`. This format is useful for computation
-    and visualization where you need linear values.
-
-    Format details:
-    - Scales: linear scales (scale)
-    - Opacities: linear opacities (opacity in [0, 1])
-    - Colors: SH format (spherical harmonics)
-
-    :param sh_degree: Spherical harmonics degree (0-3), default 0
-    :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
-    :returns: Format dict with linear format settings
-
-    Example:
-        >>> # Create GSData with linear format (for computation)
-        >>> format_dict = create_linear_format(sh_degree=1)
-        >>> data = GSData(means=..., scales=..., _format=format_dict)
-    """
-    return create_rasterizer_format(sh_degree=sh_degree, sh0_format=sh0_format)
-
-
 def _detect_format_from_values(
     scales: np.ndarray, opacities: np.ndarray
 ) -> tuple[DataFormat, DataFormat]:
@@ -1520,39 +1495,6 @@ class GSData:
             "sh_order": _get_sh_order_format(result.get_sh_degree()),
         }
         return result
-
-    def to_ply_format(self, inplace: bool = True) -> "GSData":
-        """Alias for normalize() - Convert linear scales/opacities to PLY format.
-
-        Converts linear scales → log-scales and linear opacities → logit-opacities.
-        See normalize() for full documentation.
-
-        :param inplace: If True, modify this object in-place. If False, return new object.
-        :returns: GSData object with PLY format (log-scales, logit-opacities)
-        """
-        return self.normalize(inplace=inplace)
-
-    def from_ply_format(self, inplace: bool = True) -> "GSData":
-        """Alias for denormalize() - Convert PLY format to linear scales/opacities.
-
-        Converts log-scales → linear scales and logit-opacities → linear opacities.
-        See denormalize() for full documentation.
-
-        :param inplace: If True, modify this object in-place. If False, return new object.
-        :returns: GSData object with linear scales and opacities
-        """
-        return self.denormalize(inplace=inplace)
-
-    def to_linear(self, inplace: bool = True) -> "GSData":
-        """Alias for denormalize() - Convert PLY format (log/logit) to linear.
-
-        Converts log-scales → linear scales and logit-opacities → linear opacities.
-        See denormalize() for full documentation.
-
-        :param inplace: If True, modify this object in-place. If False, return new object.
-        :returns: GSData object with linear scales and opacities
-        """
-        return self.denormalize(inplace=inplace)
 
     def to_rgb(self, inplace: bool = True) -> "GSData":
         """Convert sh0 from spherical harmonics (SH) format to RGB color format.

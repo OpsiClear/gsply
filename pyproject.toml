@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gsply"
-version = "0.2.9"
+version = "0.2.10"
 description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python with NumPy and Numba. Features 11x faster GPU transfers and automatic format state tracking for seamless conversions."
 readme = "README.md"
 requires-python = ">=3.10"

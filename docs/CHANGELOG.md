@@ -1,5 +1,55 @@
 # Release Notes
 
+## v0.2.10 (Code Elegance & API Cleanup)
+
+### API Changes (Breaking)
+- **Removed Deprecated Aliases**: Cleaned up API surface by removing deprecated function and method aliases
+  - Removed `create_linear_format()` function - Use `create_rasterizer_format()` instead
+  - Removed `GSData.to_ply_format()` method - Use `normalize()` instead
+  - Removed `GSData.from_ply_format()` method - Use `denormalize()` instead
+  - Removed `GSData.to_linear()` method - Use `denormalize()` instead
+  - Removed `GSTensor.to_ply_format()` method - Use `normalize()` instead
+  - Removed `GSTensor.from_ply_format()` method - Use `denormalize()` instead
+  - Removed `GSTensor.to_linear()` method - Use `denormalize()` instead
+  - These aliases were introduced in v0.2.5 for backward compatibility and are no longer needed
+
+### Code Quality Improvements
+- **Internal Refactoring**: Improved code maintainability and organization
+  - Broke down monolithic `_validate_and_normalize_inputs()` into 4 focused helper functions:
+    - `_ensure_numpy_arrays()` - Type conversion
+    - `_convert_to_float32()` - dtype normalization with fast path
+    - `_validate_array_shapes()` - Shape validation
+    - `_flatten_shn()` - Array reshaping
+  - Extracted duplicated chunk boundary calculation logic into reusable helpers:
+    - `_compute_chunk_boundaries()` for NumPy (CPU)
+    - `_compute_chunk_boundaries_gpu()` for PyTorch (GPU)
+  - Single responsibility principle applied throughout
+- **Documentation**: Converted internal helper function docstrings to Sphinx/reST format
+  - Explicit `:param:`, `:type:`, `:return:`, `:rtype:` annotations
+  - Better IDE integration and API documentation generation
+
+### Migration Guide
+```python
+# Old (v0.2.9 and earlier)
+format_dict = create_linear_format(sh_degree=2)  # DEPRECATED
+data_normalized = data.to_ply_format()  # DEPRECATED
+data_linear = data.from_ply_format()  # DEPRECATED
+data_linear = data.to_linear()  # DEPRECATED
+
+# New (v0.2.10+)
+format_dict = create_rasterizer_format(sh_degree=2)  # Use canonical name
+data_normalized = data.normalize()  # Use canonical method
+data_linear = data.denormalize()  # Use canonical method
+data_linear = data.denormalize()  # Use canonical method
+```
+
+### Testing
+- All 406 tests passing (down from 407 after removing deprecated alias test)
+- Zero breaking changes to canonical API
+- No performance regressions
+
+---
+
 ## v0.2.9 (Protocol Interfaces & Performance Optimization)
 
 ### New Features

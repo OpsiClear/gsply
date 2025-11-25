@@ -28,7 +28,7 @@ class TestAPIExports:
         """Test that __version__ is exported."""
         assert hasattr(gsply, "__version__")
         assert isinstance(gsply.__version__, str)
-        assert gsply.__version__ == "0.2.9"
+        assert gsply.__version__ == "0.2.10"
 
     def test_all_contains_expected_exports(self):
         """Test that __all__ contains expected exports."""

@@ -660,39 +660,6 @@ class GSTensor:
             },
         )
 
-    def to_ply_format(self, inplace: bool = True) -> GSTensor:
-        """Alias for normalize() - Convert linear scales/opacities to PLY format.
-
-        Converts linear scales → log-scales and linear opacities → logit-opacities.
-        See normalize() for full documentation.
-
-        :param inplace: If True, modify this object in-place. If False, return new object.
-        :returns: GSTensor object with PLY format (log-scales, logit-opacities)
-        """
-        return self.normalize(inplace=inplace)
-
-    def from_ply_format(self, inplace: bool = True) -> GSTensor:
-        """Alias for denormalize() - Convert PLY format to linear scales/opacities.
-
-        Converts log-scales → linear scales and logit-opacities → linear opacities.
-        See denormalize() for full documentation.
-
-        :param inplace: If True, modify this object in-place. If False, return new object.
-        :returns: GSTensor object with linear scales and opacities
-        """
-        return self.denormalize(inplace=inplace)
-
-    def to_linear(self, inplace: bool = True) -> GSTensor:
-        """Alias for denormalize() - Convert PLY format (log/logit) to linear.
-
-        Converts log-scales → linear scales and logit-opacities → linear opacities.
-        See denormalize() for full documentation.
-
-        :param inplace: If True, modify this object in-place. If False, return new object.
-        :returns: GSTensor object with linear scales and opacities
-        """
-        return self.denormalize(inplace=inplace)
-
     def to_rgb(self, inplace: bool = True) -> GSTensor:
         """Convert sh0 from spherical harmonics (SH) format to RGB color format.
 

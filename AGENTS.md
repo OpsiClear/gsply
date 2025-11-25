@@ -223,8 +223,8 @@ masks:     (N,)   - boolean mask (initialized to all True)
 
 **Format Conversion:**
 - PLY files store scales in log-space and opacities in logit-space
-- Use `normalize()` / `to_ply_format()` to convert linear → PLY format (uses fused kernel, ~8-15x faster)
-- Use `denormalize()` / `from_ply_format()` / `to_linear()` to convert PLY → linear format (uses fused kernel, ~8-15x faster)
+- Use `normalize()` to convert linear → PLY format (uses fused kernel, ~8-15x faster)
+- Use `denormalize()` to convert PLY → linear format (uses fused kernel, ~8-15x faster)
 - Both `GSData` and `GSTensor` have identical format conversion APIs
 - Default is `inplace=True` for efficiency
 - Direct access: `apply_pre_activations()` / `apply_pre_deactivations()` for fine-grained control (v0.2.7+)
@@ -276,11 +276,11 @@ masks:     (N,)   - boolean mask (initialized to all True)
 ### Format Conversion: Linear ↔ PLY Format (v0.2.5+)
 
 **GSData and GSTensor Format Conversion Methods:**
-- `normalize(inplace=True)` / `to_ply_format(inplace=True)`: Convert linear → PLY format
+- `normalize(inplace=True)`: Convert linear → PLY format
   - Linear scales → log-scales: `log(scale)` with clamping
   - Linear opacities → logit-opacities: `logit(opacity, eps=1e-4)` with clamping
   - **Uses fused kernel**: `apply_pre_deactivations()` internally (~8-15x faster)
-- `denormalize(inplace=True)` / `from_ply_format(inplace=True)` / `to_linear(inplace=True)`: Convert PLY → linear format
+- `denormalize(inplace=True)`: Convert PLY → linear format
   - Log-scales → linear scales: `exp(log_scale)` with clamping
   - Logit-opacities → linear opacities: `sigmoid(logit)`
   - Quaternions → normalized quaternions (with safety floor)
