@@ -368,6 +368,15 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ## What's New
 
+### v0.2.11 - GPU Compression Optimization
+
+- **torch.compile() Auto-Optimization**: GPU compression now uses `torch.compile()` when available
+  - ~25% faster GPU compression (5.0ms → 4.0ms for 365K Gaussians)
+  - Automatic fallback to eager mode if compilation fails
+  - Zero configuration required - works transparently
+- **GPU Rounding Fix**: Fixed quaternion quantization to match CPU behavior exactly
+- **Platform Support**: Triton backend on Linux (standard), Windows (requires `triton-windows` package)
+
 ### v0.2.9 - Protocol Interfaces & Performance Optimization
 
 - **Protocol Interfaces**: Type-safe interfaces for format management

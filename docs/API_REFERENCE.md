@@ -2,7 +2,12 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
-**Version:** 0.2.9
+**Version:** 0.2.11
+
+**New in v0.2.11:**
+- GPU Compression Optimization - `torch.compile()` auto-optimization for ~25% faster GPU compression
+- GPU Rounding Fix - Quaternion quantization now matches CPU behavior exactly
+- Platform Support - Triton backend on Linux (standard), Windows (requires `triton-windows`)
 
 **New in v0.2.9:**
 - Protocol Interfaces (`FormatAware`, `Normalizable`, `GaussianContainer`) - Type-safe interfaces for format management
@@ -875,9 +880,17 @@ None (writes to file)
 
 **Performance:**
 - 4-5x faster compression than CPU Numba
+- ~25% additional speedup with `torch.compile()` (automatic when Triton available)
 - GPU reduction for chunk bounds (instant)
 - Minimal CPU-GPU data transfer
-- ~18ms for 365K Gaussians (20 M/s throughput)
+- ~4.0ms for 365K Gaussians with torch.compile, ~5.0ms without (75-90 M/s throughput)
+
+**torch.compile() Optimization:**
+- Automatically enabled when Triton is available
+- Falls back to eager mode gracefully if compilation fails
+- Platform requirements:
+  - Linux: Standard `triton` package (installed with PyTorch)
+  - Windows: Requires `triton-windows` package for optimization
 
 **Example:**
 ```python
@@ -888,7 +901,7 @@ gstensor = plyread_gpu("input.compressed.ply", device="cuda")
 
 # ... GPU operations ...
 
-# Write back to compressed file
+# Write back to compressed file (auto-optimized with torch.compile when available)
 plywrite_gpu("output.compressed.ply", gstensor)
 ```
 

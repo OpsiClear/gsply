@@ -41,6 +41,10 @@ _INV_255 = 1.0 / 255.0  # 8-bit unpacking
 # Quaternion normalization constant
 _NORM_FACTOR = 1.4142135623730951 * 0.5  # sqrt(2) * 0.5, pre-computed
 
+# Rounding offset for proper quantization (matches CPU's _ROUNDING_OFFSET)
+# Using + 0.5 before int conversion is faster than torch.round() and matches CPU behavior
+_ROUNDING_OFFSET = 0.5
+
 # SH conversion constant
 _INV_SH_C0 = 1.0 / SH_C0  # 1.0 / 0.28209479177387814 = 3.544907701811032
 
@@ -48,6 +52,76 @@ _INV_SH_C0 = 1.0 / SH_C0  # 1.0 / 0.28209479177387814 = 3.544907701811032
 # Shape: (4, 4) - for each 'which' value [0-3], the permutation of [m, a, b, c]
 # Cache keyed by device to avoid global state issues
 _QUAT_PERM_TABLE_CACHE: dict[str, torch.Tensor] = {}
+
+# ======================================================================================
+# TORCH.COMPILE SUPPORT (Optional optimization with automatic fallback)
+# ======================================================================================
+
+# Check if torch.compile with Triton backend is available
+_TORCH_COMPILE_AVAILABLE = False
+try:
+    # Test if torch.compile works (requires triton on Linux, triton-windows on Windows)
+    import torch._dynamo  # noqa: F401
+
+    _TORCH_COMPILE_AVAILABLE = True
+    logger.debug("torch.compile available for GPU compression acceleration")
+except ImportError:
+    logger.debug("torch.compile not available, using standard PyTorch operations")
+
+# Cache for compiled functions (lazily populated on first use)
+_COMPILED_FUNCTIONS: dict[str, object] = {}
+
+# Flag to disable torch.compile after runtime failures
+_TORCH_COMPILE_DISABLED = False
+
+
+def _get_compiled_fn(name: str, fn: object) -> object:
+    """Get compiled version of function, with lazy compilation and caching.
+
+    Falls back to original function if compilation fails at runtime
+    (e.g., missing C++ compiler on Windows).
+
+    :param name: Name of the function (for caching)
+    :param fn: The function to compile
+    :returns: Compiled function if available, otherwise original function
+    """
+    if not _TORCH_COMPILE_AVAILABLE or _TORCH_COMPILE_DISABLED:
+        return fn
+
+    if name not in _COMPILED_FUNCTIONS:
+        try:
+            # Use default mode (reduce-overhead has issues with int32 bit ops on Windows)
+            _COMPILED_FUNCTIONS[name] = torch.compile(fn, mode="default")
+            logger.debug("Compiled %s with torch.compile", name)
+        except Exception as e:
+            logger.debug("Failed to compile %s: %s, using original", name, e)
+            _COMPILED_FUNCTIONS[name] = fn
+
+    return _COMPILED_FUNCTIONS[name]
+
+
+def _call_with_fallback(compiled_fn: object, original_fn: object, *args: object) -> object:
+    """Call compiled function with automatic fallback to original on runtime errors.
+
+    :param compiled_fn: The compiled function to try first
+    :param original_fn: The original function to fall back to
+    :param args: Arguments to pass to the function
+    :returns: Result of the function call
+    """
+    global _TORCH_COMPILE_DISABLED  # noqa: PLW0603
+
+    if _TORCH_COMPILE_DISABLED or compiled_fn is original_fn:
+        return original_fn(*args)
+
+    try:
+        return compiled_fn(*args)
+    except Exception as e:
+        # Runtime compilation failed (e.g., missing cl.exe on Windows)
+        logger.debug("torch.compile runtime error: %s, falling back to standard ops", e)
+        _TORCH_COMPILE_DISABLED = True
+        # Clear cached compiled functions
+        _COMPILED_FUNCTIONS.clear()
+        return original_fn(*args)
 
 
 # ======================================================================================
@@ -415,10 +489,10 @@ def _pack_positions_gpu(
     normalized = (positions - min_bounds) / range_bounds
     normalized = torch.clamp(normalized, 0.0, 1.0)
 
-    # Quantize with rounding (reduces error from ~2x to ~1x theoretical max)
-    px = torch.round(normalized[:, :, 0] * 2047.0).to(torch.int32)
-    py = torch.round(normalized[:, :, 1] * 1023.0).to(torch.int32)
-    pz = torch.round(normalized[:, :, 2] * 2047.0).to(torch.int32)
+    # Quantize with rounding (+ 0.5 matches CPU behavior and is faster than torch.round())
+    px = (normalized[:, :, 0] * 2047.0 + _ROUNDING_OFFSET).to(torch.int32)
+    py = (normalized[:, :, 1] * 1023.0 + _ROUNDING_OFFSET).to(torch.int32)
+    pz = (normalized[:, :, 2] * 2047.0 + _ROUNDING_OFFSET).to(torch.int32)
 
     # Pack bits
     return (px << 21) | (py << 11) | pz
@@ -446,10 +520,10 @@ def _pack_scales_gpu(
     normalized = (scales - min_bounds) / range_bounds
     normalized = torch.clamp(normalized, 0.0, 1.0)
 
-    # Quantize with rounding (reduces error from ~2x to ~1x theoretical max)
-    sx = torch.round(normalized[:, :, 0] * 2047.0).to(torch.int32)
-    sy = torch.round(normalized[:, :, 1] * 1023.0).to(torch.int32)
-    sz = torch.round(normalized[:, :, 2] * 2047.0).to(torch.int32)
+    # Quantize with rounding (+ 0.5 matches CPU behavior and is faster than torch.round())
+    sx = (normalized[:, :, 0] * 2047.0 + _ROUNDING_OFFSET).to(torch.int32)
+    sy = (normalized[:, :, 1] * 1023.0 + _ROUNDING_OFFSET).to(torch.int32)
+    sz = (normalized[:, :, 2] * 2047.0 + _ROUNDING_OFFSET).to(torch.int32)
 
     return (sx << 21) | (sy << 11) | sz
 
@@ -478,14 +552,15 @@ def _pack_colors_and_opacities_gpu(
     normalized = (color_rgb - min_color) / range_color
     normalized = torch.clamp(normalized, 0.0, 1.0)
 
-    cr = (normalized[:, :, 0] * 255.0).to(torch.int32)
-    cg = (normalized[:, :, 1] * 255.0).to(torch.int32)
-    cb = (normalized[:, :, 2] * 255.0).to(torch.int32)
+    # Quantize with rounding (+ 0.5 matches CPU behavior and is faster than torch.round())
+    cr = (normalized[:, :, 0] * 255.0 + _ROUNDING_OFFSET).to(torch.int32)
+    cg = (normalized[:, :, 1] * 255.0 + _ROUNDING_OFFSET).to(torch.int32)
+    cb = (normalized[:, :, 2] * 255.0 + _ROUNDING_OFFSET).to(torch.int32)
 
     # Convert opacity from logit to linear: opacity = 1 / (1 + exp(-x))
     opacity_linear = torch.sigmoid(opacities)
     opacity_linear = torch.clamp(opacity_linear, 0.0, 1.0)
-    co = (opacity_linear * 255.0).to(torch.int32)
+    co = (opacity_linear * 255.0 + _ROUNDING_OFFSET).to(torch.int32)
 
     # Pack bits
     return (cr << 24) | (cg << 16) | (cb << 8) | co
@@ -524,14 +599,14 @@ def _pack_quaternions_gpu(quats: torch.Tensor) -> torch.Tensor:
     qb = three_components[:, :, 1] / (_NORM_FACTOR * 2.0) + 0.5
     qc = three_components[:, :, 2] / (_NORM_FACTOR * 2.0) + 0.5
 
-    # Clamp and quantize (Phase 2A: combine clamps for 1.55x speedup)
+    # Clamp and quantize with rounding (+ 0.5 matches CPU behavior and is faster than torch.round())
     stacked = torch.stack([qa, qb, qc], dim=-1)
     stacked = torch.clamp(stacked, 0.0, 1.0)
     qa_clamped, qb_clamped, qc_clamped = stacked[..., 0], stacked[..., 1], stacked[..., 2]
 
-    qa_int = (qa_clamped * 1023.0).to(torch.int32)
-    qb_int = (qb_clamped * 1023.0).to(torch.int32)
-    qc_int = (qc_clamped * 1023.0).to(torch.int32)
+    qa_int = (qa_clamped * 1023.0 + _ROUNDING_OFFSET).to(torch.int32)
+    qb_int = (qb_clamped * 1023.0 + _ROUNDING_OFFSET).to(torch.int32)
+    qc_int = (qc_clamped * 1023.0 + _ROUNDING_OFFSET).to(torch.int32)
 
     # Pack bits
     return (which.to(torch.int32) << 30) | (qa_int << 20) | (qb_int << 10) | qc_int
@@ -614,13 +689,28 @@ def compress_gpu(
     min_color_bc = min_color.unsqueeze(1)
     max_color_bc = max_color.unsqueeze(1)
 
-    # Pack all components
-    packed_position = _pack_positions_gpu(means_reshaped, min_pos_bc, max_pos_bc)
-    packed_scale = _pack_scales_gpu(scales_reshaped, min_scale_bc, max_scale_bc)
-    packed_color = _pack_colors_and_opacities_gpu(
-        sh0_reshaped, opacities_reshaped, min_color_bc, max_color_bc
+    # Get compiled packing functions (uses torch.compile if available, else original)
+    pack_positions_fn = _get_compiled_fn("pack_positions", _pack_positions_gpu)
+    pack_scales_fn = _get_compiled_fn("pack_scales", _pack_scales_gpu)
+    pack_colors_fn = _get_compiled_fn("pack_colors", _pack_colors_and_opacities_gpu)
+    pack_quats_fn = _get_compiled_fn("pack_quaternions", _pack_quaternions_gpu)
+
+    # Pack all components (with automatic fallback on runtime errors)
+    packed_position = _call_with_fallback(
+        pack_positions_fn, _pack_positions_gpu, means_reshaped, min_pos_bc, max_pos_bc
     )
-    packed_rotation = _pack_quaternions_gpu(quats_reshaped)
+    packed_scale = _call_with_fallback(
+        pack_scales_fn, _pack_scales_gpu, scales_reshaped, min_scale_bc, max_scale_bc
+    )
+    packed_color = _call_with_fallback(
+        pack_colors_fn,
+        _pack_colors_and_opacities_gpu,
+        sh0_reshaped,
+        opacities_reshaped,
+        min_color_bc,
+        max_color_bc,
+    )
+    packed_rotation = _call_with_fallback(pack_quats_fn, _pack_quaternions_gpu, quats_reshaped)
 
     # Stack into vertex data array (N, 4)
     packed_vertex = torch.stack(

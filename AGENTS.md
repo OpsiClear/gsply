@@ -11,7 +11,7 @@ This file provides context and instructions for AI coding agents working on the 
 - **Optional Dependencies**: PyTorch (GPU acceleration via GSTensor)
 - **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
 - **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support
-- **Current Version**: 0.2.7
+- **Current Version**: 0.2.11
 
 ## Development Environment Setup
 

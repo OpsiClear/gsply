@@ -1,5 +1,40 @@
 # Release Notes
 
+## v0.2.11 (GPU Compression Optimization)
+
+### Performance Improvements
+- **torch.compile() Auto-Optimization**: GPU compression now automatically uses `torch.compile()` when available
+  - ~25% faster GPU compression (5.0ms → 4.0ms for 365K Gaussians)
+  - Automatic fallback to eager mode if compilation fails (e.g., no Triton/MSVC)
+  - Zero configuration required - works transparently
+  - Triton backend provides JIT-compiled optimized kernels
+
+### Bug Fixes
+- **GPU Compression Rounding Fix**: Fixed quaternion quantization producing 1-bit differences vs CPU
+  - Changed from `torch.round()` (banker's rounding) to `+ 0.5` before int conversion
+  - Now matches CPU Numba behavior exactly
+  - Ensures consistent round-trip compression/decompression across CPU and GPU
+
+### Platform Support
+- **Triton Requirements**:
+  - Linux: Standard `triton` package (installed with PyTorch)
+  - Windows: Requires `triton-windows` package for torch.compile optimization
+  - Falls back to eager mode automatically when Triton unavailable
+
+### Implementation Details
+- Lazy compilation with caching (`_COMPILED_FUNCTIONS` dict)
+- Runtime error handling catches compilation failures gracefully
+- Individual packing functions compiled separately for better error isolation
+- Position packing: 7.8x speedup with torch.compile
+- Color/opacity packing: 6.2x speedup with torch.compile
+- Quaternion packing: 2.3x speedup with torch.compile
+
+### Testing
+- All 406 tests passing
+- GPU compression roundtrip verified with both torch.compile enabled and disabled
+
+---
+
 ## v0.2.10 (Code Elegance & API Cleanup)
 
 ### API Changes (Breaking)
