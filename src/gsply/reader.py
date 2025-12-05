@@ -496,7 +496,9 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:  # noqa: PLR0911
         else:
             shN_flat = data[:, indices["shN_start"] : indices["shN_end"]]  # noqa: N806
             num_sh_coeffs = shN_flat.shape[1]
-            shN = shN_flat.reshape(vertex_count, num_sh_coeffs // 3, 3)  # noqa: N806
+            # PLY stores SH coefficients channel-grouped: [R0..Rk, G0..Gk, B0..Bk]
+            # Reshape to [N, 3, K] then transpose to [N, K, 3] for gsplat convention
+            shN = shN_flat.reshape(vertex_count, 3, num_sh_coeffs // 3).transpose(0, 2, 1)  # noqa: N806
 
         # Extract remaining properties using lookup indices
         opacities = data[:, indices["opacity"]]
@@ -683,8 +685,9 @@ def _decompress_data_internal(
         # JIT-compiled parallel decompression (60-80% faster than vectorized NumPy)
         sh_flat = _unpack_sh_jit(shN_data)
 
-        # Reshape to (N, num_bands, 3)
-        shN = sh_flat.reshape(num_vertices, num_sh_bands, 3)  # noqa: N806
+        # PLY stores SH coefficients channel-grouped: [R0..Rk, G0..Gk, B0..Bk]
+        # Reshape to [N, 3, K] then transpose to [N, K, 3] for gsplat convention
+        shN = sh_flat.reshape(num_vertices, 3, num_sh_bands).transpose(0, 2, 1)  # noqa: N806
 
         # Determine SH degree from number of bands
         # Use SH_BANDS_TO_DEGREE mapping (more reliable than property count)

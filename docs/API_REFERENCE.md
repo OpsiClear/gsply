@@ -2,7 +2,12 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
 
-**Version:** 0.2.11
+**Version:** 0.2.12
+
+**New in v0.2.12:**
+- SH Coefficient Ordering Fix - Fixed incorrect spherical harmonics coefficient ordering to match 3DGS PLY format
+- Channel-grouped ordering: [R0,R1,...,Rk, G0,G1,...,Gk, B0,B1,...,Bk]
+- Updated both CPU (NumPy) and GPU (PyTorch) implementations for consistency
 
 **New in v0.2.11:**
 - GPU Compression Optimization - `torch.compile()` auto-optimization for ~25% faster GPU compression

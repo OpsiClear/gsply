@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.2.12 (SH Coefficient Order Fix)
+
+### Bug Fixes
+- **SH Coefficient Ordering Fix**: Fixed incorrect spherical harmonics coefficient ordering in PLY I/O
+  - PLY format stores f_rest as channel-grouped: [R0,R1,...,Rk, G0,G1,...,Gk, B0,B1,...,Bk]
+  - Previous code incorrectly reshaped coefficients without proper transpose
+  - Now correctly transposes [N, K, 3] to [N, 3, K] before flattening to match 3DGS PLY format
+  - Affects: `read_uncompressed()`, `_decompress_data_internal()`, `_flatten_shn()`, `_pack_sh_gpu()`, `decompress_gpu()`
+  - Ensures compatibility with original 3DGS PLY format specification
+
+### Implementation Details
+- Added detailed comments explaining channel-grouped ordering in all SH handling code
+- Updated both CPU (NumPy) and GPU (PyTorch) implementations for consistency
+- Aligns with original 3DGS save_ply: `f_rest = features_rest.transpose(1, 2).flatten(start_dim=1)`
+
+---
+
 ## v0.2.11 (GPU Compression Optimization)
 
 ### Performance Improvements

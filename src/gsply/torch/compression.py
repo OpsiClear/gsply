@@ -405,10 +405,11 @@ def decompress_gpu(
             sh_tensor = sh_tensor.to(device)
         sh_flat = _unpack_sh_gpu(sh_tensor)
 
-        # Reshape to (N, num_bands, 3)
+        # PLY stores SH coefficients channel-grouped: [R0..Rk, G0..Gk, B0..Bk]
+        # Reshape to [N, 3, K] then transpose to [N, K, 3] for gsplat convention
         num_coeffs = sh_flat.shape[1]
         num_bands = num_coeffs // 3
-        shN = sh_flat.reshape(num_vertices, num_bands, 3)  # noqa: N806
+        shN = sh_flat.reshape(num_vertices, 3, num_bands).transpose(1, 2)  # noqa: N806
 
     logger.debug(f"[GPU Decompression] Decompressed {num_vertices:,} Gaussians on {device}")
 
@@ -615,11 +616,18 @@ def _pack_quaternions_gpu(quats: torch.Tensor) -> torch.Tensor:
 def _pack_sh_gpu(shN: torch.Tensor) -> torch.Tensor:  # noqa: N803
     """GPU-accelerated SH coefficient packing.
 
+    Original 3DGS PLY format stores f_rest coefficients as channel-grouped:
+    [R0,R1,...,Rk, G0,G1,...,Gk, B0,B1,...,Bk]
+
+    This matches the original 3DGS save_ply which does:
+    f_rest = features_rest.transpose(1, 2).flatten(start_dim=1)
+
     :param shN: (N, num_bands, 3) float32 SH coefficients
-    :returns: (N, num_coeffs) uint8 packed SH coefficients
+    :returns: (N, num_coeffs) uint8 packed SH coefficients in channel-grouped order
     """
-    # Flatten to (N, num_coeffs)
-    sh_flat = shN.reshape(shN.shape[0], -1)
+    # Transpose [N, K, 3] -> [N, 3, K] then flatten to [N, 3*K]
+    # This gives channel-grouped order matching original 3DGS PLY format
+    sh_flat = shN.transpose(1, 2).reshape(shN.shape[0], -1)
 
     # Quantize: shN * 32 + 128, clamped to [0, 255]
     return torch.clamp(sh_flat * 32.0 + 128.0, 0.0, 255.0).to(torch.uint8)

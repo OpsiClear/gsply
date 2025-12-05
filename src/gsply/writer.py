@@ -814,20 +814,28 @@ def _validate_array_shapes(
 
 
 def _flatten_shn(shn: np.ndarray | None, validate: bool) -> np.ndarray | None:
-    """Flatten shN array from (N, K, 3) to (N, K*3) if needed.
+    """Flatten shN array from (N, K, 3) to (N, 3*K) with channel-grouped ordering.
 
-    :param shn: Higher-order SH coefficients or None
+    Original 3DGS PLY format stores f_rest coefficients as channel-grouped:
+    [R0,R1,...,Rk, G0,G1,...,Gk, B0,B1,...,Bk]
+
+    This matches the original 3DGS save_ply which does:
+    f_rest = features_rest.transpose(1, 2).flatten(start_dim=1)
+
+    :param shn: Higher-order SH coefficients [N, K, 3] or None
     :type shn: np.ndarray | None
     :param validate: Whether to validate the shape
     :type validate: bool
-    :return: Flattened shN array or None
+    :return: Flattened shN array [N, 3*K] in channel-grouped order, or None
     :rtype: np.ndarray | None
     """
     if shn is not None and shn.ndim == 3:
         n_gaussians, n_bands, n_components = shn.shape
         if validate:
             assert n_components == 3, f"shN must have shape (N, K, 3), got {shn.shape}"
-        shn = shn.reshape(n_gaussians, n_bands * n_components)
+        # Transpose [N, K, 3] -> [N, 3, K] then flatten to [N, 3*K]
+        # This gives channel-grouped order matching original 3DGS PLY format
+        shn = shn.transpose(0, 2, 1).reshape(n_gaussians, n_bands * n_components)
     return shn
 
 
