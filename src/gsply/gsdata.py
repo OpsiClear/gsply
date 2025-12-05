@@ -1735,7 +1735,9 @@ class GSData:
 
         if sh_coeffs > 0:
             shN_flat = base_array[:, 6 : 6 + sh_coeffs * 3]  # noqa: N806
-            shN = shN_flat.reshape(n_gaussians, sh_coeffs, 3)  # noqa: N806
+            # PLY stores SH coefficients channel-grouped: [R0..Rk, G0..Gk, B0..Bk]
+            # Reshape to [N, 3, K] then transpose to [N, K, 3] for gsplat convention
+            shN = shN_flat.reshape(n_gaussians, 3, sh_coeffs).transpose(0, 2, 1)  # noqa: N806
             opacity_idx = 6 + sh_coeffs * 3
         else:
             shN = None  # noqa: N806

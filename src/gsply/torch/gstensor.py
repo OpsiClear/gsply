@@ -405,7 +405,9 @@ class GSTensor:
         base_cpu[:, 3:6] = data.sh0
 
         if sh_coeffs > 0:
-            shN_flat = data.shN.reshape(n, sh_coeffs * 3)
+            # Store shN in channel-grouped order [R0..Rk, G0..Gk, B0..Bk] to match PLY convention
+            # data.shN is [N, K, 3], transpose to [N, 3, K] then flatten to [N, 3*K]
+            shN_flat = data.shN.transpose(0, 2, 1).reshape(n, sh_coeffs * 3)
             base_cpu[:, 6 : 6 + sh_coeffs * 3] = shN_flat
             opacity_idx = 6 + sh_coeffs * 3
         else:
@@ -942,7 +944,10 @@ class GSTensor:
 
         if sh_coeffs > 0:
             shN_flat = base_tensor[:, 6 : 6 + sh_coeffs * 3]
-            shN = shN_flat.reshape(n_gaussians, sh_coeffs, 3)
+            # PLY stores SH coefficients channel-grouped: [R0..Rk, G0..Gk, B0..Bk]
+            # Reshape to [N, 3, K] then transpose to [N, K, 3] for gsplat convention
+            # contiguous() is required for correct memory layout after transpose
+            shN = shN_flat.reshape(n_gaussians, 3, sh_coeffs).transpose(1, 2).contiguous()
             opacity_idx = 6 + sh_coeffs * 3
         else:
             shN = None
