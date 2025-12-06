@@ -1,5 +1,44 @@
 # Release Notes
 
+## v0.2.13 (Code Quality & Maintenance)
+
+### Code Quality Improvements
+- **Centralized Quantization Constants**: Moved all quantization constants from reader.py and writer.py to formats.py
+  - Unified constants: INV_2047, INV_1023, INV_255 (for unpacking)
+  - Unified constants: QUANTIZE_11_BIT_MAX, QUANTIZE_10_BIT_MAX, QUANTIZE_8_BIT_MAX (for packing)
+  - Unified bit masks: MASK_11_BIT, MASK_10_BIT, MASK_8_BIT, MASK_2_BIT
+  - Unified shift positions: POSITION_X/Y/Z_SHIFT, QUAT_INDEX/A/B/C_SHIFT, COLOR_R/G/B/O_SHIFT
+  - Single source of truth for all quantization-related values
+  - Improved code maintainability and consistency
+- **Reduced Code Duplication in writer.py**: Extracted _ensure_ply_format() helper function
+  - Consolidated duplicate PLY format checking and conversion logic
+  - Used in both compressed and uncompressed write paths
+  - Cleaner and more maintainable code structure
+- **Consolidated Format Creation in gsdata.py**: Simplified create_ply_format() and create_rasterizer_format()
+  - Extracted _create_format_preset() internal helper function
+  - Both public functions now use shared implementation logic
+  - Reduced code duplication and improved consistency
+- **Added SH_DEGREE_TO_COEFFS Constant**: Replaced magic number array in sog_reader.py
+  - Changed from [0, 3, 8, 15][bands] to SH_DEGREE_TO_COEFFS[bands]
+  - More readable and maintainable code
+- **Cleanup**: Better organization of imports and constants in reader.py and writer.py
+  - Module-level aliases for JIT functions improve code clarity
+  - Improved comments explaining quantization constants
+
+### Bug Fixes
+- **Fixed _base Invalidation in apply_pre_activations()**: Critical fix for in-place operations
+  - Added data._base = None after modifying arrays in-place
+  - Prevents GSTensor.from_gsdata() from using stale PLY format data from _base
+  - Ensures correct behavior when converting activated data to GPU
+
+### Implementation Details
+- No API changes - purely internal refactoring
+- No performance regressions
+- All 406 tests passing
+- Maintains full backward compatibility
+
+---
+
 ## v0.2.12 (SH Coefficient Order Fix)
 
 ### Bug Fixes
