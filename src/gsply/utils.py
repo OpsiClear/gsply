@@ -342,6 +342,11 @@ def apply_pre_activations(
     data.opacities = opacities
     data.quats = quats
 
+    # CRITICAL: Invalidate _base since we modified arrays in-place.
+    # If _base is not invalidated, GSTensor.from_gsdata() will use the fast path
+    # and read from _base (which still has PLY format data), ignoring our changes.
+    data._base = None
+
     logger.debug(
         "[PreActivation] Activated %d Gaussians (min_scale=%.2e, max_scale=%.2f, min_quat_norm=%.2e)",
         scales.shape[0],

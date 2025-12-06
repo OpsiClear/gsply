@@ -24,12 +24,30 @@ from pathlib import Path
 
 import numba
 import numpy as np
-
-# Import numba for JIT optimization
 from numba import jit
 
 from gsply.formats import (
+    CHUNK_SIZE_SHIFT,
+    COLOR_B_SHIFT,
+    COLOR_G_SHIFT,
+    COLOR_O_SHIFT,
+    COLOR_R_SHIFT,
     EXPECTED_PROPERTIES_BY_SH_DEGREE,
+    INV_255,
+    INV_1023,
+    INV_2047,
+    MASK_2_BIT,
+    MASK_8_BIT,
+    MASK_10_BIT,
+    MASK_11_BIT,
+    POSITION_X_SHIFT,
+    POSITION_Y_SHIFT,
+    POSITION_Z_SHIFT,
+    QUAT_A_SHIFT,
+    QUAT_B_SHIFT,
+    QUAT_C_SHIFT,
+    QUAT_INDEX_SHIFT,
+    QUAT_NORM,
     SH_BANDS_TO_DEGREE,
     SH_C0,
     detect_format,
@@ -45,44 +63,31 @@ logger = logging.getLogger(__name__)
 # PRE-COMPUTED CONSTANTS (Optimization - avoid runtime computation)
 # ======================================================================================
 
-# Quantization constants (pre-computed for multiplication instead of division)
-_INV_2047 = 1.0 / 2047.0  # 11-bit unpacking
-_INV_1023 = 1.0 / 1023.0  # 10-bit unpacking
-_INV_255 = 1.0 / 255.0  # 8-bit unpacking
+# Use module-level aliases for JIT functions (imported from formats.py)
+_INV_2047 = INV_2047
+_INV_1023 = INV_1023
+_INV_255 = INV_255
+_MASK_11_BIT = MASK_11_BIT
+_MASK_10_BIT = MASK_10_BIT
+_MASK_8_BIT = MASK_8_BIT
+_MASK_2_BIT = MASK_2_BIT
+_POSITION_X_SHIFT = POSITION_X_SHIFT
+_POSITION_Y_SHIFT = POSITION_Y_SHIFT
+_POSITION_Z_SHIFT = POSITION_Z_SHIFT
+_QUAT_INDEX_SHIFT = QUAT_INDEX_SHIFT
+_QUAT_A_SHIFT = QUAT_A_SHIFT
+_QUAT_B_SHIFT = QUAT_B_SHIFT
+_QUAT_C_SHIFT = QUAT_C_SHIFT
+_COLOR_R_SHIFT = COLOR_R_SHIFT
+_COLOR_G_SHIFT = COLOR_G_SHIFT
+_COLOR_B_SHIFT = COLOR_B_SHIFT
+_COLOR_O_SHIFT = COLOR_O_SHIFT
+_QUAT_NORM = QUAT_NORM
+_CHUNK_SIZE_SHIFT = CHUNK_SIZE_SHIFT
 
-# Bit masks for extracting packed values
-_MASK_11_BIT = 0x7FF  # 2^11 - 1 = 2047 (11-bit mask for X and Z coordinates)
-_MASK_10_BIT = 0x3FF  # 2^10 - 1 = 1023 (10-bit mask for Y coordinate and quaternions)
-_MASK_8_BIT = 0xFF  # 2^8 - 1 = 255 (8-bit mask for RGB and opacity)
-_MASK_2_BIT = 0x3  # 2^2 - 1 = 3 (2-bit mask for quaternion index)
-
-# Bit shift positions for unpacking 32-bit integers
-# Position/Scale unpacking: (X:11 bits)(Y:10 bits)(Z:11 bits)
-_POSITION_X_SHIFT = 21  # bits 31-21: X coordinate (11 bits)
-_POSITION_Y_SHIFT = 11  # bits 20-11: Y coordinate (10 bits)
-_POSITION_Z_SHIFT = 0  # bits 10-0: Z coordinate (11 bits)
-
-# Quaternion unpacking: (largest_idx:2 bits)(qa:10 bits)(qb:10 bits)(qc:10 bits)
-_QUAT_INDEX_SHIFT = 30  # bits 31-30: largest component index (2 bits)
-_QUAT_A_SHIFT = 20  # bits 29-20: first remaining component (10 bits)
-_QUAT_B_SHIFT = 10  # bits 19-10: second remaining component (10 bits)
-_QUAT_C_SHIFT = 0  # bits 9-0: third remaining component (10 bits)
-
-# Color unpacking: (R:8 bits)(G:8 bits)(B:8 bits)(Opacity:8 bits)
-_COLOR_R_SHIFT = 24  # bits 31-24: red channel (8 bits)
-_COLOR_G_SHIFT = 16  # bits 23-16: green channel (8 bits)
-_COLOR_B_SHIFT = 8  # bits 15-8: blue channel (8 bits)
-_COLOR_O_SHIFT = 0  # bits 7-0: opacity (8 bits)
-
-# Quaternion norm constant
-_QUAT_NORM = 1.4142135623730951  # 1.0 / (sqrt(2) * 0.5) = sqrt(2)
-
-# SH unpacking constants
+# SH unpacking constants (reader-specific)
 _SH_UNPACK_SCALE = 1.0 / 32.0  # 0.03125
 _SH_UNPACK_OFFSET = -127.5 * _SH_UNPACK_SCALE  # -3.984375
-
-# Chunk size shift (256 = 2^8)
-_CHUNK_SIZE_SHIFT = 8
 
 # SH0 conversion constant (pre-computed inverse for multiplication)
 _INV_SH_C0 = 1.0 / SH_C0  # = 3.544907701811032

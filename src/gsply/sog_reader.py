@@ -31,6 +31,7 @@ import numba
 import numpy as np
 from numba import jit
 
+from gsply.formats import SH_DEGREE_TO_COEFFS
 from gsply.gsdata import DataFormat, GSData, _create_format_dict, _get_sh_order_format
 
 # Use imagecodecs (fastest WebP decoder)
@@ -405,7 +406,7 @@ def sogread(file_path: str | Path | bytes) -> GSData:
         shn_meta = meta["shN"]  # noqa: N806
         bands = shn_meta["bands"]
         sh_degree = bands  # bands directly maps to SH degree (0, 1, 2, 3)
-        sh_coeffs = [0, 3, 8, 15][bands]
+        sh_coeffs = SH_DEGREE_TO_COEFFS[bands]
         palette_count = shn_meta["count"]
 
         if sh_coeffs > 0:

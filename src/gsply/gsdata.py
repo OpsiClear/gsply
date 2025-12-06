@@ -209,6 +209,30 @@ def _get_sh_order_format(sh_degree: int) -> DataFormat:
     return _SH_DEGREE_TO_FORMAT[sh_degree]
 
 
+def _create_format_preset(
+    scales_format: DataFormat,
+    opacities_format: DataFormat,
+    sh_degree: int = 0,
+    sh0_format: DataFormat = DataFormat.SH0_SH,
+) -> FormatDict:
+    """Internal helper to create format presets with common structure.
+
+    :param scales_format: Format for scales (SCALES_PLY or SCALES_LINEAR)
+    :param opacities_format: Format for opacities (OPACITIES_PLY or OPACITIES_LINEAR)
+    :param sh_degree: Spherical harmonics degree (0-3), default 0
+    :param sh0_format: Format for sh0 (SH0_SH or SH0_RGB), default SH0_SH
+    :returns: Format dict with specified settings
+    """
+    return _create_format_dict(
+        scales=scales_format,
+        opacities=opacities_format,
+        sh0=sh0_format,
+        sh_order=_get_sh_order_format(sh_degree),
+        means=DataFormat.MEANS_RAW,
+        quats=DataFormat.QUATS_RAW,
+    )
+
+
 def create_ply_format(sh_degree: int = 0, sh0_format: DataFormat = DataFormat.SH0_SH) -> FormatDict:
     """Create format dict for PLY file format (log-scales, logit-opacities).
 
@@ -230,13 +254,8 @@ def create_ply_format(sh_degree: int = 0, sh0_format: DataFormat = DataFormat.SH
         >>> format_dict = create_ply_format(sh_degree=3)
         >>> data = GSData(means=..., scales=..., _format=format_dict)
     """
-    return _create_format_dict(
-        scales=DataFormat.SCALES_PLY,
-        opacities=DataFormat.OPACITIES_PLY,
-        sh0=sh0_format,
-        sh_order=_get_sh_order_format(sh_degree),
-        means=DataFormat.MEANS_RAW,
-        quats=DataFormat.QUATS_RAW,
+    return _create_format_preset(
+        DataFormat.SCALES_PLY, DataFormat.OPACITIES_PLY, sh_degree, sh0_format
     )
 
 
@@ -264,13 +283,8 @@ def create_rasterizer_format(
         >>> data = GSData(means=..., scales=..., _format=format_dict)
         >>> # Data is ready to pass to rasterizer
     """
-    return _create_format_dict(
-        scales=DataFormat.SCALES_LINEAR,
-        opacities=DataFormat.OPACITIES_LINEAR,
-        sh0=sh0_format,
-        sh_order=_get_sh_order_format(sh_degree),
-        means=DataFormat.MEANS_RAW,
-        quats=DataFormat.QUATS_RAW,
+    return _create_format_preset(
+        DataFormat.SCALES_LINEAR, DataFormat.OPACITIES_LINEAR, sh_degree, sh0_format
     )
 
 

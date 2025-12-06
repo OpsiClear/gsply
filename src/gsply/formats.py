@@ -8,10 +8,35 @@ __all__ = [
     "get_sh_degree_from_property_count",
     "SH_C0",
     "CHUNK_SIZE",
+    "CHUNK_SIZE_SHIFT",
     "PROPERTY_COUNTS_BY_SH_DEGREE",
     "PROPERTY_COUNT_TO_SH_DEGREE",
     "SH_BANDS_TO_DEGREE",
     "EXPECTED_PROPERTIES_BY_SH_DEGREE",
+    "SH_DEGREE_TO_COEFFS",
+    # Quantization constants
+    "INV_2047",
+    "INV_1023",
+    "INV_255",
+    "QUANTIZE_11_BIT_MAX",
+    "QUANTIZE_10_BIT_MAX",
+    "QUANTIZE_8_BIT_MAX",
+    "MASK_11_BIT",
+    "MASK_10_BIT",
+    "MASK_8_BIT",
+    "MASK_2_BIT",
+    "POSITION_X_SHIFT",
+    "POSITION_Y_SHIFT",
+    "POSITION_Z_SHIFT",
+    "QUAT_INDEX_SHIFT",
+    "QUAT_A_SHIFT",
+    "QUAT_B_SHIFT",
+    "QUAT_C_SHIFT",
+    "COLOR_R_SHIFT",
+    "COLOR_G_SHIFT",
+    "COLOR_B_SHIFT",
+    "COLOR_O_SHIFT",
+    "QUAT_NORM",
 ]
 
 
@@ -89,6 +114,50 @@ COMPRESSED_VERTEX_PROPERTIES = 4  # packed position, rotation, scale, color
 
 # SH coefficient for color conversion
 SH_C0 = 0.28209479177387814  # sqrt(1/(4*pi))
+
+# ======================================================================================
+# QUANTIZATION CONSTANTS (shared between reader.py and writer.py)
+# ======================================================================================
+
+# Quantization inverses for unpacking (pre-computed for multiplication instead of division)
+INV_2047 = 1.0 / 2047.0  # 11-bit unpacking
+INV_1023 = 1.0 / 1023.0  # 10-bit unpacking
+INV_255 = 1.0 / 255.0  # 8-bit unpacking
+
+# Quantization maxima for packing
+QUANTIZE_11_BIT_MAX = 2047.0  # 2^11 - 1 (X and Z coordinates)
+QUANTIZE_10_BIT_MAX = 1023.0  # 2^10 - 1 (Y coordinate and quaternions)
+QUANTIZE_8_BIT_MAX = 255.0  # 2^8 - 1 (RGB and opacity)
+
+# Bit masks for extracting packed values
+MASK_11_BIT = 0x7FF  # 2^11 - 1 = 2047 (11-bit mask for X and Z coordinates)
+MASK_10_BIT = 0x3FF  # 2^10 - 1 = 1023 (10-bit mask for Y coordinate and quaternions)
+MASK_8_BIT = 0xFF  # 2^8 - 1 = 255 (8-bit mask for RGB and opacity)
+MASK_2_BIT = 0x3  # 2^2 - 1 = 3 (2-bit mask for quaternion index)
+
+# Bit shift positions for unpacking/packing 32-bit integers
+# Position/Scale: (X:11 bits)(Y:10 bits)(Z:11 bits)
+POSITION_X_SHIFT = 21  # bits 31-21: X coordinate (11 bits)
+POSITION_Y_SHIFT = 11  # bits 20-11: Y coordinate (10 bits)
+POSITION_Z_SHIFT = 0  # bits 10-0: Z coordinate (11 bits)
+
+# Quaternion: (largest_idx:2 bits)(qa:10 bits)(qb:10 bits)(qc:10 bits)
+QUAT_INDEX_SHIFT = 30  # bits 31-30: largest component index (2 bits)
+QUAT_A_SHIFT = 20  # bits 29-20: first remaining component (10 bits)
+QUAT_B_SHIFT = 10  # bits 19-10: second remaining component (10 bits)
+QUAT_C_SHIFT = 0  # bits 9-0: third remaining component (10 bits)
+
+# Color: (R:8 bits)(G:8 bits)(B:8 bits)(Opacity:8 bits)
+COLOR_R_SHIFT = 24  # bits 31-24: red channel (8 bits)
+COLOR_G_SHIFT = 16  # bits 23-16: green channel (8 bits)
+COLOR_B_SHIFT = 8  # bits 15-8: blue channel (8 bits)
+COLOR_O_SHIFT = 0  # bits 7-0: opacity (8 bits)
+
+# Quaternion norm constant
+QUAT_NORM = 1.4142135623730951  # 1.0 / (sqrt(2) * 0.5) = sqrt(2)
+
+# SH degree to f_rest coefficients mapping (for PLY format)
+SH_DEGREE_TO_COEFFS = {0: 0, 1: 3, 2: 8, 3: 15}
 
 
 def _parse_ply_header(file_path: Path) -> tuple[dict[str, dict[str, Any]], int]:

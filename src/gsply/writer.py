@@ -23,11 +23,25 @@ from typing import TYPE_CHECKING
 
 import numba
 import numpy as np
-
-# Import numba for JIT optimization
 from numba import jit
 
-from gsply.formats import CHUNK_SIZE, SH_C0
+from gsply.formats import (
+    CHUNK_SIZE,
+    COLOR_B_SHIFT,
+    COLOR_G_SHIFT,
+    COLOR_O_SHIFT,
+    COLOR_R_SHIFT,
+    POSITION_X_SHIFT,
+    POSITION_Y_SHIFT,
+    QUANTIZE_8_BIT_MAX,
+    QUANTIZE_10_BIT_MAX,
+    QUANTIZE_11_BIT_MAX,
+    QUAT_A_SHIFT,
+    QUAT_B_SHIFT,
+    QUAT_C_SHIFT,
+    QUAT_INDEX_SHIFT,
+    SH_C0,
+)
 from gsply.gsdata import (
     DataFormat,
     GSData,
@@ -53,35 +67,28 @@ _LARGE_FILE_THRESHOLD = 10_000_000  # 10MB threshold for buffer size selection
 
 
 # ======================================================================================
-# BIT-PACKING QUANTIZATION CONSTANTS
+# BIT-PACKING QUANTIZATION CONSTANTS (aliases from formats.py for JIT functions)
 # ======================================================================================
 
 # Quantization maxima for bit-packing (used in compression)
-# Position and Scale: 11-10-11 bit scheme
-_QUANTIZE_11_BIT_MAX = 2047.0  # 2^11 - 1 = 2047 (X and Z coordinates)
-_QUANTIZE_10_BIT_MAX = 1023.0  # 2^10 - 1 = 1023 (Y coordinate and quaternions)
-_QUANTIZE_8_BIT_MAX = 255.0  # 2^8 - 1 = 255 (RGB and opacity)
+_QUANTIZE_11_BIT_MAX = QUANTIZE_11_BIT_MAX
+_QUANTIZE_10_BIT_MAX = QUANTIZE_10_BIT_MAX
+_QUANTIZE_8_BIT_MAX = QUANTIZE_8_BIT_MAX
 
 # Rounding offset for proper quantization (avoids truncation bias)
 _ROUNDING_OFFSET = 0.5
 
-# Bit shift positions for 32-bit packing
-# Position/Scale packing: (X:11 bits)(Y:10 bits)(Z:11 bits)
-_POSITION_X_SHIFT = 21  # bits 31-21: X coordinate (11 bits)
-_POSITION_Y_SHIFT = 11  # bits 20-11: Y coordinate (10 bits)
-_POSITION_Z_SHIFT = 0  # bits 10-0: Z coordinate (11 bits)
-
-# Quaternion packing: (largest_idx:2 bits)(qa:10 bits)(qb:10 bits)(qc:10 bits)
-_QUAT_INDEX_SHIFT = 30  # bits 31-30: largest component index (2 bits)
-_QUAT_A_SHIFT = 20  # bits 29-20: first remaining component (10 bits)
-_QUAT_B_SHIFT = 10  # bits 19-10: second remaining component (10 bits)
-_QUAT_C_SHIFT = 0  # bits 9-0: third remaining component (10 bits)
-
-# Color packing: (R:8 bits)(G:8 bits)(B:8 bits)(Opacity:8 bits)
-_COLOR_R_SHIFT = 24  # bits 31-24: red channel (8 bits)
-_COLOR_G_SHIFT = 16  # bits 23-16: green channel (8 bits)
-_COLOR_B_SHIFT = 8  # bits 15-8: blue channel (8 bits)
-_COLOR_O_SHIFT = 0  # bits 7-0: opacity (8 bits)
+# Bit shift positions for 32-bit packing (aliases from formats.py)
+_POSITION_X_SHIFT = POSITION_X_SHIFT
+_POSITION_Y_SHIFT = POSITION_Y_SHIFT
+_QUAT_INDEX_SHIFT = QUAT_INDEX_SHIFT
+_QUAT_A_SHIFT = QUAT_A_SHIFT
+_QUAT_B_SHIFT = QUAT_B_SHIFT
+_QUAT_C_SHIFT = QUAT_C_SHIFT
+_COLOR_R_SHIFT = COLOR_R_SHIFT
+_COLOR_G_SHIFT = COLOR_G_SHIFT
+_COLOR_B_SHIFT = COLOR_B_SHIFT
+_COLOR_O_SHIFT = COLOR_O_SHIFT
 
 
 # ======================================================================================
@@ -857,6 +864,26 @@ def _compute_chunk_boundaries(num_chunks: int, num_gaussians: int) -> tuple[np.n
     return chunk_starts, chunk_ends
 
 
+def _ensure_ply_format(data: GSData, inplace: bool = True) -> GSData:
+    """Ensure data is in PLY format (log-scales, logit-opacities).
+
+    Checks format flags and converts if needed. Used before writing PLY files.
+
+    :param data: GSData to check/convert
+    :param inplace: If True, modify in-place for better performance
+    :returns: GSData in PLY format (may be same object if already in format)
+    """
+    scales_format = data._format.get("scales")
+    opacities_format = data._format.get("opacities")
+
+    if scales_format != DataFormat.SCALES_PLY or opacities_format != DataFormat.OPACITIES_PLY:
+        logger.debug(
+            f"[PLY Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
+        )
+        return data.normalize(inplace=inplace)
+    return data
+
+
 def _validate_and_normalize_inputs(
     means: np.ndarray,
     scales: np.ndarray,
@@ -1554,38 +1581,15 @@ def plywrite(
             else:
                 file_path = Path(str(file_path) + ".compressed.ply")
 
-        # Ensure data is in PLY format before writing compressed (log-scales, logit-opacities)
-        # Check format flags and convert if needed
-        scales_format = data._format.get("scales")
-        opacities_format = data._format.get("opacities")
-
-        # Convert to PLY format if not already in PLY format
-        if scales_format != DataFormat.SCALES_PLY or opacities_format != DataFormat.OPACITIES_PLY:
-            logger.debug(
-                f"[PLY Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
-            )
-            # Use inplace=True for better performance (avoids 22MB copy for 400K Gaussians)
-            # Safe since we're just writing the file and don't need to preserve original format
-            data = data.normalize(inplace=True)
+        # Ensure data is in PLY format (log-scales, logit-opacities) before writing
+        data = _ensure_ply_format(data, inplace=True)
 
         # Extract arrays for compressed write (compressed write doesn't use GSData yet)
         means, scales, quats, opacities, sh0, shN = data.unpack()  # noqa: N806
         write_compressed(file_path, means, scales, quats, opacities, sh0, shN)
     else:
-        # Ensure data is in PLY format before writing uncompressed (log-scales, logit-opacities)
-        # Check format flags and convert if needed
-        scales_format = data._format.get("scales")
-        opacities_format = data._format.get("opacities")
-
-        # Convert to PLY format if not already in PLY format
-        if scales_format != DataFormat.SCALES_PLY or opacities_format != DataFormat.OPACITIES_PLY:
-            logger.debug(
-                f"[PLY Write] Converting from {scales_format}/{opacities_format} to PLY format before writing"
-            )
-            # Use inplace=True for better performance (avoids 22MB copy for 400K Gaussians)
-            # Safe since we're just writing the file and don't need to preserve original format
-            data = data.normalize(inplace=True)
-
+        # Ensure data is in PLY format (log-scales, logit-opacities) before writing
+        data = _ensure_ply_format(data, inplace=True)
         write_uncompressed(file_path, data, validate=validate)
 
 
