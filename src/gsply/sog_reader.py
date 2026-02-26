@@ -3,6 +3,17 @@
 SOG format uses WebP images to store quantized Gaussian splatting data with
 codebook-based compression for scales and colors.
 
+Supports two metadata layouts:
+
+**v2 (codebook-based)**:
+    Top-level ``count`` and per-attribute ``codebook`` arrays (256 k-means
+    centroids).
+
+**v3 (linear min/max quantization)**:
+    Per-attribute ``shape``, ``dtype``, ``mins`` / ``maxs`` fields.  Scales and
+    SH0 are linearly dequantized from 8-bit pixel values; SHN centroids use a
+    scalar min/max range with a ``quantization`` field.
+
 Returns GSData container (same as plyread) for consistent API across all formats.
 
 Format:
@@ -31,7 +42,7 @@ import numba
 import numpy as np
 from numba import jit
 
-from gsply.formats import SH_DEGREE_TO_COEFFS
+from gsply.formats import SH_BANDS_TO_DEGREE, SH_DEGREE_TO_COEFFS
 from gsply.gsdata import DataFormat, GSData, _create_format_dict, _get_sh_order_format
 
 # Use imagecodecs (fastest WebP decoder)
@@ -256,6 +267,123 @@ def _decode_shn_jit(
     return shn
 
 
+@jit(nopython=True, parallel=True, fastmath=True, cache=True)
+def _decode_scales_linear_jit(
+    rgba: np.ndarray, mins: np.ndarray, maxs: np.ndarray, count: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """JIT-compiled scale decoding using linear min/max dequantization (v3 format).
+
+    :param rgba: (N*4,) uint8 RGBA data from scales.webp
+    :param mins: (3,) float32 per-channel minimum values
+    :param maxs: (3,) float32 per-channel maximum values
+    :param count: Number of Gaussians
+    :returns: Tuple of (sx, sy, sz) scale components
+    """
+    sx = np.empty(count, dtype=np.float32)
+    sy = np.empty(count, dtype=np.float32)
+    sz = np.empty(count, dtype=np.float32)
+
+    inv_255 = 1.0 / 255.0
+    rx = maxs[0] - mins[0]
+    ry = maxs[1] - mins[1]
+    rz = maxs[2] - mins[2]
+
+    for i in numba.prange(count):
+        o = i * 4
+        sx[i] = mins[0] + (rgba[o + 0] * inv_255) * rx
+        sy[i] = mins[1] + (rgba[o + 1] * inv_255) * ry
+        sz[i] = mins[2] + (rgba[o + 2] * inv_255) * rz
+
+    return sx, sy, sz
+
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=True)
+def _decode_colors_linear_jit(
+    rgba: np.ndarray, mins: np.ndarray, maxs: np.ndarray, count: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """JIT-compiled color and opacity decoding with linear min/max dequantization (v3 format).
+
+    All four RGBA channels are linearly dequantized. The 4th channel (A) is
+    opacity already in logit space.
+
+    :param rgba: (N*4,) uint8 RGBA data from sh0.webp
+    :param mins: (4,) float32 per-channel minimum values [R, G, B, opacity]
+    :param maxs: (4,) float32 per-channel maximum values [R, G, B, opacity]
+    :param count: Number of Gaussians
+    :returns: Tuple of (sh0_r, sh0_g, sh0_b, opacities)
+    """
+    sh0_r = np.empty(count, dtype=np.float32)
+    sh0_g = np.empty(count, dtype=np.float32)
+    sh0_b = np.empty(count, dtype=np.float32)
+    opacities = np.empty(count, dtype=np.float32)
+
+    inv_255 = 1.0 / 255.0
+    rr = maxs[0] - mins[0]
+    rg = maxs[1] - mins[1]
+    rb = maxs[2] - mins[2]
+    ro = maxs[3] - mins[3]
+
+    for i in numba.prange(count):
+        o = i * 4
+        sh0_r[i] = mins[0] + (rgba[o + 0] * inv_255) * rr
+        sh0_g[i] = mins[1] + (rgba[o + 1] * inv_255) * rg
+        sh0_b[i] = mins[2] + (rgba[o + 2] * inv_255) * rb
+        opacities[i] = mins[3] + (rgba[o + 3] * inv_255) * ro
+
+    return sh0_r, sh0_g, sh0_b, opacities
+
+
+@jit(nopython=True, parallel=True, fastmath=True, cache=True)
+def _decode_shn_linear_jit(
+    labels_rgba: np.ndarray,
+    centroids_rgba: np.ndarray,
+    mins_scalar: float,
+    maxs_scalar: float,
+    count: int,
+    sh_coeffs: int,
+    palette_count: int,
+    centroids_width: int,
+) -> np.ndarray:
+    """JIT-compiled SHN decoding with linear min/max dequantization (v3 format).
+
+    :param labels_rgba: (N*4,) uint8 RGBA data from shN_labels.webp
+    :param centroids_rgba: (W*H*4,) uint8 RGBA data from shN_centroids.webp
+    :param mins_scalar: Scalar minimum value for dequantization
+    :param maxs_scalar: Scalar maximum value for dequantization
+    :param count: Number of Gaussians
+    :param sh_coeffs: Number of SH coefficients per Gaussian
+    :param palette_count: Number of palette entries
+    :param centroids_width: Width of centroids texture
+    :returns: (N, sh_coeffs, 3) float32 SHN coefficients
+    """
+    shn = np.zeros((count, sh_coeffs, 3), dtype=np.float32)
+    inv_255 = 1.0 / 255.0
+    range_val = maxs_scalar - mins_scalar
+
+    for i in numba.prange(count):
+        o = i * 4
+        label = labels_rgba[o] | (labels_rgba[o + 1] << 8)
+
+        if label >= palette_count:
+            continue
+
+        for j in range(sh_coeffs):
+            cx = (label % 64) * sh_coeffs + j
+            cy = label // 64
+
+            idx = (cy * centroids_width + cx) * 4
+            if idx < len(centroids_rgba):
+                lr = centroids_rgba[idx]
+                lg = centroids_rgba[idx + 1]
+                lb = centroids_rgba[idx + 2]
+
+                shn[i, j, 0] = mins_scalar + (lr * inv_255) * range_val
+                shn[i, j, 1] = mins_scalar + (lg * inv_255) * range_val
+                shn[i, j, 2] = mins_scalar + (lb * inv_255) * range_val
+
+    return shn
+
+
 def _load_webp_image(data: bytes) -> tuple[np.ndarray, int, int]:
     """Load WebP image and return RGBA data using imagecodecs.
 
@@ -337,8 +465,12 @@ def sogread(file_path: str | Path | bytes) -> GSData:
 
     meta_bytes = load("meta.json")
     meta = json.loads(meta_bytes.decode("utf-8"))
-    count = meta["count"]
 
+    # Detect format version: v2 has top-level "count", v3 uses per-attribute "shape"
+    is_v3 = "count" not in meta and "shape" in meta.get("means", {})
+    count = meta["means"]["shape"][0] if is_v3 else meta["count"]
+
+    # --- Means (same encoding in both formats: 16-bit split, log space) ---
     means_mins = np.array(meta["means"]["mins"], dtype=np.float32)
     means_maxs = np.array(meta["means"]["maxs"], dtype=np.float32)
     means_ranges = means_maxs - means_mins
@@ -363,6 +495,7 @@ def sogread(file_path: str | Path | bytes) -> GSData:
 
     means = _inv_log_transform_jit(means_log.flatten()).reshape(count, 3)
 
+    # --- Quaternions (same encoding in both formats) ---
     quats_data = load(meta["quats"]["files"][0])
     quats_rgba, qw, qh = _load_webp_image(quats_data)
     if qw * qh < count:
@@ -375,39 +508,65 @@ def sogread(file_path: str | Path | bytes) -> GSData:
     quats[:, 2] = r2
     quats[:, 3] = r3
 
+    # --- Scales ---
     scales_data = load(meta["scales"]["files"][0])
     scales_rgba, sw, sh = _load_webp_image(scales_data)
     if sw * sh < count:
         raise ValueError("SOG scales texture too small for count")
 
-    scales_codebook = np.array(meta["scales"]["codebook"], dtype=np.float32)
     scales = np.empty((count, 3), dtype=np.float32)
-    sx, sy, sz = _decode_scales_jit(scales_rgba, scales_codebook, count)
+    if is_v3:
+        # v3: linear min/max dequantization
+        sc_mins = np.array(meta["scales"]["mins"], dtype=np.float32)
+        sc_maxs = np.array(meta["scales"]["maxs"], dtype=np.float32)
+        sx, sy, sz = _decode_scales_linear_jit(scales_rgba, sc_mins, sc_maxs, count)
+    else:
+        # v2: codebook lookup
+        scales_codebook = np.array(meta["scales"]["codebook"], dtype=np.float32)
+        sx, sy, sz = _decode_scales_jit(scales_rgba, scales_codebook, count)
     scales[:, 0] = sx
     scales[:, 1] = sy
     scales[:, 2] = sz
 
+    # --- SH0 / Colors ---
     sh0_data = load(meta["sh0"]["files"][0])
     sh0_rgba, cw, ch = _load_webp_image(sh0_data)
     if cw * ch < count:
         raise ValueError("SOG sh0 texture too small for count")
 
-    sh0_codebook = np.array(meta["sh0"]["codebook"], dtype=np.float32)
-    sh0_r, sh0_g, sh0_b, opacities = _decode_colors_jit(sh0_rgba, sh0_codebook, count)
+    if is_v3:
+        # v3: linear min/max dequantization (4 channels: RGB + opacity in logit space)
+        sh0_mins = np.array(meta["sh0"]["mins"], dtype=np.float32)
+        sh0_maxs = np.array(meta["sh0"]["maxs"], dtype=np.float32)
+        sh0_r, sh0_g, sh0_b, opacities = _decode_colors_linear_jit(
+            sh0_rgba, sh0_mins, sh0_maxs, count
+        )
+    else:
+        # v2: codebook lookup + logit transform on alpha channel
+        sh0_codebook = np.array(meta["sh0"]["codebook"], dtype=np.float32)
+        sh0_r, sh0_g, sh0_b, opacities = _decode_colors_jit(sh0_rgba, sh0_codebook, count)
 
     sh0 = np.empty((count, 3), dtype=np.float32)
     sh0[:, 0] = sh0_r
     sh0[:, 1] = sh0_g
     sh0[:, 2] = sh0_b
 
+    # --- SHN (higher-order spherical harmonics) ---
     shn = None  # noqa: N806
     sh_degree = 0  # Default to SH0
     if "shN" in meta:
         shn_meta = meta["shN"]  # noqa: N806
-        bands = shn_meta["bands"]
-        sh_degree = bands  # bands directly maps to SH degree (0, 1, 2, 3)
-        sh_coeffs = SH_DEGREE_TO_COEFFS[bands]
-        palette_count = shn_meta["count"]
+
+        if is_v3:
+            # v3: derive bands from shape, use scalar min/max dequantization
+            shn_bands = shn_meta["shape"][1]  # e.g. 15 for SH degree 3
+            sh_degree = SH_BANDS_TO_DEGREE.get(shn_bands, 0)
+            sh_coeffs = shn_bands  # shape[1] IS the number of coefficients
+        else:
+            # v2: explicit bands and count
+            bands = shn_meta["bands"]
+            sh_degree = bands
+            sh_coeffs = SH_DEGREE_TO_COEFFS[bands]
 
         if sh_coeffs > 0:
             centroids_data = load(shn_meta["files"][0])
@@ -418,19 +577,37 @@ def sogread(file_path: str | Path | bytes) -> GSData:
             if lw * lh < count:
                 raise ValueError("SOG shN labels texture too small for count")
 
-            codebook = np.array(shn_meta["codebook"], dtype=np.float32)
-
-            # Optimized JIT-compiled SHN decoding
             centroids_width = 64 * sh_coeffs
-            shn = _decode_shn_jit(  # noqa: N806
-                labels_rgba,
-                centroids_rgba,
-                codebook,
-                count,
-                sh_coeffs,
-                palette_count,
-                centroids_width,
-            )  # noqa: N806
+
+            if is_v3:
+                # v3: linear dequantization with scalar min/max
+                shn_mins = float(shn_meta["mins"])
+                shn_maxs = float(shn_meta["maxs"])
+                # Derive palette count from centroids texture dimensions
+                palette_count = ch * 64
+                shn = _decode_shn_linear_jit(  # noqa: N806
+                    labels_rgba,
+                    centroids_rgba,
+                    shn_mins,
+                    shn_maxs,
+                    count,
+                    sh_coeffs,
+                    palette_count,
+                    centroids_width,
+                )
+            else:
+                # v2: codebook lookup
+                palette_count = shn_meta["count"]
+                codebook = np.array(shn_meta["codebook"], dtype=np.float32)
+                shn = _decode_shn_jit(  # noqa: N806
+                    labels_rgba,
+                    centroids_rgba,
+                    codebook,
+                    count,
+                    sh_coeffs,
+                    palette_count,
+                    centroids_width,
+                )
     else:
         shn = np.zeros((count, 0, 3), dtype=np.float32)  # noqa: N806
 
