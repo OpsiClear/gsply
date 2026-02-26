@@ -107,12 +107,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev]"
         pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        pip install -e ".[dev]"
 
     - name: Verify torch installation
       run: |
-        python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+        python -c "import torch; print(f'PyTorch version: {torch.__version__}'); import numpy; print(f'numpy version: {numpy.__version__}')"
 
     - name: Create test data
       run: |
