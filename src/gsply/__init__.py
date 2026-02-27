@@ -66,7 +66,7 @@ from gsply.utils import (
 )
 from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
-__version__ = "0.2.15"
+__version__ = "0.2.16"
 __all__ = [
     "plyread",
     "GSData",

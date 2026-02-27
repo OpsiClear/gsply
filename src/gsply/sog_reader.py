@@ -630,13 +630,13 @@ def sogread(file_path: str | Path | bytes) -> GSData:
         masks=np.ones(count, dtype=bool),
         _base=None,
         _format=_create_format_dict(
-            scales=DataFormat.SCALES_LINEAR,
+            scales=DataFormat.SCALES_PLY,
             opacities=DataFormat.OPACITIES_PLY,
             sh0=DataFormat.SH0_SH,
             sh_order=_get_sh_order_format(sh_degree),
             means=DataFormat.MEANS_RAW,
             quats=DataFormat.QUATS_RAW,
-        ),  # SOG uses mixed format: linear scales but logit opacities
+        ),  # SOG stores log-scales and logit-opacities (same as PLY format)
     )
 
 
