@@ -1097,7 +1097,7 @@ def _compress_data_internal(
         num_sh_coeffs = packed_sh.shape[1]
         header_lines.append(f"element sh {num_gaussians}")
         for i in range(num_sh_coeffs):
-            header_lines.append(f"property uchar coeff_{i}")
+            header_lines.append(f"property uchar f_rest_{i}")
 
     header_lines.append("end_header")
     header = "\n".join(header_lines) + "\n"
