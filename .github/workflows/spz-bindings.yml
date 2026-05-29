@@ -1,0 +1,60 @@
+name: Build SPZ bindings
+
+# Builds the vendored Niantic SPZ Python bindings (third_party/spz submodule) on
+# Windows and Ubuntu so the SPZ parity tests have a reference decoder available.
+# Upstream's own CI only builds the bindings on macOS because its CMake FetchContent
+# for zlib 404s and zstd isn't found; we sidestep that by providing zlib/zstd from
+# the system (apt on Linux, vcpkg on Windows) so find_package() succeeds.
+
+on:
+  push:
+    branches: [master, main, develop]
+    paths:
+      - 'third_party/spz/**'
+      - '.gitmodules'
+      - '.github/workflows/spz-bindings.yml'
+  pull_request:
+    paths:
+      - 'third_party/spz/**'
+      - '.github/workflows/spz-bindings.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build spz bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install zlib + zstd (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zlib1g-dev libzstd-dev ninja-build
+
+    - name: Install zlib + zstd (Windows / vcpkg)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        vcpkg install zlib zstd --triplet x64-windows
+        echo "CMAKE_ARGS=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows" >> "$GITHUB_ENV"
+
+    - name: Build & install spz bindings
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install ./third_party/spz -v
+
+    - name: Verify import
+      run: python -c "import spz; print('spz bindings import OK')"
