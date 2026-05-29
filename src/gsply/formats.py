@@ -11,6 +11,7 @@ __all__ = [
     "CHUNK_SIZE_SHIFT",
     "PROPERTY_COUNTS_BY_SH_DEGREE",
     "PROPERTY_COUNT_TO_SH_DEGREE",
+    "REST_COUNT_TO_SH_DEGREE",
     "SH_BANDS_TO_DEGREE",
     "EXPECTED_PROPERTIES_BY_SH_DEGREE",
     "SH_DEGREE_TO_COEFFS",
@@ -54,6 +55,16 @@ PROPERTY_COUNT_TO_SH_DEGREE = {
     23: 1,
     38: 2,
     59: 3,
+}
+
+# f_rest coefficient count -> SH degree. Detecting from the f_rest count (rather
+# than the total property count) is robust to non-standard property orderings and
+# to extra properties such as normals.
+REST_COUNT_TO_SH_DEGREE = {
+    0: 0,
+    9: 1,
+    24: 2,
+    45: 3,
 }
 
 # SH bands to degree mapping (for shN.shape[1] -> degree conversion)

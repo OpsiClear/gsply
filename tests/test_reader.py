@@ -85,6 +85,90 @@ end_header
         assert result.means.shape == (100, 3)
         assert result.shN.shape == (100, 0, 3)  # No higher-order SH for degree 0
 
+    def test_read_nonstandard_property_order(self, tmp_path):
+        """Reader handles GS PLYs whose property groups are in a non-canonical order."""
+        # DANCER-style order: position, scale, opacity, rot, color, then f_rest.
+        lines = ["ply", "format binary_little_endian 1.0", "element vertex 50"]
+        order = [
+            "x",
+            "y",
+            "z",
+            "scale_0",
+            "scale_1",
+            "scale_2",
+            "opacity",
+            "rot_0",
+            "rot_1",
+            "rot_2",
+            "rot_3",
+            "f_dc_0",
+            "f_dc_1",
+            "f_dc_2",
+        ]
+        order += [f"f_rest_{i}" for i in range(45)]  # SH degree 3
+        lines += [f"property float {name}" for name in order]
+        lines.append("end_header")
+
+        test_file = tmp_path / "reordered.ply"
+        test_file.write_text("\n".join(lines) + "\n")
+        rng = np.random.default_rng(0)
+        data = rng.standard_normal((50, len(order))).astype(np.float32)
+        with open(test_file, "ab") as f:
+            f.write(data.tobytes())
+
+        result = read_uncompressed(test_file)
+        assert result is not None
+        assert result.means.shape == (50, 3)
+        assert result.shN.shape == (50, 15, 3)
+        col = {name: i for i, name in enumerate(order)}
+        # Attributes must be picked by name, not by fixed column position.
+        np.testing.assert_allclose(result.means, data[:, [col["x"], col["y"], col["z"]]])
+        np.testing.assert_allclose(
+            result.scales, data[:, [col["scale_0"], col["scale_1"], col["scale_2"]]]
+        )
+        np.testing.assert_allclose(result.opacities, data[:, col["opacity"]])
+
+    def test_read_extra_properties_ignored(self, tmp_path):
+        """Extra properties (e.g. normals) are skipped; SH degree from f_rest count."""
+        lines = ["ply", "format binary_little_endian 1.0", "element vertex 30"]
+        order = [
+            "x",
+            "y",
+            "z",
+            "nx",
+            "ny",
+            "nz",  # normals not used by GS
+            "f_dc_0",
+            "f_dc_1",
+            "f_dc_2",
+            "opacity",
+            "scale_0",
+            "scale_1",
+            "scale_2",
+            "rot_0",
+            "rot_1",
+            "rot_2",
+            "rot_3",
+        ]
+        lines += [f"property float {name}" for name in order]
+        lines.append("end_header")
+
+        test_file = tmp_path / "with_normals.ply"
+        test_file.write_text("\n".join(lines) + "\n")
+        data = np.random.default_rng(1).standard_normal((30, len(order))).astype(np.float32)
+        with open(test_file, "ab") as f:
+            f.write(data.tobytes())
+
+        result = read_uncompressed(test_file)
+        assert result is not None
+        assert result.means.shape == (30, 3)
+        assert result.shN.shape == (30, 0, 3)  # SH degree 0 (no f_rest)
+        col = {name: i for i, name in enumerate(order)}
+        np.testing.assert_allclose(result.means, data[:, [col["x"], col["y"], col["z"]]])
+        np.testing.assert_allclose(
+            result.scales, data[:, [col["scale_0"], col["scale_1"], col["scale_2"]]]
+        )
+
     def test_read_ascii_format_returns_none(self, tmp_path):
         """Test that ASCII format is not supported."""
         ascii_ply = """ply

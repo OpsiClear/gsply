@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.2.17 (Order-Independent PLY Reading)
+
+### Features
+- **Read PLYs with any property order**: `read_uncompressed` / `plyread` now accept
+  uncompressed GS PLYs whose property groups are stored in a non-canonical order
+  (e.g. position → scale → opacity → rotation → color), instead of rejecting them.
+  - SH degree is now detected from the `f_rest_*` coefficient count, which is robust
+    to reordering and to extra properties such as normals (`nx`, `ny`, `nz`).
+  - Non-canonical files are normalized to the canonical layout with a single
+    vectorized column-gather, then read through the existing extraction path.
+  - Canonical-order files are unchanged and keep their zero-copy fast path — no
+    performance regression for the common case.
+
 ## v0.2.13 (Code Quality & Maintenance)
 
 ### Code Quality Improvements

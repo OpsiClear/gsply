@@ -48,6 +48,7 @@ from gsply.formats import (
     QUAT_C_SHIFT,
     QUAT_INDEX_SHIFT,
     QUAT_NORM,
+    REST_COUNT_TO_SH_DEGREE,
     SH_BANDS_TO_DEGREE,
     SH_C0,
     detect_format,
@@ -467,19 +468,19 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:  # noqa: PLR0911
             if not is_binary_le or vertex_count is None:
                 return None
 
-            # Detect SH degree from property count
+            # Detect SH degree from the f_rest coefficient count. This is robust
+            # to non-standard property orderings and to extra properties (e.g.
+            # normals nx/ny/nz) that throw off a total-property-count heuristic.
             property_count = len(property_names)
-            sh_degree = get_sh_degree_from_property_count(property_count)
-
+            n_rest = sum(1 for name in property_names if name.startswith("f_rest_"))
+            sh_degree = REST_COUNT_TO_SH_DEGREE.get(n_rest)
+            if sh_degree is None:
+                # Fall back to total-count detection for files without f_rest.
+                sh_degree = get_sh_degree_from_property_count(property_count)
             if sh_degree is None:
                 return None
 
-            # Validate property names and order
-            expected_properties = EXPECTED_PROPERTIES_BY_SH_DEGREE[sh_degree]
-            if property_names != expected_properties:
-                return None
-
-            # Seek to data position and read binary data
+            # Seek to data position and read binary data (actual on-disk layout).
             f.seek(data_offset)
             data = np.fromfile(f, dtype=np.float32, count=vertex_count * property_count)
 
@@ -487,6 +488,20 @@ def read_uncompressed(file_path: str | Path) -> GSData | None:  # noqa: PLR0911
                 return None
 
             data = data.reshape(vertex_count, property_count)
+
+            # Normalize column order. The fast extraction below assumes the
+            # canonical INRIA layout; when the file stores the same attributes in
+            # a different order (or with extra columns), gather the canonical
+            # columns by name in one vectorized copy. Canonical files skip this
+            # and keep their zero-copy views.
+            expected_properties = EXPECTED_PROPERTIES_BY_SH_DEGREE[sh_degree]
+            if property_names != expected_properties:
+                name_to_idx = {name: i for i, name in enumerate(property_names)}
+                if not all(name in name_to_idx for name in expected_properties):
+                    return None
+                perm = [name_to_idx[name] for name in expected_properties]
+                data = data[:, perm]  # contiguous canonical-order copy
+                property_count = len(expected_properties)
 
         # Extract arrays as zero-copy views
         means = data[:, 0:3]
