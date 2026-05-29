@@ -107,8 +107,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        # Resolve gsply + its numpy<2.4 pin FIRST, then add CPU-only torch. The
+        # previous order let the torch index pull a second numpy build, which on
+        # py3.11/3.12 tripped numpy 2.x's "cannot load module more than once per
+        # process" guard at import time.
         pip install -e ".[dev]"
+        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
     - name: Verify torch installation
       run: |
