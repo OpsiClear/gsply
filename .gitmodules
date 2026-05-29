@@ -1,0 +1,3 @@
+[submodule "third_party/spz"]
+	path = third_party/spz
+	url = https://github.com/nianticlabs/spz.git

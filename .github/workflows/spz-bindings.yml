@@ -1,0 +1,69 @@
+name: Build SPZ bindings
+
+# Builds the vendored Niantic SPZ Python bindings (third_party/spz submodule) on
+# Windows and Ubuntu so the SPZ parity tests have a reference decoder available.
+# Upstream's own CI only builds the bindings on macOS because its CMake FetchContent
+# for zlib 404s and zstd isn't found; we sidestep that by providing zlib/zstd from
+# the system (apt on Linux, vcpkg on Windows) so find_package() succeeds.
+
+on:
+  push:
+    branches: [master, main, develop]
+    paths:
+      - 'third_party/spz/**'
+      - '.gitmodules'
+      - '.github/workflows/spz-bindings.yml'
+  pull_request:
+    paths:
+      - 'third_party/spz/**'
+      - '.github/workflows/spz-bindings.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build spz bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Configure zlib + zstd (Ubuntu)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        # Provide shared zlib so find_package(ZLIB) links libz.so (PIC) — upstream's
+        # zlib.net FetchContent 404s. The runner image ships a non-PIC system
+        # libzstd.a that find_package(zstd) would link into the shared module and
+        # fail; disable that find so spz FetchContent-builds a PIC zstd instead.
+        sudo apt-get update
+        sudo apt-get install -y zlib1g-dev ninja-build
+        echo "CMAKE_ARGS=-DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_DISABLE_FIND_PACKAGE_zstd=ON" >> "$GITHUB_ENV"
+
+    - name: Configure zlib + zstd (Windows / vcpkg)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        # Static triplet so zlib/zstd are linked into the .pyd — no runtime DLLs
+        # to ship (a dynamic build imports-fails on a fresh runner).
+        vcpkg install zlib zstd --triplet x64-windows-static-md
+        TC="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        echo "CMAKE_ARGS=-DCMAKE_TOOLCHAIN_FILE=$TC -DVCPKG_TARGET_TRIPLET=x64-windows-static-md" >> "$GITHUB_ENV"
+
+    - name: Build & install spz bindings
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install ./third_party/spz -v
+
+    - name: Verify import
+      run: python -c "import spz; print('spz bindings import OK')"

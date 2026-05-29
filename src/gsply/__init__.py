@@ -55,6 +55,7 @@ Performance (400K Gaussians, SH0):
 from gsply.formats import detect_format
 from gsply.gsdata import GSData, create_ply_format, create_rasterizer_format
 from gsply.reader import decompress_from_bytes, plyread
+from gsply.spz import read_spz, write_spz
 from gsply.utils import (
     SH_C0,
     apply_pre_activations,
@@ -66,11 +67,13 @@ from gsply.utils import (
 )
 from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
-__version__ = "0.2.17"
+__version__ = "0.3.0"
 __all__ = [
     "plyread",
     "GSData",
     "plywrite",
+    "read_spz",
+    "write_spz",
     "compress_to_bytes",
     "compress_to_arrays",
     "decompress_from_bytes",

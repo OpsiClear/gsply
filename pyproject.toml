@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gsply"
-version = "0.2.17"
-description = "Ultra-fast Gaussian Splatting PLY I/O library - pure Python with NumPy and Numba. Features 11x faster GPU transfers and automatic format state tracking for seamless conversions."
+version = "0.3.0"
+description = "Ultra-fast Gaussian Splatting PLY + SPZ I/O library - pure Python with NumPy and Numba. Features 11x faster GPU transfers and automatic format state tracking for seamless conversions."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -40,6 +40,9 @@ dependencies = [
 sogs = [
     "imagecodecs>=2024.0.0",
 ]
+spz = [
+    "isal>=1.0.0",  # ISA-L igzip: faster SPZ (de)compress; reader/writer fall back to gzip
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -61,6 +64,7 @@ docs = [
 ]
 all = [
     "imagecodecs>=2024.0.0",
+    "isal>=1.0.0",
     "pytest>=7.0",
     "pytest-cov",
     "build",

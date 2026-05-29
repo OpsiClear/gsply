@@ -1,5 +1,20 @@
 # Release Notes
 
+## v0.3.0 (SPZ I/O)
+
+### Features
+- **Read and write Niantic SPZ files**: new `gsply.read_spz()` and
+  `gsply.write_spz()` for the legacy gzip SPZ format (v1/v2/v3).
+  - Reading uses a single fused Numba kernel (one parallel pass over the payload:
+    24-bit fixed-point positions, smallest-three / first-three quaternions, 8-bit
+    affine channels, SH) and ISA-L's `igzip` when available (falls back to gzip).
+  - Writing emits gzip v3 with smallest-three quaternions, mirroring the Niantic
+    `packGaussians` spec; round-trips with `read_spz` and the reference library.
+  - Optional `gsply[spz]` extra pulls in `isal` for ~2-3x faster (de)compression.
+- Parity tests validate the reader against an independent spec decoder and,
+  when the bindings are installed, against the upstream Niantic `spz` library
+  (vendored as a `third_party/spz` submodule with a Windows/Ubuntu build CI).
+
 ## v0.2.17 (Order-Independent PLY Reading)
 
 ### Features
