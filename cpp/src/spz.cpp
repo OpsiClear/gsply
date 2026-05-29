@@ -10,6 +10,12 @@
 #include <stdexcept>
 #include <vector>
 
+#if defined(GSPLY_OPENMP)
+#define GSPLY_PARALLEL_FOR _Pragma("omp parallel for")
+#else
+#define GSPLY_PARALLEL_FOR
+#endif
+
 namespace gsplycpp {
 
 namespace {
@@ -23,8 +29,12 @@ constexpr uint32_t C_MASK = (1u << 9) - 1u;  // 9-bit magnitude
 std::vector<uint8_t> read_file(const std::string& path) {
   std::ifstream f(path, std::ios::binary);
   if (!f) throw std::runtime_error("Cannot open SPZ: " + path);
-  return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)),
-                              std::istreambuf_iterator<char>());
+  f.seekg(0, std::ios::end);
+  const std::streamsize fsize = f.tellg();
+  f.seekg(0, std::ios::beg);
+  std::vector<uint8_t> buf(static_cast<size_t>(fsize));
+  f.read(reinterpret_cast<char*>(buf.data()), fsize);  // bulk read, not byte-by-byte
+  return buf;
 }
 
 std::vector<uint8_t> gunzip(const std::vector<uint8_t>& src) {
@@ -126,6 +136,7 @@ GSData read_spz(const std::string& path) {
   d.sh0.resize(static_cast<size_t>(n) * 3);
   d.shN.resize(static_cast<size_t>(n) * sh_dim * 3);
 
+  GSPLY_PARALLEL_FOR
   for (int64_t i = 0; i < n; ++i) {
     // positions: 24-bit signed fixed point
     const size_t p = static_cast<size_t>(i) * 9;
@@ -234,6 +245,7 @@ void write_spz(const std::string& path, const GSData& d, int fractional_bits) {
     return static_cast<uint8_t>(std::min<long>(255, std::max<long>(0, v)));
   };
 
+  GSPLY_PARALLEL_FOR
   for (int64_t i = 0; i < n; ++i) {
     // positions
     const size_t p = static_cast<size_t>(i) * 9;

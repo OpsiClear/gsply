@@ -48,4 +48,11 @@ target_include_directories(gsply_cpp PRIVATE src)
 set_property(TARGET gsply_cpp PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(gsply_cpp PRIVATE ${GSPLY_ZLIB_TARGET})
 
+# OpenMP to parallelize the per-Gaussian decode/encode loops (parity with numba prange).
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(gsply_cpp PRIVATE OpenMP::OpenMP_CXX)
+  target_compile_definitions(gsply_cpp PRIVATE GSPLY_OPENMP=1)
+endif()
+
 install(TARGETS gsply_cpp LIBRARY DESTINATION .)

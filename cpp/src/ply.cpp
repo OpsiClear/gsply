@@ -8,6 +8,12 @@
 #include <unordered_map>
 #include <vector>
 
+#if defined(GSPLY_OPENMP)
+#define GSPLY_PARALLEL_FOR _Pragma("omp parallel for")
+#else
+#define GSPLY_PARALLEL_FOR
+#endif
+
 namespace gsplycpp {
 
 namespace {
@@ -67,7 +73,11 @@ Header parse_header(const std::vector<char>& buf, const std::string& path) {
 GSData read_ply(const std::string& path) {
   std::ifstream f(path, std::ios::binary);
   if (!f) throw std::runtime_error("Cannot open PLY: " + path);
-  std::vector<char> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  f.seekg(0, std::ios::end);
+  const std::streamsize fsize = f.tellg();
+  f.seekg(0, std::ios::beg);
+  std::vector<char> buf(static_cast<size_t>(fsize));
+  f.read(buf.data(), fsize);  // bulk read (istreambuf_iterator reads byte-by-byte)
 
   Header h = parse_header(buf, path);
   const int64_t n = h.n;
@@ -114,6 +124,7 @@ GSData read_ply(const std::string& path) {
   std::vector<int> rest_cols(static_cast<size_t>(n_rest));
   for (int j = 0; j < n_rest; ++j) rest_cols[j] = col["f_rest_" + std::to_string(j)];
 
+  GSPLY_PARALLEL_FOR
   for (int64_t i = 0; i < n; ++i) {
     const float* row = data + i * n_props;
     d.means[i * 3 + 0] = row[ix];
@@ -159,6 +170,7 @@ void write_ply(const std::string& path, const GSData& d) {
   const std::string header = hs.str();
 
   std::vector<float> rows(static_cast<size_t>(n) * n_props);
+  GSPLY_PARALLEL_FOR
   for (int64_t i = 0; i < n; ++i) {
     float* r = rows.data() + i * n_props;
     int o = 0;
