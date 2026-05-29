@@ -41,13 +41,13 @@ jobs:
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        # Provide shared zlib so find_package(ZLIB) succeeds (upstream's zlib.net
-        # FetchContent 404s). Do NOT install libzstd-dev: its prebuilt static
-        # libzstd.a is non-PIC and won't link into a shared module — let spz's
-        # FetchContent build zstd instead, forced PIC so it links cleanly.
+        # Provide shared zlib so find_package(ZLIB) links libz.so (PIC) — upstream's
+        # zlib.net FetchContent 404s. The runner image ships a non-PIC system
+        # libzstd.a that find_package(zstd) would link into the shared module and
+        # fail; disable that find so spz FetchContent-builds a PIC zstd instead.
         sudo apt-get update
         sudo apt-get install -y zlib1g-dev ninja-build
-        echo "CMAKE_ARGS=-DCMAKE_POSITION_INDEPENDENT_CODE=ON" >> "$GITHUB_ENV"
+        echo "CMAKE_ARGS=-DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_DISABLE_FIND_PACKAGE_zstd=ON" >> "$GITHUB_ENV"
 
     - name: Configure zlib + zstd (Windows / vcpkg)
       if: runner.os == 'Windows'
