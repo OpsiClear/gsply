@@ -37,18 +37,27 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: Install zlib + zstd (Ubuntu)
+    - name: Configure zlib + zstd (Ubuntu)
       if: runner.os == 'Linux'
+      shell: bash
       run: |
+        # Provide shared zlib so find_package(ZLIB) succeeds (upstream's zlib.net
+        # FetchContent 404s). Do NOT install libzstd-dev: its prebuilt static
+        # libzstd.a is non-PIC and won't link into a shared module — let spz's
+        # FetchContent build zstd instead, forced PIC so it links cleanly.
         sudo apt-get update
-        sudo apt-get install -y zlib1g-dev libzstd-dev ninja-build
+        sudo apt-get install -y zlib1g-dev ninja-build
+        echo "CMAKE_ARGS=-DCMAKE_POSITION_INDEPENDENT_CODE=ON" >> "$GITHUB_ENV"
 
-    - name: Install zlib + zstd (Windows / vcpkg)
+    - name: Configure zlib + zstd (Windows / vcpkg)
       if: runner.os == 'Windows'
       shell: bash
       run: |
-        vcpkg install zlib zstd --triplet x64-windows
-        echo "CMAKE_ARGS=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows" >> "$GITHUB_ENV"
+        # Static triplet so zlib/zstd are linked into the .pyd — no runtime DLLs
+        # to ship (a dynamic build imports-fails on a fresh runner).
+        vcpkg install zlib zstd --triplet x64-windows-static-md
+        TC="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        echo "CMAKE_ARGS=-DCMAKE_TOOLCHAIN_FILE=$TC -DVCPKG_TARGET_TRIPLET=x64-windows-static-md" >> "$GITHUB_ENV"
 
     - name: Build & install spz bindings
       shell: bash

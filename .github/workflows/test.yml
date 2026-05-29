@@ -107,11 +107,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # Resolve gsply + its numpy<2.4 pin FIRST, then add CPU-only torch. The
-        # previous order let the torch index pull a second numpy build, which on
-        # py3.11/3.12 tripped numpy 2.x's "cannot load module more than once per
-        # process" guard at import time.
-        pip install -e ".[dev]"
+        # Pin numpy<2.3: numpy 2.3 added a strict "cannot load module more than
+        # once per process" guard that torch's C-extension double-import of numpy
+        # trips during collection on py3.11/3.12. Install gsply (with the pin) and
+        # CPU-only torch together so a single, compatible numpy build is resolved.
+        pip install -e ".[dev]" "numpy<2.3"
         pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
     - name: Verify torch installation
