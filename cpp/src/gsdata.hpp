@@ -19,6 +19,33 @@ struct GSData {
   std::vector<float> shN;        // [n, sh_dim, 3]  (coeff-major, channel-inner)
 };
 
+// Non-owning view over GS arrays (same layout as GSData) for write paths that
+// consume caller-owned buffers (e.g. numpy inputs) without copying. shN may be
+// null when sh_dim == 0.
+struct GSView {
+  int64_t n = 0;
+  int sh_dim = 0;
+  const float* means = nullptr;
+  const float* scales = nullptr;
+  const float* quats = nullptr;
+  const float* opacities = nullptr;
+  const float* sh0 = nullptr;
+  const float* shN = nullptr;
+
+  GSView() = default;
+  // Implicit view over an owning GSData (exact-match overloads still win, so
+  // no call ambiguity between the GSData and GSView write overloads).
+  GSView(const GSData& d)
+      : n(d.n),
+        sh_dim(d.sh_dim),
+        means(d.means.data()),
+        scales(d.scales.data()),
+        quats(d.quats.data()),
+        opacities(d.opacities.data()),
+        sh0(d.sh0.data()),
+        shN(d.sh_dim > 0 ? d.shN.data() : nullptr) {}
+};
+
 // sh_dim (coeffs/channel) for an SH degree, and the inverse.
 inline int sh_dim_for_degree(int degree) {
   switch (degree) {

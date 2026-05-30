@@ -1,5 +1,6 @@
 #include "ply.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -16,37 +17,29 @@
 
 namespace gsplycpp {
 
-namespace {
-
-struct Header {
-  int64_t n = 0;
-  std::vector<std::string> props;  // ordered "property float" names
-  size_t data_offset = 0;          // byte offset of binary payload
-};
-
-Header parse_header(const std::vector<char>& buf, const std::string& path) {
+PlyHeader parse_ply_header(const char* buf, size_t size, const std::string& path) {
   static const char marker[] = "end_header";
   const char* found = nullptr;
-  if (buf.size() >= sizeof(marker) - 1) {
-    for (size_t i = 0; i + (sizeof(marker) - 1) <= buf.size(); ++i) {
-      if (std::memcmp(buf.data() + i, marker, sizeof(marker) - 1) == 0) {
-        found = buf.data() + i;
+  if (size >= sizeof(marker) - 1) {
+    for (size_t i = 0; i + (sizeof(marker) - 1) <= size; ++i) {
+      if (std::memcmp(buf + i, marker, sizeof(marker) - 1) == 0) {
+        found = buf + i;
         break;
       }
     }
   }
   if (!found) throw std::runtime_error("PLY header end marker not found: " + path);
 
-  size_t end = static_cast<size_t>(found - buf.data()) + (sizeof(marker) - 1);
+  size_t end = static_cast<size_t>(found - buf) + (sizeof(marker) - 1);
   // Skip the newline after end_header (\n or \r\n).
-  if (end < buf.size() && buf[end] == '\r') ++end;
-  if (end < buf.size() && buf[end] == '\n') ++end;
+  if (end < size && buf[end] == '\r') ++end;
+  if (end < size && buf[end] == '\n') ++end;
 
-  std::string header_text(buf.data(), found - buf.data());
+  std::string header_text(buf, found - buf);
   std::istringstream ss(header_text);
   std::string line;
   bool binary_le = false;
-  Header h;
+  PlyHeader h;
   while (std::getline(ss, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.rfind("format ", 0) == 0) {
@@ -68,42 +61,34 @@ Header parse_header(const std::vector<char>& buf, const std::string& path) {
   return h;
 }
 
-}  // namespace
-
-GSData read_ply(const std::string& path) {
-  std::ifstream f(path, std::ios::binary);
-  if (!f) throw std::runtime_error("Cannot open PLY: " + path);
-  f.seekg(0, std::ios::end);
-  const std::streamsize fsize = f.tellg();
-  f.seekg(0, std::ios::beg);
-  std::vector<char> buf(static_cast<size_t>(fsize));
-  f.read(buf.data(), fsize);  // bulk read (istreambuf_iterator reads byte-by-byte)
-
-  Header h = parse_header(buf, path);
-  const int64_t n = h.n;
-  const int n_props = static_cast<int>(h.props.size());
-
-  std::unordered_map<std::string, int> col;
+PlyLayout compute_ply_layout(const PlyHeader& h, const std::string& path) {
+  PlyLayout L;
+  L.n_props = static_cast<int>(h.props.size());
   int n_rest = 0;
-  for (int i = 0; i < n_props; ++i) {
-    col[h.props[i]] = i;
+  for (int i = 0; i < L.n_props; ++i) {
+    L.col[h.props[i]] = i;
     if (h.props[i].rfind("f_rest_", 0) == 0) ++n_rest;
   }
-  const int sh_dim = degree_for_sh_dim(n_rest / 3) >= 0 && n_rest % 3 == 0 ? n_rest / 3 : -1;
-  if (sh_dim < 0) throw std::runtime_error("Unexpected f_rest count in PLY: " + path);
+  L.sh_dim = degree_for_sh_dim(n_rest / 3) >= 0 && n_rest % 3 == 0 ? n_rest / 3 : -1;
+  if (L.sh_dim < 0) throw std::runtime_error("Unexpected f_rest count in PLY: " + path);
 
-  static const char* required[] = {"x",       "y",       "z",     "scale_0", "scale_1",
-                                    "scale_2", "opacity", "rot_0", "rot_1",   "rot_2",
+  static const char* required[] = {"x",       "y",       "z",      "scale_0", "scale_1",
+                                    "scale_2", "opacity", "rot_0",  "rot_1",   "rot_2",
                                     "rot_3",   "f_dc_0",  "f_dc_1", "f_dc_2"};
   for (const char* r : required) {
-    if (col.find(r) == col.end()) {
+    if (L.col.find(r) == L.col.end()) {
       throw std::runtime_error(std::string("PLY missing GS property '") + r + "': " + path);
     }
   }
+  return L;
+}
 
-  const size_t need = h.data_offset + static_cast<size_t>(n) * n_props * sizeof(float);
-  if (buf.size() < need) throw std::runtime_error("PLY truncated: " + path);
-  const float* data = reinterpret_cast<const float*>(buf.data() + h.data_offset);
+GSData decode_ply_payload(const PlyHeader& h, const PlyLayout& L, const float* data,
+                          const std::string& path) {
+  const int64_t n = h.n;
+  const int n_props = L.n_props;
+  const int sh_dim = L.sh_dim;
+  (void)path;
 
   GSData d;
   d.n = n;
@@ -115,14 +100,15 @@ GSData read_ply(const std::string& path) {
   d.sh0.resize(static_cast<size_t>(n) * 3);
   d.shN.resize(static_cast<size_t>(n) * sh_dim * 3);
 
-  const int ix = col["x"], iy = col["y"], iz = col["z"];
-  const int is0 = col["scale_0"], is1 = col["scale_1"], is2 = col["scale_2"];
-  const int io = col["opacity"];
-  const int ir0 = col["rot_0"], ir1 = col["rot_1"], ir2 = col["rot_2"], ir3 = col["rot_3"];
-  const int id0 = col["f_dc_0"], id1 = col["f_dc_1"], id2 = col["f_dc_2"];
+  const auto get = [&](const char* k) { return L.col.at(k); };
+  const int ix = get("x"), iy = get("y"), iz = get("z");
+  const int is0 = get("scale_0"), is1 = get("scale_1"), is2 = get("scale_2");
+  const int io = get("opacity");
+  const int ir0 = get("rot_0"), ir1 = get("rot_1"), ir2 = get("rot_2"), ir3 = get("rot_3");
+  const int id0 = get("f_dc_0"), id1 = get("f_dc_1"), id2 = get("f_dc_2");
   // f_rest is channel-major ([N,3,K]); store shN coeff-major ([N,K,3]).
-  std::vector<int> rest_cols(static_cast<size_t>(n_rest));
-  for (int j = 0; j < n_rest; ++j) rest_cols[j] = col["f_rest_" + std::to_string(j)];
+  std::vector<int> rest_cols(static_cast<size_t>(sh_dim) * 3);
+  for (int j = 0; j < sh_dim * 3; ++j) rest_cols[j] = get(("f_rest_" + std::to_string(j)).c_str());
 
   GSPLY_PARALLEL_FOR
   for (int64_t i = 0; i < n; ++i) {
@@ -150,7 +136,23 @@ GSData read_ply(const std::string& path) {
   return d;
 }
 
-void write_ply(const std::string& path, const GSData& d) {
+GSData read_ply(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) throw std::runtime_error("Cannot open PLY: " + path);
+  f.seekg(0, std::ios::end);
+  const std::streamsize fsize = f.tellg();
+  f.seekg(0, std::ios::beg);
+  std::vector<char> buf(static_cast<size_t>(fsize));
+  f.read(buf.data(), fsize);  // bulk read (istreambuf_iterator reads byte-by-byte)
+
+  PlyHeader h = parse_ply_header(buf.data(), buf.size(), path);
+  PlyLayout L = compute_ply_layout(h, path);
+  const size_t need = h.data_offset + static_cast<size_t>(h.n) * L.n_props * sizeof(float);
+  if (buf.size() < need) throw std::runtime_error("PLY truncated: " + path);
+  return decode_ply_payload(h, L, reinterpret_cast<const float*>(buf.data() + h.data_offset), path);
+}
+
+void write_ply(const std::string& path, const GSView& d) {
   const int sh_dim = d.sh_dim;
   if (degree_for_sh_dim(sh_dim) < 0) {
     throw std::runtime_error("write_ply: invalid sh_dim " + std::to_string(sh_dim));
@@ -195,11 +197,14 @@ void write_ply(const std::string& path, const GSData& d) {
     r[o++] = d.quats[i * 4 + 3];
   }
 
-  std::ofstream f(path, std::ios::binary);
-  if (!f) throw std::runtime_error("Cannot write PLY: " + path);
-  f.write(header.data(), static_cast<std::streamsize>(header.size()));
-  f.write(reinterpret_cast<const char*>(rows.data()),
-          static_cast<std::streamsize>(rows.size() * sizeof(float)));
+  // fwrite (not std::ofstream) — MSVC's stream write is markedly slower for bulk
+  // payloads, mirroring the read path.
+  std::FILE* fp = std::fopen(path.c_str(), "wb");
+  if (!fp) throw std::runtime_error("Cannot write PLY: " + path);
+  const bool ok = std::fwrite(header.data(), 1, header.size(), fp) == header.size() &&
+                  std::fwrite(rows.data(), sizeof(float), rows.size(), fp) == rows.size();
+  std::fclose(fp);
+  if (!ok) throw std::runtime_error("Short write on PLY: " + path);
 }
 
 }  // namespace gsplycpp

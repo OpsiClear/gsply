@@ -15,26 +15,47 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
 find_package(nanobind CONFIG REQUIRED)
 
-# zlib for SPZ gzip (de)compression: prefer a system install, else fetch a known-
-# good source from the official GitHub mirror (zlib.net tarballs 404 over time).
-find_package(ZLIB QUIET)
-if(NOT ZLIB_FOUND)
-  message(STATUS "ZLIB not found; fetching zlib 1.3.1 from github.com/madler/zlib")
-  include(FetchContent)
-  set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    zlib
-    URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
-    URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
-  )
-  FetchContent_MakeAvailable(zlib)
-  set(GSPLY_ZLIB_TARGET zlibstatic)
-  # FetchContent zlib doesn't export an include dir on the target; add it.
-  target_include_directories(zlibstatic PUBLIC
-    "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
-else()
-  set(GSPLY_ZLIB_TARGET ZLIB::ZLIB)
-endif()
+# libdeflate for SPZ gzip decompression + CRC32 — fastest whole-buffer inflate,
+# exactly the SPZ read use case.
+include(FetchContent)
+set(LIBDEFLATE_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+set(LIBDEFLATE_BUILD_GZIP OFF CACHE BOOL "" FORCE)
+set(LIBDEFLATE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  libdeflate
+  GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
+  GIT_TAG v1.23
+)
+FetchContent_MakeAvailable(libdeflate)
+
+# zlib-ng (zlib-compatible API) for the SPZ *write* path: libdeflate has no
+# flush API, but pigz-style parallel single-member gzip needs Z_SYNC_FLUSH to
+# byte-align independently-compressed blocks. zlib-ng is a fast, portable zlib.
+set(ZLIB_COMPAT ON CACHE BOOL "" FORCE)       # expose the classic zlib API/zlib.h
+set(ZLIB_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(ZLIBNG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(WITH_GTEST OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  zlibng
+  GIT_REPOSITORY https://github.com/zlib-ng/zlib-ng.git
+  GIT_TAG 2.2.2
+)
+FetchContent_MakeAvailable(zlibng)
+
+# zstd for the NGSP v4 container (per-attribute streams). zstd's CMake lives in
+# build/cmake within the release tarball, so point SOURCE_SUBDIR at it.
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ZSTD_LEGACY_SUPPORT OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  zstd
+  URL https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz
+  SOURCE_SUBDIR build/cmake
+)
+FetchContent_MakeAvailable(zstd)
 
 nanobind_add_module(
   gsply_cpp
@@ -46,7 +67,8 @@ nanobind_add_module(
 )
 target_include_directories(gsply_cpp PRIVATE src)
 set_property(TARGET gsply_cpp PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(gsply_cpp PRIVATE ${GSPLY_ZLIB_TARGET})
+target_link_libraries(gsply_cpp PRIVATE libdeflate::libdeflate_static zlibstatic libzstd_static)
+target_include_directories(gsply_cpp PRIVATE ${zstd_SOURCE_DIR}/lib)
 
 # OpenMP to parallelize the per-Gaussian decode/encode loops (parity with numba prange).
 find_package(OpenMP QUIET)
