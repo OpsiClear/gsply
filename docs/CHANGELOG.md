@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.4.0 (SPZ v4 / NGSP zstd container)
+
+### Features
+- **Read and write the SPZ v4 (NGSP) container**: the newer Niantic format that
+  stores each attribute (positions, alphas, colors, scales, rotations, sh) as its
+  own **zstd** stream behind a 32-byte header + table of contents, instead of one
+  gzip stream.
+  - `gsply.read_spz()` now auto-detects the container (gzip v1/v2/v3 *or* NGSP v4)
+    from the file magic and decodes both through the same fused Numba kernel — the
+    packed sections are identical across containers, only the framing differs.
+  - `gsply.write_spz(..., version=4)` emits the NGSP zstd container (per-stream
+    compression with `threads=-1`); `version=3` (default) keeps the legacy gzip
+    output. `zstd_level` (default 12) tunes the v4 compression.
+  - Validated round-trip and cross-read against the upstream Niantic `spz` library
+    in both directions (gsply v4 → Niantic, Niantic v4 → gsply).
+- The `gsply[spz]` extra now also pulls in `zstandard` (required for v4).
+
 ## v0.3.0 (SPZ I/O)
 
 ### Features

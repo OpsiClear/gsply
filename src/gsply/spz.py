@@ -1,21 +1,38 @@
 """
-Read and write Niantic SPZ Gaussian-splat files (legacy gzip v1/v2/v3).
+Read and write Niantic SPZ Gaussian-splat files.
 
-SPZ is a gzip-compressed binary container. Layout after gunzip:
+Two on-disk containers share the same per-attribute quantization ("packed"
+sections); only the framing differs:
 
-    Header (16B): magic u32 ("NGSP") | version u32 | num_points u32 |
-                  sh_degree u8 | fractional_bits u8 | flags u8 | reserved u8
-    Payload (contiguous sections):
-        positions  9*N bytes   (xyz as 24-bit signed fixed point, little-endian)
-        alphas     N   bytes   (sigmoid(opacity) * 255)
-        colors     3*N bytes   (sh0 wide-RGB:  byte = sh0 * 0.15 * 255 + 127.5)
-        scales     3*N bytes   (byte = (log_scale + 10) * 16)
-        rotations  R*N bytes   (v<=2: 3 bytes xyz; v>=3: 4 bytes smallest-three)
-        sh         K*3*N bytes (per coeff: byte = sh * 128 + 128)
+* **Legacy gzip (v1/v2/v3)** — the whole payload is one gzip stream:
+
+      Header (16B): magic u32 ("NGSP") | version u32 | num_points u32 |
+                    sh_degree u8 | fractional_bits u8 | flags u8 | reserved u8
+      Payload (contiguous sections): positions | alphas | colors | scales |
+                                     rotations | sh
+
+* **NGSP v4** — an uncompressed 32B header + optional extensions + a TOC, then
+  each attribute section as its own **zstd** stream (no gzip):
+
+      Header (32B): magic u32 | version u32 | num_points u32 | sh_degree u8 |
+                    fractional_bits u8 | flags u8 | num_streams u8 |
+                    toc_byte_offset u32 | reserved[12]
+      TOC: num_streams * (compressed_size u64, uncompressed_size u64)
+      Streams: zstd(positions), zstd(alphas), ... in that order (empty skipped)
+
+Sections (identical in both containers):
+
+    positions  9*N bytes   (xyz as 24-bit signed fixed point, little-endian)
+    alphas     N   bytes   (sigmoid(opacity) * 255)
+    colors     3*N bytes   (sh0 wide-RGB:  byte = sh0 * 0.15 * 255 + 127.5)
+    scales     3*N bytes   (byte = (log_scale + 10) * 16)
+    rotations  R*N bytes   (v<=2: 3 bytes xyz; v>=3: 4 bytes smallest-three)
+    sh         K*3*N bytes (per coeff: byte = sh * 128 + 128)
 
 Reading uses a single fused Numba kernel (one parallel pass over the payload, no
 intermediate allocations) and ISA-L's igzip when available (falls back to stdlib
-gzip). Writing mirrors the Niantic ``packGaussians`` spec (v3 smallest-three quats).
+gzip). v4 needs the ``zstandard`` package (``gsply[spz]``). Writing defaults to
+gzip v3 (smallest-three quats); pass ``version=4`` for the NGSP zstd container.
 
 Reference: github.com/nianticlabs/spz (load-spz.cc).
 """
@@ -26,6 +43,7 @@ import gzip
 import math
 import struct
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numba
@@ -54,10 +72,32 @@ except ImportError:  # pragma: no cover - environment-dependent
         return gzip.compress(raw)
 
 
+try:  # zstd is required only for the NGSP v4 container.
+    import zstandard as _zstd
+
+    _HAS_ZSTD = True
+
+    def _zstd_compress(data: bytes, level: int, threads: int = -1) -> bytes:
+        # threads=-1 => all logical CPUs (intra-frame MT); 0 => single-threaded.
+        out: bytes = _zstd.ZstdCompressor(level=level, threads=threads).compress(data)
+        return out
+
+    def _zstd_decompress(data: bytes, size: int) -> bytes:
+        out: bytes = _zstd.ZstdDecompressor().decompress(data, max_output_size=size)
+        return out
+
+except ImportError:  # pragma: no cover - environment-dependent
+    _HAS_ZSTD = False
+
+
 NGSP_MAGIC = 0x5053474E
+NGSP_HEADER_SIZE = 32  # v4 uncompressed header
 COLOR_SCALE = 0.15
 SH_MAX_DEGREE = 3
 MAX_FRACTIONAL_BITS = 24  # positions are 24-bit fixed point; more would overflow
+LATEST_SPZ_VERSION = 4
+MIN_ZSTD_VERSION = 4  # versions >= this use the NGSP zstd container
+DEFAULT_ZSTD_LEVEL = 12  # matches the Niantic reference
 SH_DIM_FOR_DEGREE = {0: 0, 1: 3, 2: 8, 3: 15}
 _DEGREE_FOR_SH_DIM = {0: 0, 3: 1, 8: 2, 15: 3}
 
@@ -222,31 +262,60 @@ def _ensure_kernel_compiled() -> None:
         _warm_state["done"] = True
 
 
-def read_spz(file_path: str | Path) -> GSData:
-    """Read a Niantic SPZ file into a :class:`GSData` in PLY format.
+def _section_layout(n: int, sh_dim: int, rot_stride: int) -> list[tuple[str, int]]:
+    """Per-section uncompressed byte sizes, in the canonical stream order."""
+    return [
+        ("positions", 9 * n),
+        ("alphas", 1 * n),
+        ("colors", 3 * n),
+        ("scales", 3 * n),
+        ("rotations", rot_stride * n),
+        ("sh", sh_dim * 3 * n),
+    ]
 
-    Output conventions (matching :func:`gsply.plyread`):
-        means linear, scales log-space, quats unit wxyz, opacities logit-space,
-        sh0 SH DC coefficients, shN higher-order SH ``[N, K, 3]``.
 
-    Args:
-        file_path: Path to the ``.spz`` file.
+def _decode_to_gsdata(
+    payload: np.ndarray, n: int, sh_dim: int, frac_bits: int, uses_st: bool, rot_stride: int
+) -> GSData:
+    """Run the fused decode kernel over a contiguous sections buffer -> GSData."""
+    _ensure_kernel_compiled()
+    means = np.empty((n, 3), dtype=np.float32)
+    scales = np.empty((n, 3), dtype=np.float32)
+    quats = np.empty((n, 4), dtype=np.float32)
+    opac = np.empty(n, dtype=np.float32)
+    sh0 = np.empty((n, 3), dtype=np.float32)
+    shN = np.empty((n, max(sh_dim, 1), 3), dtype=np.float32)  # noqa: N806
+    _decode_spz_kernel(
+        payload,
+        n,
+        sh_dim,
+        int(frac_bits),
+        uses_st,
+        rot_stride,
+        means,
+        scales,
+        quats,
+        opac,
+        sh0,
+        shN,
+    )
+    return GSData.from_arrays(
+        means=means,
+        scales=scales,
+        quats=quats,
+        opacities=opac,
+        sh0=sh0,
+        shN=shN if sh_dim > 0 else None,
+        format="ply",
+    )
 
-    Returns:
-        GSData populated with the decoded Gaussians (PLY format).
 
-    Raises:
-        ValueError: If the file is not a valid legacy-gzip SPZ container.
-    """
-    file_path = Path(file_path)
-    compressed = file_path.read_bytes()  # file errors propagate as OSError
+def _read_legacy_gzip(compressed: bytes, file_path: Path) -> GSData:
+    """Read a legacy gzip-container SPZ (v1/v2/v3)."""
     try:
         raw = _gunzip(compressed)
     except Exception as exc:
-        raise ValueError(
-            f"Could not gunzip SPZ (corrupt, or an unsupported ZSTD/NGSP v4 container?): "
-            f"{file_path}"
-        ) from exc
+        raise ValueError(f"Could not gunzip SPZ (corrupt container?): {file_path}") from exc
     if len(raw) < 16:
         raise ValueError(f"SPZ file too small ({len(raw)} bytes): {file_path}")
 
@@ -256,9 +325,7 @@ def read_spz(file_path: str | Path) -> GSData:
     if magic != NGSP_MAGIC:
         raise ValueError(f"Not an SPZ file (magic 0x{magic:08x}): {file_path}")
     if version not in (1, 2, 3):
-        raise ValueError(
-            f"Unsupported SPZ version {version} (only legacy gzip v1-3 supported): {file_path}"
-        )
+        raise ValueError(f"Unexpected legacy SPZ version {version}: {file_path}")
     if sh_degree > SH_MAX_DEGREE:
         raise ValueError(f"Unsupported SH degree {sh_degree}: {file_path}")
     if not 1 <= fractional_bits <= MAX_FRACTIONAL_BITS:
@@ -281,39 +348,102 @@ def read_spz(file_path: str | Path) -> GSData:
         )
     # Tolerate trailing extension bytes (header flag 0x2) — read only the sections.
     payload = np.frombuffer(raw, dtype=np.uint8, count=expected, offset=16)
+    return _decode_to_gsdata(payload, n, sh_dim, fractional_bits, uses_smallest_three, rot_stride)
 
-    _ensure_kernel_compiled()
-    means = np.empty((n, 3), dtype=np.float32)
-    scales = np.empty((n, 3), dtype=np.float32)
-    quats = np.empty((n, 4), dtype=np.float32)
-    opac = np.empty(n, dtype=np.float32)
-    sh0 = np.empty((n, 3), dtype=np.float32)
-    shN = np.empty((n, max(sh_dim, 1), 3), dtype=np.float32)  # noqa: N806
 
-    _decode_spz_kernel(
-        payload,
-        n,
-        sh_dim,
-        int(fractional_bits),
-        uses_smallest_three,
-        rot_stride,
-        means,
-        scales,
-        quats,
-        opac,
-        sh0,
-        shN,
+def _read_ngsp_v4(raw_file: bytes, file_path: Path) -> GSData:
+    """Read an NGSP v4 container (uncompressed header + TOC + per-section zstd streams)."""
+    if not _HAS_ZSTD:
+        raise ValueError(
+            f"Reading SPZ v4 (NGSP/zstd) requires the 'zstandard' package "
+            f"(install 'gsply[spz]'): {file_path}"
+        )
+    if len(raw_file) < NGSP_HEADER_SIZE:
+        raise ValueError(f"NGSP file too small ({len(raw_file)} bytes): {file_path}")
+
+    magic, version, num_points, sh_degree, fractional_bits, _flags, num_streams, toc_off = (
+        struct.unpack_from("<IIIBBBBI", raw_file, 0)
     )
+    if magic != NGSP_MAGIC:
+        raise ValueError(f"Not an SPZ file (magic 0x{magic:08x}): {file_path}")
+    if not MIN_ZSTD_VERSION <= version <= LATEST_SPZ_VERSION:
+        raise ValueError(f"Unsupported NGSP version {version}: {file_path}")
+    if sh_degree > SH_MAX_DEGREE:
+        raise ValueError(f"Unsupported SH degree {sh_degree}: {file_path}")
+    if not 1 <= fractional_bits <= MAX_FRACTIONAL_BITS:
+        raise ValueError(
+            f"Invalid SPZ fractional_bits {fractional_bits} "
+            f"(expected 1-{MAX_FRACTIONAL_BITS}): {file_path}"
+        )
 
-    return GSData.from_arrays(
-        means=means,
-        scales=scales,
-        quats=quats,
-        opacities=opac,
-        sh0=sh0,
-        shN=shN if sh_dim > 0 else None,
-        format="ply",
-    )
+    n = int(num_points)
+    sh_dim = SH_DIM_FOR_DEGREE[int(sh_degree)]
+    rot_stride = 4  # v4 always uses smallest-three quaternions
+    sections = [(name, sz) for name, sz in _section_layout(n, sh_dim, rot_stride) if sz > 0]
+    if num_streams != len(sections):
+        raise ValueError(
+            f"NGSP stream count {num_streams} != expected {len(sections)} "
+            f"(N={n}, sh_dim={sh_dim}): {file_path}"
+        )
+
+    toc_end = toc_off + num_streams * 16
+    if toc_off < NGSP_HEADER_SIZE or toc_end > len(raw_file):
+        raise ValueError(f"NGSP TOC out of bounds: {file_path}")
+
+    # Compressed offsets are cumulative, so resolve each stream's slice serially,
+    # then zstd-decompress them concurrently (zstandard releases the GIL).
+    jobs: list[tuple[str, int, int, int]] = []  # (name, offset, csize, usize)
+    offset = toc_end
+    for i, (name, usize_expected) in enumerate(sections):
+        csize, usize = struct.unpack_from("<QQ", raw_file, toc_off + i * 16)
+        if usize != usize_expected:
+            raise ValueError(
+                f"NGSP stream '{name}' size {usize} != expected {usize_expected}: {file_path}"
+            )
+        if offset + csize > len(raw_file):
+            raise ValueError(f"NGSP stream '{name}' overruns file: {file_path}")
+        jobs.append((name, offset, csize, usize))
+        offset += csize
+
+    def _decode_stream(job: tuple[str, int, int, int]) -> np.ndarray:
+        name, off, csize, usize = job
+        chunk = _zstd_decompress(raw_file[off : off + csize], usize)
+        if len(chunk) != usize:
+            raise ValueError(f"NGSP stream '{name}' decompressed size mismatch: {file_path}")
+        return np.frombuffer(chunk, dtype=np.uint8)
+
+    with ThreadPoolExecutor(max(1, len(jobs))) as ex:
+        parts = list(ex.map(_decode_stream, jobs))
+
+    payload = np.concatenate(parts) if parts else np.empty(0, dtype=np.uint8)
+    return _decode_to_gsdata(payload, n, sh_dim, fractional_bits, True, rot_stride)
+
+
+def read_spz(file_path: str | Path) -> GSData:
+    """Read a Niantic SPZ file into a :class:`GSData` in PLY format.
+
+    Supports both containers: legacy gzip (v1/v2/v3) and NGSP v4 (zstd). Output
+    conventions (matching :func:`gsply.plyread`): means linear, scales log-space,
+    quats unit wxyz, opacities logit-space, sh0 SH DC, shN higher-order ``[N,K,3]``.
+
+    Args:
+        file_path: Path to the ``.spz`` file.
+
+    Returns:
+        GSData populated with the decoded Gaussians (PLY format).
+
+    Raises:
+        ValueError: If the file is not a recognized SPZ container (or v4 is
+            requested without the ``zstandard`` package).
+    """
+    file_path = Path(file_path)
+    raw_file = file_path.read_bytes()  # file errors propagate as OSError
+    # Legacy SPZ is a gzip stream (magic 1f 8b); NGSP v4 starts with "NGSP" in the clear.
+    if len(raw_file) >= 2 and raw_file[0] == 0x1F and raw_file[1] == 0x8B:
+        return _read_legacy_gzip(raw_file, file_path)
+    if len(raw_file) >= 4 and struct.unpack_from("<I", raw_file, 0)[0] == NGSP_MAGIC:
+        return _read_ngsp_v4(raw_file, file_path)
+    raise ValueError(f"Not an SPZ file (unrecognized container): {file_path}")
 
 
 # ======================================================================================
@@ -357,21 +487,14 @@ def _pack_quats_smallest_three(quats_xyzw: np.ndarray) -> np.ndarray:
     return out
 
 
-def write_spz(file_path: str | Path, data: GSData, *, fractional_bits: int = 12) -> None:
-    """Write a :class:`GSData` to a Niantic SPZ file (gzip v3, smallest-three quats).
+def _pack_sections(
+    data: GSData, fractional_bits: int
+) -> tuple[int, int, int, list[tuple[str, bytes]]]:
+    """Quantize a GSData into the canonical SPZ sections (shared by both containers).
 
-    The input is interpreted in PLY format (as produced by :func:`plyread` /
-    :func:`read_spz`): means linear, scales log-space, quats unit wxyz, opacities
-    logit-space, sh0 SH DC coefficients, shN ``[N, K, 3]``.
-
-    Args:
-        file_path: Output ``.spz`` path.
-        data: Gaussians to encode.
-        fractional_bits: Position fixed-point precision (default 12 = ~0.24mm).
+    Returns ``(sh_degree, sh_dim, n, sections)`` where ``sections`` is an ordered
+    list of ``(name, bytes)`` for the non-empty attribute streams.
     """
-    if not 1 <= fractional_bits <= MAX_FRACTIONAL_BITS:
-        raise ValueError(f"fractional_bits must be 1-{MAX_FRACTIONAL_BITS}, got {fractional_bits}")
-
     means = np.ascontiguousarray(data.means, dtype=np.float32)
     scales = np.ascontiguousarray(data.scales, dtype=np.float32)
     quats = np.ascontiguousarray(data.quats, dtype=np.float32)  # wxyz
@@ -402,21 +525,86 @@ def write_spz(file_path: str | Path, data: GSData, *, fractional_bits: int = 12)
     scl = np.clip(np.round((scales + 10.0) * 16.0), 0, 255).astype(np.uint8)
     rot = _pack_quats_smallest_three(np.roll(quats, shift=-1, axis=1))  # wxyz -> xyzw
 
-    sh_blob = b""
+    sections = [
+        ("positions", pos_bytes.tobytes()),
+        ("alphas", alpha.tobytes()),
+        ("colors", color.tobytes()),
+        ("scales", scl.tobytes()),
+        ("rotations", rot.tobytes()),
+    ]
     if sh_dim > 0:
         # shN[i] is [K, 3]; row-major flatten gives the kk*3+ch byte order the reader expects.
         sh_flat = np.ascontiguousarray(shN, dtype=np.float32).reshape(n, sh_dim * 3)
         sh_bytes = np.clip(np.round(sh_flat * 128.0 + 128.0), 0, 255).astype(np.uint8)
-        sh_blob = sh_bytes.tobytes()
+        sections.append(("sh", sh_bytes.tobytes()))
 
-    header = struct.pack("<IIIBBBB", NGSP_MAGIC, 3, n, sh_degree, fractional_bits, 0, 0)
-    payload = (
-        header
-        + pos_bytes.tobytes()
-        + alpha.tobytes()
-        + color.tobytes()
-        + scl.tobytes()
-        + rot.tobytes()
-        + sh_blob
+    return sh_degree, sh_dim, n, sections
+
+
+def write_spz(
+    file_path: str | Path,
+    data: GSData,
+    *,
+    version: int = 3,
+    fractional_bits: int = 12,
+    zstd_level: int = DEFAULT_ZSTD_LEVEL,
+) -> None:
+    """Write a :class:`GSData` to a Niantic SPZ file.
+
+    The input is interpreted in PLY format (as produced by :func:`plyread` /
+    :func:`read_spz`): means linear, scales log-space, quats unit wxyz, opacities
+    logit-space, sh0 SH DC coefficients, shN ``[N, K, 3]``.
+
+    Args:
+        file_path: Output ``.spz`` path.
+        data: Gaussians to encode.
+        version: ``3`` (default) writes the legacy gzip container with
+            smallest-three quaternions; ``4`` writes the NGSP zstd container.
+        fractional_bits: Position fixed-point precision (default 12 = ~0.24mm).
+        zstd_level: zstd compression level for ``version=4`` (1..22, default 12).
+
+    Raises:
+        ValueError: For an unsupported ``version``, or if ``version=4`` is
+            requested without the ``zstandard`` package installed.
+    """
+    if not 1 <= fractional_bits <= MAX_FRACTIONAL_BITS:
+        raise ValueError(f"fractional_bits must be 1-{MAX_FRACTIONAL_BITS}, got {fractional_bits}")
+    if version not in (3, 4):
+        raise ValueError(f"write_spz supports version 3 (gzip) or 4 (zstd), got {version}")
+
+    sh_degree, _sh_dim, n, sections = _pack_sections(data, fractional_bits)
+
+    if version == 3:
+        header = struct.pack("<IIIBBBB", NGSP_MAGIC, 3, n, sh_degree, fractional_bits, 0, 0)
+        payload = header + b"".join(body for _, body in sections)
+        Path(file_path).write_bytes(_gzip_compress(payload))
+        return
+
+    # version == 4: NGSP zstd container
+    if not _HAS_ZSTD:
+        raise ValueError(
+            "Writing SPZ v4 (NGSP/zstd) requires the 'zstandard' package (install 'gsply[spz]')"
+        )
+    # Hybrid parallelism: compress streams concurrently (zstandard releases the GIL);
+    # the largest stream (SH) gets intra-frame workers so it isn't the lone long pole.
+    bodies = [body for _, body in sections]
+    big = max(range(len(bodies)), key=lambda i: len(bodies[i]))
+    with ThreadPoolExecutor(max(1, len(bodies))) as ex:
+        chunks = list(
+            ex.map(
+                lambda i: _zstd_compress(bodies[i], zstd_level, threads=-1 if i == big else 0),
+                range(len(bodies)),
+            )
+        )
+    num_streams = len(sections)
+    toc_off = NGSP_HEADER_SIZE  # no extensions
+    header = (
+        struct.pack(
+            "<IIIBBBBI", NGSP_MAGIC, 4, n, sh_degree, fractional_bits, 0, num_streams, toc_off
+        )
+        + b"\x00" * 12  # reserved
     )
-    Path(file_path).write_bytes(_gzip_compress(payload))
+    toc = b"".join(
+        struct.pack("<QQ", len(chunks[i]), len(sections[i][1])) for i in range(num_streams)
+    )
+    Path(file_path).write_bytes(header + toc + b"".join(chunks))

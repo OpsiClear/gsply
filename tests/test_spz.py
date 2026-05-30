@@ -179,10 +179,82 @@ class TestReferenceBindings:
         scales = np.asarray(cloud.scales, dtype=np.float32).reshape(-1, 3)
         colors = np.asarray(cloud.colors, dtype=np.float32).reshape(-1, 3)
         np.testing.assert_allclose(scales, arr["scales"], atol=1.0 / 16 + 1e-6)
-        # Niantic colors are wide-RGB (sh0 * 0.15 + 0.5); invert to compare to sh0.
-        np.testing.assert_allclose(
-            (colors - 0.5) / COLOR_SCALE, arr["sh0"], atol=1.0 / (COLOR_SCALE * 255)
+        # GaussianCloud.colors are already decoded to the SH DC convention (== sh0),
+        # not the 0..1 wide-RGB byte values, so compare directly.
+        np.testing.assert_allclose(colors, arr["sh0"], atol=1.0 / (COLOR_SCALE * 255))
+
+
+class TestV4:
+    """NGSP v4 (zstd) container: round-trip, parity with the gzip path, interop."""
+
+    def test_v4_roundtrip(self, gs, tmp_path):
+        data, arr = gs
+        path = tmp_path / "v4.spz"
+        write_spz(path, data, version=4)
+        raw = path.read_bytes()
+        assert struct.unpack_from("<I", raw, 0)[0] == NGSP_MAGIC  # uncompressed NGSP header
+        assert struct.unpack_from("<I", raw, 4)[0] == 4  # version field
+        assert raw[:2] != b"\x1f\x8b"  # not gzip
+        out = read_spz(path)
+        np.testing.assert_allclose(np.asarray(out.means), arr["means"], atol=2e-4)
+        np.testing.assert_allclose(np.asarray(out.scales), arr["scales"], atol=1.0 / 16 + 1e-6)
+        np.testing.assert_allclose(np.asarray(out.sh0), arr["sh0"], atol=1.0 / (COLOR_SCALE * 255))
+        np.testing.assert_allclose(np.asarray(out.shN), arr["shN"], atol=2.0 / 128)
+        dots = np.abs((np.asarray(out.quats) * arr["quats"]).sum(1))
+        assert dots.min() > 0.99
+
+    def test_v4_decodes_identically_to_v3(self, gs, tmp_path):
+        """v3 and v4 share identical packed sections -> identical decoded arrays."""
+        data, _ = gs
+        p3, p4 = tmp_path / "a.spz", tmp_path / "b.spz"
+        write_spz(p3, data, version=3)
+        write_spz(p4, data, version=4)
+        a, b = read_spz(p3), read_spz(p4)
+        for f in ("means", "scales", "quats", "opacities", "sh0", "shN"):
+            np.testing.assert_array_equal(np.asarray(getattr(a, f)), np.asarray(getattr(b, f)))
+
+    def test_v4_sh0_only(self, tmp_path):
+        """SH degree 0 -> 5 streams (no sh stream)."""
+        rng = np.random.default_rng(1)
+        n = 64
+        data = gsply.GSData.from_arrays(
+            means=rng.uniform(-1, 1, (n, 3)).astype(np.float32),
+            scales=rng.uniform(-6, -3, (n, 3)).astype(np.float32),
+            quats=np.tile(np.array([1, 0, 0, 0], np.float32), (n, 1)),
+            opacities=rng.uniform(-2, 2, n).astype(np.float32),
+            sh0=rng.uniform(-1, 1, (n, 3)).astype(np.float32),
+            shN=None,
+            format="ply",
         )
+        path = tmp_path / "sh0.spz"
+        write_spz(path, data, version=4)
+        assert path.read_bytes()[15] == 5  # num_streams (no sh)
+        out = read_spz(path)
+        assert out.shN is None
+        assert np.asarray(out.means).shape == (n, 3)
+
+    def test_bad_version(self, gs, tmp_path):
+        data, _ = gs
+        with pytest.raises(ValueError, match="version"):
+            write_spz(tmp_path / "x.spz", data, version=2)
+
+    def test_v4_niantic_interop(self, gs, tmp_path):
+        """gsply writes v4 -> Niantic reads; Niantic writes v4 -> gsply reads."""
+        spz = pytest.importorskip("spz")
+        data, arr = gs
+        gp = tmp_path / "g_v4.spz"
+        write_spz(gp, data, version=4)
+        cloud = spz.load_spz(str(gp))
+        assert cloud.num_points == arr["means"].shape[0]
+        assert cloud.sh_degree == 3
+        scales = np.asarray(cloud.scales, np.float32).reshape(-1, 3)
+        np.testing.assert_allclose(scales, arr["scales"], atol=1.0 / 16 + 1e-6)
+        # Niantic's own v4 (default PackOptions) must read back in gsply.
+        np_path = tmp_path / "n_v4.spz"
+        spz.save_spz(cloud, spz.PackOptions(), str(np_path))
+        out = read_spz(np_path)
+        nm = np.asarray(cloud.positions, np.float32).reshape(-1, 3)
+        np.testing.assert_allclose(np.asarray(out.means), nm, atol=2e-4)
 
 
 class TestErrors:
@@ -195,5 +267,6 @@ class TestErrors:
     def test_not_gzip(self, tmp_path):
         path = tmp_path / "x.spz"
         path.write_bytes(b"not a gzip stream")
-        with pytest.raises(ValueError, match="Could not gunzip"):
+        # Neither gzip (1f 8b) nor NGSP magic -> unrecognized container.
+        with pytest.raises(ValueError, match="Not an SPZ file"):
             read_spz(path)
