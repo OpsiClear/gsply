@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gsply"
-version = "0.4.0"
+version = "0.4.1"
 description = "Ultra-fast Gaussian Splatting PLY + SPZ I/O library - pure Python with NumPy and Numba. Features 11x faster GPU transfers and automatic format state tracking for seamless conversions."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,6 +43,13 @@ sogs = [
 spz = [
     "isal>=1.0.0",  # ISA-L igzip: faster SPZ (de)compress; reader/writer fall back to gzip
     "zstandard>=0.22.0",  # zstd: required for the NGSP v4 container (read + write)
+]
+cpp = [
+    # Optional C++ acceleration backend, opt-in via gsply.use_backend("cpp").
+    # NOTE: gsply-cpp is build-from-source (compiler + CMake required) and not yet
+    # on PyPI; until then install it directly, e.g.
+    #   pip install "gsply-cpp @ git+https://github.com/OpsiClear/gsply.git#subdirectory=cpp"
+    "gsply-cpp>=0.1.0",
 ]
 dev = [
     "pytest>=7.0",

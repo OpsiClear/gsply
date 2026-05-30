@@ -50,6 +50,7 @@ import numba
 import numpy as np
 from numba import jit
 
+from gsply import _backend
 from gsply.gsdata import GSData
 
 try:  # ISA-L igzip: gzip-compatible, markedly faster (de)compress where wheels exist.
@@ -436,6 +437,8 @@ def read_spz(file_path: str | Path) -> GSData:
         ValueError: If the file is not a recognized SPZ container (or v4 is
             requested without the ``zstandard`` package).
     """
+    if _backend.active_backend() == "cpp":  # opt-in C++ backend (full SPZ parity)
+        return _backend.dict_to_gsdata(_backend.cpp().read_spz(str(file_path)))
     file_path = Path(file_path)
     raw_file = file_path.read_bytes()  # file errors propagate as OSError
     # Legacy SPZ is a gzip stream (magic 1f 8b); NGSP v4 starts with "NGSP" in the clear.
@@ -571,6 +574,23 @@ def write_spz(
         raise ValueError(f"fractional_bits must be 1-{MAX_FRACTIONAL_BITS}, got {fractional_bits}")
     if version not in (3, 4):
         raise ValueError(f"write_spz supports version 3 (gzip) or 4 (zstd), got {version}")
+
+    if _backend.active_backend() == "cpp":  # opt-in C++ backend (full SPZ parity)
+        m, s, q, o, c0, cn = _backend.gsdata_ply_arrays(data)
+        # gsply_cpp: level<0 => per-codec default (gzip 6 / zstd 12); v4 uses zstd_level.
+        _backend.cpp().write_spz(
+            str(file_path),
+            m,
+            s,
+            q,
+            o,
+            c0,
+            cn,
+            fractional_bits,
+            version,
+            zstd_level if version == 4 else -1,
+        )
+        return
 
     sh_degree, _sh_dim, n, sections = _pack_sections(data, fractional_bits)
 

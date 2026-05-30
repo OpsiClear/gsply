@@ -1506,6 +1506,24 @@ def plywrite(
 
     file_path = Path(file_path)
 
+    # Opt-in C++ backend: only the plain uncompressed GSData write (gsply_cpp emits
+    # the canonical INRIA layout). GSTensor / raw-array / compressed paths use Python.
+    from gsply import _backend  # noqa: PLC0415
+
+    if (
+        _backend.active_backend() == "cpp"
+        and not compressed
+        and scales is None
+        and isinstance(data, GSData)
+        and not str(file_path).endswith((".compressed.ply", ".ply_compressed"))
+    ):
+        try:
+            m, s, q, o, c0, cn = _backend.gsdata_ply_arrays(data)
+            _backend.cpp().write_ply(str(file_path), m, s, q, o, c0, cn)
+            return
+        except Exception:  # noqa: BLE001 - any failure -> fall back to pure Python
+            pass
+
     # Convert GSTensor to GSData if needed (lazy import to avoid torch import issues)
     try:
         from gsply.torch.gstensor import GSTensor  # noqa: PLC0415

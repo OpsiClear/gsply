@@ -52,6 +52,7 @@ Performance (400K Gaussians, SH0):
     - Write compressed: ~15ms (27M/sec, JIT-accelerated, 71% smaller)
 """
 
+from gsply._backend import active_backend, use_backend
 from gsply.formats import detect_format
 from gsply.gsdata import GSData, create_ply_format, create_rasterizer_format
 from gsply.reader import decompress_from_bytes, plyread
@@ -67,7 +68,7 @@ from gsply.utils import (
 )
 from gsply.writer import compress_to_arrays, compress_to_bytes, plywrite
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 __all__ = [
     "plyread",
     "GSData",
@@ -87,6 +88,8 @@ __all__ = [
     "apply_pre_activations",
     "apply_pre_deactivations",
     "SH_C0",
+    "use_backend",
+    "active_backend",
     "__version__",
 ]
 # Note: GSTensor and sogread are available via lazy import but not in __all__ (they're optional)
