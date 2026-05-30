@@ -187,6 +187,11 @@ class TestReferenceBindings:
 class TestV4:
     """NGSP v4 (zstd) container: round-trip, parity with the gzip path, interop."""
 
+    @pytest.fixture(autouse=True)
+    def _require_zstd(self):
+        """v4 needs the optional 'zstandard' dependency (gsply[spz]); skip without it."""
+        pytest.importorskip("zstandard")
+
     def test_v4_roundtrip(self, gs, tmp_path):
         data, arr = gs
         path = tmp_path / "v4.spz"
