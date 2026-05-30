@@ -56,7 +56,7 @@ Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimize
 - **Ultra-Fast**: 93M Gaussians/sec read, 57M Gaussians/sec write
 - **Zero-Copy**: Reads use memory views for maximum performance
 - **Auto-Optimized**: Writes are 2.6-2.8x faster automatically
-- **Format Support**: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG format
+- **Format Support**: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG + Niantic SPZ (v1–v4)
 - **GPU Ready**: Optional PyTorch integration with GSTensor (11x faster transfers)
 - **Pure Python**: NumPy + Numba (no C++ compilation required)
 - **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
@@ -237,6 +237,26 @@ compressed_bytes = compress_to_bytes(data)
 data_restored = decompress_from_bytes(compressed_bytes)
 ```
 
+### SPZ Format (Niantic)
+
+```python
+from gsply import read_spz, write_spz
+
+# Read any SPZ — the container is auto-detected (legacy gzip v1/v2/v3 or NGSP v4
+# zstd). Returns a GSData in PLY format, same API as plyread().
+data = read_spz("scene.spz")
+
+# Write v3 (gzip, smallest-three quats) — the default
+write_spz("out.spz", data)
+
+# Write v4 (NGSP container, per-attribute zstd) — Niantic's modern format, ~3% smaller
+write_spz("out_v4.spz", data, version=4)               # zstd_level=12 (default)
+write_spz("fast.spz",   data, version=4, zstd_level=9) # ~2.3x faster write, +0.8% size
+```
+
+> v4 needs the zstd extra (`pip install gsply[spz]`); v1–v3 work without it
+> (stdlib gzip, accelerated by `isal` when present).
+
 ### SOG Format (Optional)
 
 ```python
@@ -316,6 +336,17 @@ WebP-based texture format for web deployment:
 - Returns `GSData` container (same API as `plyread()`)
 - In-memory ZIP extraction: Can read directly from bytes
 
+### SPZ (Niantic) - Optional
+
+[Niantic SPZ](https://github.com/nianticlabs/spz), read + write, both containers:
+- **Legacy gzip (v1/v2/v3)**: one gzip stream; v3 uses smallest-three quaternions
+- **NGSP v4**: per-attribute **zstd** streams behind a 32-byte header + table of
+  contents — Niantic's current format, ~3% smaller than gzip
+- Container is auto-detected on read; `write_spz(..., version=3)` (default, gzip) or
+  `version=4` (NGSP/zstd, `zstd_level` tunable). `read_spz`/`write_spz` use the
+  PLY-format `GSData` API, round-trip with the Niantic reference both directions.
+- Requires `gsply[spz]` for v4 (zstd); v1–v3 fall back to stdlib gzip
+
 ---
 
 ## API Reference
@@ -325,6 +356,8 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 ### Core I/O
 - `plyread(file_path)` - Read PLY files (auto-detects format)
 - `plywrite(file_path, ...)` - Write PLY files
+- `read_spz(file_path)` - Read Niantic SPZ (gzip v1/v2/v3 or NGSP v4 zstd)
+- `write_spz(file_path, data, *, version=3, ...)` - Write SPZ (v3 gzip / v4 zstd)
 - `detect_format(file_path)` - Detect format and SH degree
 - `sogread(file_path | bytes)` - Read SOG files (optional)
 
