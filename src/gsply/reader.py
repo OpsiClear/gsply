@@ -924,6 +924,14 @@ def plyread(file_path: str | Path) -> GSData:
         >>> # Unpack for standard GS workflows
         >>> means, scales, quats, opacities, sh0, shN = data.unpack()
     """
+    from gsply import _backend
+
+    if _backend.active_backend() == "cpp":  # opt-in C++ backend
+        try:
+            return _backend.dict_to_gsdata(_backend.cpp().read_ply(str(file_path)))
+        except Exception:  # noqa: BLE001 - C++ handles only plain uncompressed GS PLY
+            pass  # fall back to pure Python (compressed PLY, unusual layouts, ...)
+
     file_path = Path(file_path)
 
     # Detect format first

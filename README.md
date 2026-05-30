@@ -90,6 +90,37 @@ pip install gsply[sogs]
 ```
 Enables `sogread()` for reading SOG (Splat Ordering Grid) format files.
 
+**C++ acceleration backend (optional, build from source):**
+
+The published `gsply` wheel is pure Python. An optional C++ backend (`gsply_cpp`)
+accelerates PLY/SPZ read/write. It is **build-from-source** (needs a C++17
+compiler + CMake) and is not on PyPI — install it directly from this repo:
+
+```bash
+# from a clone:
+pip install ./cpp
+# or straight from GitHub:
+pip install "gsply-cpp @ git+https://github.com/OpsiClear/gsply.git#subdirectory=cpp"
+```
+
+Then opt in at runtime (pure Python remains the default):
+
+```python
+import gsply
+gsply.use_backend("cpp")        # or "auto" (use C++ if importable), or "python"
+# equivalently: set the env var GSPLY_BACKEND=cpp before importing gsply
+print(gsply.active_backend())   # -> "cpp" when gsply_cpp is installed
+
+data = gsply.read_spz("scene.spz")      # routed through C++ when enabled
+gsply.write_spz("out.spz", data, version=4)
+```
+
+When enabled, `plyread`/`plywrite`/`read_spz`/`write_spz` use `gsply_cpp` where it
+applies and fall back to pure Python otherwise (e.g. compressed PLY). Reads are
+float32-ULP-identical to the Python path; writes may differ by ≤1 LSB per
+quantized value and use a different compressor (decoded data matches; compressed
+bytes differ).
+
 **Full Installation:**
 ```bash
 pip install gsply[sogs] torch  # GPU + SOG support
