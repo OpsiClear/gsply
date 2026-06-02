@@ -1,8 +1,9 @@
 name: Publish gsply-cpp (wheels)
 
-# Builds prebuilt wheels for the C++ backend (cpp/, package "gsply-cpp") across
-# Linux / Windows / macOS plus an sdist, and publishes to PyPI via trusted
-# publishing. Wheels are built for CPython 3.10-3.13 so `pip install "gsply[cpp]"`
+# Builds prebuilt wheels for the C++ backend (cpp/, package "gsply-cpp") for
+# Linux x86_64, Windows AMD64, and macOS arm64 plus an sdist, and publishes to
+# PyPI via trusted publishing. Wheels are built for CPython 3.10-3.13 so
+# `pip install "gsply[cpp]"`
 # can resolve a binary backend for every Python version supported by gsply.
 #
 # Triggers:
@@ -47,8 +48,6 @@ jobs:
         include:
           - os: ubuntu-latest          # manylinux x86_64
           - os: windows-latest         # win_amd64
-          - os: macos-13               # macOS x86_64
-            macos_target: "10.15"      # std::filesystem (C++17) needs >= 10.15
           - os: macos-14               # macOS arm64
             macos_target: "11.0"
     steps:

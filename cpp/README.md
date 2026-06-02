@@ -40,8 +40,8 @@ Parity is verified against `gsply` in `tests/test_parity.py`.
 ## Prebuilt wheels & releasing
 
 `.github/workflows/publish-cpp.yml` builds release wheels for CPython 3.10-3.13
-on Linux, Windows, and macOS (x86_64 + arm64) with cibuildwheel, plus an sdist,
-then publishes to PyPI via trusted publishing.
+on Linux x86_64, Windows AMD64, and macOS arm64 with cibuildwheel, plus an
+sdist, then publishes to PyPI via trusted publishing.
 
 End-to-end install verification:
 
