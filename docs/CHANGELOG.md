@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.4.2 (Bundled platform wheels)
+
+### Packaging
+- Publishes `gsply` platform wheels with the bundled `gsply_cpp` extension for
+  supported CPython/OS combinations, so `pip install gsply` installs the C++
+  backend automatically when a matching wheel exists.
+- Keeps source/default local builds Python-only unless the C++ extension is
+  explicitly enabled with `-Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON`.
+- Removes the separate `gsply-cpp` PyPI release path and the `gsply[cpp]` extra.
+
 ## v0.4.1 (Bundled C++ acceleration backend)
 
 ### Features

@@ -12,7 +12,7 @@ This file provides context and instructions for AI coding agents working on the 
   for SOG, `gsply[spz]` for SPZ v4/zstd
 - **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
 - **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support, Niantic SPZ v1-v4 support, optional C++ acceleration backend
-- **Current Version**: 0.4.1
+- **Current Version**: 0.4.2
 
 ## Development Environment Setup
 

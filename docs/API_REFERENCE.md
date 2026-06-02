@@ -2,7 +2,10 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY and SPZ I/O Library
 
-**Version:** 0.4.1
+**Version:** 0.4.2
+
+**New in v0.4.2:**
+- Published platform wheels bundle `gsply_cpp` with the root `gsply` package
 
 **New in v0.4.1:**
 - Bundled C++ acceleration backend (`gsply_cpp`) for supported PLY/SPZ read/write paths
