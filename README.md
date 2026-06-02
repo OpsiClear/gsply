@@ -58,11 +58,11 @@ Ultra-fast Gaussian Splatting PLY and SPZ I/O for Python. Zero-copy reads, auto-
 - **Auto-Optimized**: Writes are 2.6-2.8x faster automatically
 - **Format Support**: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG + Niantic SPZ (v1–v4)
 - **GPU Ready**: Optional PyTorch integration with GSTensor (11x faster transfers)
-- **Python-first**: NumPy + Numba core with bundled C++ acceleration on supported wheels
+- **Python-first**: NumPy + Numba core with bundled C++ acceleration in v0.4.2+ wheels
 - **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
 - **Format Conversion**: `normalize()`, `denormalize()` with fused kernels (~8-15x faster)
 - **Color Conversion**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
-- **Comprehensive**: 426 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
+- **Comprehensive**: 427 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
 
 ---
 
@@ -75,6 +75,12 @@ pip install gsply
 ```
 
 **Core dependencies:** NumPy and Numba (automatically installed)
+
+**Current PyPI wheel status (v0.4.2+):** `pip install gsply` installs the
+bundled `gsply_cpp` extension automatically on supported platform wheels:
+Linux x86_64, Windows AMD64, and macOS arm64 for CPython 3.10-3.13. The Python
+backend remains the default at runtime; opt into C++ with
+`gsply.use_backend("cpp")` or `gsply.use_backend("auto")`.
 
 ### Optional Features
 
@@ -92,16 +98,17 @@ Enables `sogread()` for reading SOG (Splat Ordering Grid) format files.
 
 **C++ acceleration backend (bundled wheels):**
 
-`pip install gsply` installs the `gsply_cpp` backend automatically from
-published platform wheels on supported platforms. No `gsply[cpp]` extra and no
-separate `gsply-cpp` package are needed.
+`pip install gsply` installs the `gsply_cpp` backend automatically from the
+published v0.4.2+ platform wheels on supported platforms. No `gsply[cpp]` extra
+and no separate `gsply-cpp` package are needed.
 
 ```bash
 pip install gsply
 ```
 
-Source installs and unsupported platforms can remain Python-only by default. To
-build the extension locally from the repository root, opt in explicitly:
+If pip uses the sdist, or if the platform has no matching wheel, the install can
+remain Python-only by default. To build the extension locally from the
+repository root, opt in explicitly:
 
 ```bash
 pip install . -Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON
@@ -290,7 +297,8 @@ write_spz("fast.spz",   data, version=4, zstd_level=9) # ~2.3x faster write, +0.
 ```
 
 > v4 needs the zstd extra (`pip install gsply[spz]`); v1–v3 work without it
-> (stdlib gzip, accelerated by `isal` when present).
+> (large v3 writes use a core parallel gzip fallback when `isal` is not present;
+> `isal` remains preferred when installed).
 
 ### SOG Format (Optional)
 
@@ -380,7 +388,8 @@ WebP-based texture format for web deployment:
 - Container is auto-detected on read; `write_spz(..., version=3)` (default, gzip) or
   `version=4` (NGSP/zstd, `zstd_level` tunable). `read_spz`/`write_spz` use the
   PLY-format `GSData` API, round-trip with the Niantic reference both directions.
-- Requires `gsply[spz]` for v4 (zstd); v1–v3 fall back to stdlib gzip
+- Requires `gsply[spz]` for v4 (zstd); v1–v3 work with the core package. Large
+  v3 writes use a parallel single-member gzip fallback unless `isal` is present.
 
 ---
 
@@ -435,6 +444,22 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 ---
 
 ## What's New
+
+### v0.4.3 - SPZ v3 Python Write Performance
+
+- **Faster pure-Python SPZ v3 writes**: Large `write_spz(..., version=3)`
+  payloads now use a parallel single-member gzip fallback when `isal` is not
+  installed.
+- **Compatibility preserved**: The optimized path still emits one strict gzip
+  member and round-trips through the same SPZ reader and Niantic-compatible
+  payload format.
+
+### v0.4.2 - Bundled Platform Wheels
+
+- **Bundled C++ wheels**: `pip install gsply` installs `gsply_cpp`
+  automatically on supported CPython 3.10-3.13 platform wheels.
+- **No separate C++ extra**: No `gsply[cpp]` extra or separate `gsply-cpp`
+  package is needed.
 
 ### v0.2.11 - GPU Compression Optimization
 
@@ -521,7 +546,7 @@ pytest tests/ -v --cov=gsply --cov-report=html
 gsply/
 ├── src/gsply/          # Source code
 │   ├── __init__.py     # Public API exports and lazy optional imports
-│   ├── _backend.py     # Optional gsply_cpp backend selection
+│   ├── _backend.py     # gsply_cpp backend selection
 │   ├── gsdata.py       # GSData dataclass
 │   ├── reader.py       # PLY reading
 │   ├── writer.py       # PLY writing
@@ -534,7 +559,7 @@ gsply/
 │       ├── compression.py
 │       └── io.py       # GPU I/O
 ├── cpp/                # Bundled C++ acceleration backend source
-├── tests/              # Unit tests (448 collected)
+├── tests/              # Unit tests (449 collected)
 ├── benchmarks/         # Performance benchmarks
 ├── docs/               # Documentation
 └── pyproject.toml      # Package configuration
@@ -542,7 +567,7 @@ gsply/
 
 ### Testing
 
-gsply has comprehensive test coverage with **426 passed, 22 skipped, 448 collected** in the latest local verification:
+gsply has comprehensive test coverage with **427 passed, 22 skipped, 449 collected** in the latest local verification:
 
 ```bash
 # Run all tests

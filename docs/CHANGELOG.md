@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.4.3 (SPZ v3 Python write performance)
+
+### Performance
+- Large pure-Python `write_spz(..., version=3)` payloads now use a parallel
+  single-member gzip fallback when ISA-L is not installed, removing the previous
+  serial stdlib gzip bottleneck while preserving strict gzip compatibility.
+- `isal`/`gsply[spz]` remains the preferred gzip path when installed. Small core
+  payloads still use stdlib gzip directly.
+
+### Tests
+- Added regression coverage that forces the optimized v3 gzip writer path,
+  verifies that it emits one strict gzip member with no trailing member data, and
+  confirms the SPZ round trip still matches the input data.
+
 ## v0.4.2 (Bundled platform wheels)
 
 ### Packaging

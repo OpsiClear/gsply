@@ -5,11 +5,14 @@ from __future__ import annotations
 
 import gzip
 import struct
+import zlib
 
 import numpy as np
 import pytest
 
 import gsply
+import gsply.spz as spz_module
+from gsply._backend import selected_backend, use_backend
 from gsply.spz import COLOR_SCALE, NGSP_MAGIC, read_spz, write_spz
 
 
@@ -142,6 +145,54 @@ class TestRoundTrip:
         out = read_spz(path)
         assert out.means.shape == (n, 3)
         assert out.shN is None or np.asarray(out.shN).size == 0
+
+    def test_python_v3_write_is_single_gzip_member(self, tmp_path, monkeypatch):
+        """Python v3 writer must stay one strict gzip member after parallel compression."""
+        compressed_payloads = []
+
+        def compress(raw: bytes) -> bytes:
+            compressed_payloads.append(len(raw))
+            assert len(raw) >= spz_module._GZIP_PARALLEL_MIN_BYTES
+            return spz_module._gzip_compress_parallel(raw)
+
+        prev_backend = selected_backend()
+        use_backend("python")
+        monkeypatch.setattr(spz_module, "_gzip_compress", compress)
+        try:
+            rng = np.random.default_rng(3)
+            n = 80_000
+            means = rng.uniform(-2, 2, (n, 3)).astype(np.float32)
+            scales = rng.uniform(-8, -2, (n, 3)).astype(np.float32)
+            quats = rng.standard_normal((n, 4)).astype(np.float32)
+            quats /= np.linalg.norm(quats, axis=1, keepdims=True)
+            opacities = rng.uniform(-3, 4, n).astype(np.float32)
+            sh0 = rng.uniform(-1, 1, (n, 3)).astype(np.float32)
+            shN = rng.uniform(-0.4, 0.4, (n, 15, 3)).astype(np.float32)  # noqa: N806
+            data = gsply.GSData.from_arrays(
+                means=means,
+                scales=scales,
+                quats=quats,
+                opacities=opacities,
+                sh0=sh0,
+                shN=shN,
+                format="ply",
+            )
+
+            path = tmp_path / "python_big.spz"
+            write_spz(path, data, version=3)
+            raw = path.read_bytes()
+
+            dobj = zlib.decompressobj(16 + 15)
+            strict = dobj.decompress(raw) + dobj.flush()
+            assert compressed_payloads
+            assert dobj.eof
+            assert dobj.unused_data == b""
+            assert strict == gzip.decompress(raw)
+
+            out = read_spz(path)
+            np.testing.assert_allclose(np.asarray(out.means), means, atol=2e-4)
+        finally:
+            use_backend(prev_backend)
 
 
 class TestKernelParity:

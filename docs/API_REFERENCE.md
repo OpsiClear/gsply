@@ -2,7 +2,11 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY and SPZ I/O Library
 
-**Version:** 0.4.2
+**Version:** 0.4.3
+
+**New in v0.4.3:**
+- Faster pure-Python SPZ v3 writes for large payloads through a parallel
+  single-member gzip fallback when `isal` is not installed
 
 **New in v0.4.2:**
 - Published platform wheels bundle `gsply_cpp` with the root `gsply` package
@@ -78,8 +82,9 @@ SPZ v4/zstd support:
 ```bash
 pip install "gsply[spz]"
 ```
-Enables NGSP/SPZ v4 read/write support. SPZ v1-v3 work without this extra, with
-`isal` used for faster gzip when installed.
+Enables NGSP/SPZ v4 read/write support. SPZ v1-v3 work without this extra.
+`isal` is used for faster gzip when installed; otherwise large v3 writes use the
+core parallel gzip fallback.
 
 C++ acceleration backend:
 ```bash
@@ -394,6 +399,7 @@ container is auto-detected from file magic.
 - SPZ v1-v3 use gzip and work with the core package
 - SPZ v4 requires `zstandard` from `pip install "gsply[spz]"`
 - `isal` from `gsply[spz]` accelerates gzip paths when available
+- Without `isal`, large v3 writes use a parallel single-member gzip fallback
 
 **Example:**
 ```python
@@ -419,6 +425,11 @@ and `shN` is shaped `[N, K, 3]`.
 - `version` (int): `3` writes legacy gzip SPZ; `4` writes NGSP v4/zstd
 - `fractional_bits` (int): Position fixed-point precision; default is 12
 - `zstd_level` (int): zstd compression level for version 4; default is 12
+
+**Performance:**
+- Version 3 writes emit one gzip member. When `isal` is not installed, large
+  payloads are compressed with the core parallel gzip fallback; small payloads
+  use stdlib gzip directly.
 
 **Example:**
 ```python

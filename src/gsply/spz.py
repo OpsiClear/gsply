@@ -41,8 +41,10 @@ from __future__ import annotations
 
 import gzip
 import math
+import os
 import struct
 import threading
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -70,7 +72,9 @@ except ImportError:  # pragma: no cover - environment-dependent
         return gzip.decompress(raw)
 
     def _gzip_compress(raw: bytes) -> bytes:
-        return gzip.compress(raw)
+        if len(raw) < _GZIP_PARALLEL_MIN_BYTES:
+            return gzip.compress(raw, compresslevel=_GZIP_COMPRESSION_LEVEL)
+        return _gzip_compress_parallel(raw)
 
 
 try:  # zstd is required only for the NGSP v4 container.
@@ -105,6 +109,44 @@ _DEGREE_FOR_SH_DIM = {0: 0, 3: 1, 8: 2, 15: 3}
 _INV_SQRT2 = np.float32(0.7071067811865476)
 _C_MASK = np.uint32((1 << 9) - 1)  # 9-bit magnitude mask for smallest-three quats
 _EPS = np.float32(1e-6)
+_GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"
+_GZIP_PARALLEL_MIN_BYTES = 1 << 20
+_GZIP_PARALLEL_BLOCK_BYTES = 1 << 18
+_GZIP_COMPRESSION_LEVEL = 6  # matches the C++ backend default more closely than gzip's level 9
+
+
+def _gzip_compress_parallel(
+    raw: bytes,
+    *,
+    level: int = _GZIP_COMPRESSION_LEVEL,
+    block_size: int = _GZIP_PARALLEL_BLOCK_BYTES,
+) -> bytes:
+    """Compress as one gzip member while deflating independent blocks in parallel.
+
+    Each non-final block is flushed at a byte boundary so concatenating the raw
+    deflate outputs stays a single valid deflate stream. The gzip wrapper is
+    assembled once around the combined body, preserving strict single-member
+    compatibility with Niantic's loader.
+    """
+    chunk_count = (len(raw) + block_size - 1) // block_size
+    if chunk_count <= 1:
+        return gzip.compress(raw, compresslevel=level)
+
+    view = memoryview(raw)
+
+    def compress_chunk(idx: int) -> bytes:
+        start = idx * block_size
+        chunk = view[start : min(start + block_size, len(raw))]
+        compressor = zlib.compressobj(level, zlib.DEFLATED, -15)
+        flush_mode = zlib.Z_FINISH if idx == chunk_count - 1 else zlib.Z_SYNC_FLUSH
+        return compressor.compress(chunk) + compressor.flush(flush_mode)
+
+    workers = min(chunk_count, max(1, min(16, os.cpu_count() or 1)))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        body = b"".join(ex.map(compress_chunk, range(chunk_count)))
+
+    trailer = struct.pack("<II", zlib.crc32(raw) & 0xFFFFFFFF, len(raw) & 0xFFFFFFFF)
+    return _GZIP_HEADER + body + trailer
 
 
 # ======================================================================================

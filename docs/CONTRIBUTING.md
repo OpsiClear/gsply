@@ -345,10 +345,10 @@ __version__ = "0.1.0"
 
 ```bash
 # Edit pyproject.toml
-version = "0.2.7"
+version = "<new-version>"
 
 # Edit src/gsply/__init__.py
-__version__ = "0.2.7"
+__version__ = "<new-version>"
 ```
 
 **Step 2: Update Documentation**
@@ -359,35 +359,29 @@ __version__ = "0.2.7"
 # Update test count if tests changed
 ```
 
-**Step 3: Commit and Tag**
+**Step 3: Commit and Push**
 
 ```bash
 # Commit changes
 git add .
-git commit -m "Release v0.2.7"
+git commit -m "Release v<new-version>"
 
-# Create annotated tag
-git tag -a v0.2.7 -m "Release v0.2.7"
-
-# Push commits and tags
-git push && git push --tags
+# Push the release commit
+git push
 ```
 
 **Step 4: Create GitHub Release**
 
-1. Go to GitHub > Releases > Create new release
-2. Choose tag: v0.2.7
-3. Write release notes (copy from docs/CHANGELOG.md)
-4. Publish release
+Create and publish a GitHub Release for `v<new-version>`. The published
+release event drives the PyPI workflow.
 
 **Step 5: Automated Publishing**
 
-The CI/CD pipeline will automatically:
-- Build wheels and source distribution
-- Run full test suite on all platforms
-- Publish to TestPyPI (for verification)
-- Publish to PyPI (production)
-- Upload artifacts to GitHub Release
+The release workflow automatically:
+- Builds the source distribution
+- Builds platform wheels with bundled `gsply_cpp`
+- Verifies artifact installs and the C++ backend on supported platforms
+- Publishes to PyPI with trusted publishing
 - Sign artifacts with Sigstore
 
 ### Publishing to PyPI
