@@ -59,7 +59,6 @@ FetchContent_MakeAvailable(zstd)
 
 nanobind_add_module(
   gsply_cpp
-  STABLE_ABI      # cp312+ stable ABI wheels
   NB_STATIC       # bundle libnanobind statically
   src/bindings.cpp
   src/ply.cpp
@@ -77,4 +76,4 @@ if(OpenMP_CXX_FOUND)
   target_compile_definitions(gsply_cpp PRIVATE GSPLY_OPENMP=1)
 endif()
 
-install(TARGETS gsply_cpp LIBRARY DESTINATION .)
+install(TARGETS gsply_cpp LIBRARY DESTINATION . COMPONENT python)

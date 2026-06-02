@@ -19,10 +19,7 @@ test = ["pytest", "gsply>=0.3.0"]
 minimum-version = "build-system.requires"
 build-dir = "build/{wheel_tag}"
 cmake.build-type = "Release"
-
-# Stable ABI wheels for CPython 3.12+ (matches STABLE_ABI in CMake).
-[tool.scikit-build.wheel]
-py-api = "cp312"
+install.components = ["python"]
 
 [tool.ruff]
 line-length = 100

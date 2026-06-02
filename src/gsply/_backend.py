@@ -1,16 +1,16 @@
 """Optional C++ acceleration backend (``gsply_cpp``), opt-in.
 
-gsply is pure Python by default (NumPy + Numba). If the separately built
-``gsply_cpp`` package is installed *and* the backend is set to ``"cpp"`` — via
-``gsply.use_backend("cpp")`` or the ``GSPLY_BACKEND=cpp`` environment variable —
+gsply is pure Python by default (NumPy + Numba). If the optional
+``gsply_cpp`` package is installed *and* the backend is set to ``"cpp"`` -- via
+``gsply.use_backend("cpp")`` or the ``GSPLY_BACKEND=cpp`` environment variable --
 then the PLY/SPZ read/write entry points route through the C++ backend, falling
 back to pure Python for anything it doesn't support (e.g. compressed PLY).
 
-``gsply_cpp`` is not on PyPI; build it from source (see the README / the
-``cpp/`` directory). Numerical notes: C++ reads are float32-ULP-identical to the
-Python path; C++ writes may differ by <=1 LSB per quantized value (NumPy
-``round`` half-to-even vs C++ ``lround`` half-away) and use a different
-compressor, so the compressed bytes differ while the decoded data matches.
+Install it with ``pip install "gsply[cpp]"``. Numerical notes: C++ reads are
+float32-ULP-identical to the Python path; C++ writes may differ by <=1 LSB per
+quantized value (NumPy ``round`` half-to-even vs C++ ``lround`` half-away) and
+use a different compressor, so the compressed bytes differ while the decoded
+data matches.
 """
 
 from __future__ import annotations
