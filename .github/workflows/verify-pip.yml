@@ -1,0 +1,35 @@
+name: Verify pip install gsply
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_spec:
+        description: Package spec to install from PyPI
+        required: true
+        default: "gsply"
+
+jobs:
+  verify:
+    name: ${{ matrix.os }} py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install from PyPI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary ":all:" "${{ inputs.package_spec }}"
+          python -m pip check
+
+      - name: Verify C++ backend e2e
+        run: python .github/scripts/verify_cpp_backend.py

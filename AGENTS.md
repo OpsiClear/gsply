@@ -4,14 +4,15 @@ This file provides context and instructions for AI coding agents working on the 
 
 ## Project Overview
 
-**gsply** is an ultra-fast Gaussian Splatting PLY I/O library for Python.
+**gsply** is an ultra-fast Gaussian Splatting PLY and SPZ I/O library for Python.
 
-- **Language**: Pure Python (3.10+)
+- **Language**: Python (3.10+) with a bundled C++ acceleration backend in release wheels
 - **Core Dependencies**: NumPy, Numba (JIT acceleration)
-- **Optional Dependencies**: PyTorch (GPU acceleration via GSTensor)
+- **Optional Dependencies**: PyTorch (GPU acceleration via GSTensor), `gsply[sogs]`
+  for SOG, `gsply[spz]` for SPZ v4/zstd
 - **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
-- **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support
-- **Current Version**: 0.2.12
+- **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support, Niantic SPZ v1-v4 support, optional C++ acceleration backend
+- **Current Version**: 0.4.1
 
 ## Development Environment Setup
 
@@ -27,6 +28,16 @@ pip install -e ".[dev]"
 
 # Optional: Install PyTorch for GPU features (testing GSTensor)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Optional: Install SOG support
+pip install "gsply[sogs]"
+
+# Optional: Install SPZ v4/zstd support
+pip install "gsply[spz]"
+
+# Release wheels include the C++ acceleration backend automatically.
+# To compile it locally from source, opt in explicitly:
+pip install . -Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON
 ```
 
 ### Using uv (preferred by maintainer)
@@ -80,24 +91,27 @@ pre-commit autoupdate
 
 ```
 gsply/
-├── src/gsply/           # Main package
-│   ├── __init__.py      # Public API exports
-│   ├── reader.py        # PLY reading (plyread, decompress)
-│   ├── writer.py        # PLY writing (plywrite, compress)
-│   ├── gsdata.py        # GSData dataclass (CPU container)
-│   ├── formats.py       # Format detection and constants
-│   ├── utils.py         # Utility functions (sh2rgb, rgb2sh, logit, sigmoid, apply_pre_activations, apply_pre_deactivations)
-│   ├── sog_reader.py    # SOG format reading (sogread, optional dependency)
-│   ├── py.typed         # Type checking marker (PEP 561)
-│   └── torch/           # Optional PyTorch integration
-│       ├── __init__.py  # Conditional import (checks torch availability)
-│       ├── gstensor.py  # GSTensor GPU dataclass
-│       ├── compression.py  # GPU compression/decompression
-│       └── io.py        # GPU I/O (plyread_gpu, plywrite_gpu)
-├── tests/               # Test suite (365 tests)
-├── benchmarks/          # Performance benchmarks
-├── docs/                # Documentation
-└── .github/workflows/   # CI/CD pipelines
+|-- src/gsply/              # Main package
+|   |-- __init__.py         # Public API exports and optional lazy imports
+|   |-- reader.py           # PLY reading (plyread, decompress)
+|   |-- writer.py           # PLY writing (plywrite, compress)
+|   |-- gsdata.py           # GSData dataclass (CPU container)
+|   |-- formats.py          # Format detection and constants
+|   |-- utils.py            # Utility functions and fused kernels
+|   |-- sog_reader.py       # SOG format reading (sogread, optional dependency)
+|   |-- spz.py              # Niantic SPZ read/write (read_spz, write_spz)
+|   |-- _backend.py         # Optional gsply_cpp backend selection
+|   |-- py.typed            # Type checking marker (PEP 561)
+|   `-- torch/              # Optional PyTorch integration
+|       |-- __init__.py     # Conditional import (checks torch availability)
+|       |-- gstensor.py     # GSTensor GPU dataclass
+|       |-- compression.py  # GPU compression/decompression
+|       `-- io.py           # GPU I/O (plyread_gpu, plywrite_gpu)
+|-- cpp/                    # Bundled C++ acceleration backend source
+|-- tests/                  # Test suite (448 collected tests)
+|-- benchmarks/             # Performance benchmarks
+|-- docs/                   # Documentation
+`-- .github/workflows/      # CI/CD pipelines
 ```
 
 ## Testing
@@ -137,16 +151,17 @@ Tests automatically generate synthetic data. Some tests use real PLY files:
 
 ### Test Count
 
-Current test count: **365 tests** (documented in README.md)
-- Update this count in README if adding/removing tests
-- Includes 17 new tests for fused activation kernels (tests/test_pre_activations.py)
+Current collected test count: **448 tests** (documented in README.md)
+- Latest local verification: `uv run --no-sync pytest -q` -> 426 passed, 22 skipped
+- Update this count in README and AGENTS.md if adding/removing tests
+- Includes coverage for fused activation kernels, optional backend dispatch, SOG, SPZ, and GPU APIs
 
 ## Code Style and Conventions
 
 ### Type Hints
 
-- **Required**: Use Python 3.12+ type hint syntax
-- **Tool**: `tyro` for type management and CLI (per CLAUDE.md)
+- **Required**: Use Python 3.10-compatible modern type hint syntax
+- **Tooling**: The package is PEP 561 typed via `py.typed`; avoid adding new typing dependencies unless justified
 - **Example**: `list[int]` not `List[int]`, `dict[str, Any]` not `Dict[str, Any]`
 
 ### CLI Argument Parsing
@@ -266,12 +281,36 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - **Performance**: ~6x faster when reading from bytes vs file path
 - **API**: `sogread(file_path | bytes) -> GSData`
 
+### SPZ Format Support (v0.3.0+; v0.4.0+ for NGSP v4)
+
+**SPZ I/O: `read_spz()` and `write_spz()`**
+- Located in `src/gsply/spz.py`
+- Exported directly in `src/gsply/__init__.py`
+- Reads Niantic SPZ files into `GSData` using the same PLY-format conventions as `plyread()`
+- Supports legacy gzip containers (v1/v2/v3) and NGSP v4 zstd containers
+- `write_spz(file_path, data, version=3)` writes legacy gzip SPZ by default
+- `write_spz(file_path, data, version=4, zstd_level=12)` writes NGSP v4 and requires `gsply[spz]`
+- v1-v3 can use stdlib gzip; `isal` from `gsply[spz]` accelerates gzip when installed
+
+### Optional C++ Backend (v0.4.1+)
+
+**Backend selection: `use_backend()` and `active_backend()`**
+- Located in `src/gsply/_backend.py`
+- Exported directly in `src/gsply/__init__.py`
+- Pure Python remains the default backend
+- `gsply.use_backend("cpp")` requests the bundled `gsply_cpp` backend
+- `gsply.use_backend("auto")` uses `gsply_cpp` only when importable
+- `gsply.active_backend()` returns the effective backend: `"python"` or `"cpp"`
+- `GSPLY_BACKEND=cpp` can select the C++ backend before importing `gsply`
+- Published platform wheels include the C++ backend in the root `gsply` wheel; source installs can remain Python-only by default or compile it with `-Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON`
+- The C++ backend is used for supported PLY/SPZ read/write paths; unsupported paths such as compressed PLY fall back to Python
+
 ### Numba JIT Acceleration
 
 - Numba is **required** dependency for performance
 - Used for parallel bit packing/unpacking in compressed format
 - Functions decorated with `@numba.jit` should be pure functions
-- Also used for SOG format decoding (means, scales, quats, colors, SHN)
+- Also used for SOG and SPZ format decoding
 
 ### Format Conversion: Linear ↔ PLY Format (v0.2.5+)
 
@@ -535,10 +574,10 @@ gstensor = GSTensor.from_arrays(means_tensor, scales_tensor, ..., device="cuda")
 ### Before Creating PR
 
 1. **Run pre-commit hooks**: `pre-commit run --all-files` (automatically checks formatting, linting, etc.)
-2. **Run full test suite**: `pytest` (all 365 tests must pass)
+2. **Run full test suite**: `pytest` (all non-skipped tests must pass; current collection is 448 tests)
 3. **Type check** (optional): `mypy src/` or `pre-commit run --hook-stage manual mypy --all-files`
 4. **Update test count** in README.md if you added/removed tests
-5. **Update CHANGELOG.md** with your changes
+5. **Update docs/CHANGELOG.md** with your changes
 6. **Run benchmark** if performance-critical code changed
 
 Note: Pre-commit hooks will run automatically on commit if installed via `pre-commit install`
@@ -555,7 +594,7 @@ Follow conventional commits style:
 
 ### Code Review Checklist
 
-- [ ] All tests pass (365/365)
+- [ ] All non-skipped tests pass (latest local run: 426 passed, 22 skipped, 448 collected)
 - [ ] No new linter warnings
 - [ ] Type hints added for new functions
 - [ ] Docstrings added for public APIs
@@ -581,8 +620,8 @@ python -m build
 
 # Check dist files
 ls dist/
-# gsply-0.2.7-py3-none-any.whl
-# gsply-0.2.7.tar.gz
+# gsply-<version>-py3-none-any.whl
+# gsply-<version>.tar.gz
 ```
 
 ### Publishing (Maintainer Only)
@@ -599,16 +638,16 @@ twine upload dist/*
 
 1. Update version in `pyproject.toml`
 2. Update `__version__` in `src/gsply/__init__.py`
-3. Update CHANGELOG.md with release notes
+3. Update `docs/CHANGELOG.md` with release notes
 4. Update test count in README.md and AGENTS.md if tests changed
-5. Create git tag: `git tag v0.2.X`
+5. Create git tag: `git tag v<version>`
 
 ## API Design Principles
 
 ### Consistency
 
-- All read operations return `GSData` dataclass (`plyread()`, `sogread()`)
-- All write operations accept individual arrays OR GSData
+- File read operations return `GSData` dataclass (`plyread()`, `sogread()`, `read_spz()`)
+- PLY write operations accept individual arrays OR GSData; SPZ writing accepts `GSData`
 - Use `unpack()` pattern for tuple unpacking, not indexing
 - GPU operations return `GSTensor`, CPU operations return `GSData`
 - Format conversion methods (`normalize()`, `denormalize()`) are identical between GSData and GSTensor
@@ -617,6 +656,7 @@ twine upload dist/*
 - Both use same constants (`min_scale=1e-9`, `min_opacity=1e-4`, `max_opacity=1.0-1e-4`, `eps=1e-4` for logit)
 - Compression APIs (`compress_to_bytes()`, `compress_to_arrays()`, `decompress_from_bytes()`) work with GSData or individual arrays
 - Utility functions (`sh2rgb()`, `rgb2sh()`, `logit()`, `sigmoid()`, `apply_pre_activations()`, `apply_pre_deactivations()`, `SH_C0`) are always available (CPU-only)
+- Optional backend controls (`use_backend()`, `active_backend()`) are public and should stay lightweight on import
 
 ### Backward Compatibility
 
@@ -646,7 +686,7 @@ twine upload dist/*
 3. Add to `__all__` list (or use lazy import via `__getattr__` for optional dependencies)
 4. Write tests in `tests/test_*.py`
 5. Add documentation to README.md API Reference section
-6. Update CHANGELOG.md
+6. Update `docs/CHANGELOG.md`
 7. Update AGENTS.md if adding new major features or APIs
 
 ### Fixing a Bug
@@ -654,14 +694,14 @@ twine upload dist/*
 1. Add regression test that fails
 2. Fix the bug
 3. Verify test passes
-4. Update CHANGELOG.md under "Bug Fixes"
+4. Update `docs/CHANGELOG.md` under "Bug Fixes"
 
 ### Performance Optimization
 
 1. Benchmark current performance
 2. Implement optimization
 3. Benchmark new performance
-4. Document improvement in CHANGELOG.md
+4. Document improvement in `docs/CHANGELOG.md`
 5. Update README.md performance metrics if significant
 
 ## Known Constraints
@@ -675,6 +715,7 @@ twine upload dist/*
 - **Optional Dependencies**:
   - PyTorch: Required only for `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`
   - `gsply[sogs]`: Required only for `sogread()` (installs `imagecodecs`)
+  - `gsply[spz]`: Adds `isal` and `zstandard`; zstd is required for SPZ v4
 - **Type Checking**: `py.typed` marker file exists for PEP 561 compliance
 
 ## Contact

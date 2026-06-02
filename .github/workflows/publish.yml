@@ -3,53 +3,123 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build distribution
+  sdist:
+    name: Build source distribution
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.12'
-        cache: 'pip'
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build
+      - name: Build sdist
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+          python -m build --sdist --outdir dist
 
-    - name: Build distribution
-      run: python -m build
+      - name: Store sdist
+        uses: actions/upload-artifact@v5
+        with:
+          name: dist-sdist
+          path: dist/*.tar.gz
 
-    - name: Store artifacts
-      uses: actions/upload-artifact@v5
-      with:
-        name: python-package-distributions
-        path: dist/
+  wheels:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build platform wheels
+        uses: pypa/cibuildwheel@v3.4.1
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+          CIBW_SKIP: "*-musllinux*"
+          CIBW_BUILD_FRONTEND: build
+          CIBW_CONFIG_SETTINGS: "wheel.cmake=true cmake.define.GSPLY_BUILD_CPP=ON"
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_ARCHS_WINDOWS: AMD64
+          CIBW_ARCHS_MACOS: arm64
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CIBW_TEST_COMMAND: "python {project}/.github/scripts/verify_cpp_backend.py"
+        with:
+          output-dir: wheelhouse
+
+      - name: Store wheels
+        uses: actions/upload-artifact@v5
+        with:
+          name: dist-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  verify-artifact-install:
+    name: Verify pip install gsply (${{ matrix.os }}, py${{ matrix.python-version }})
+    needs: wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: dist-wheels-${{ matrix.os }}
+          path: dist
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install runtime dependencies from PyPI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary ":all:" numpy numba
+
+      - name: Install gsply wheel from artifacts
+        run: |
+          python -m pip install --no-index --find-links dist --only-binary ":all:" gsply
+          python -m pip check
+
+      - name: Verify C++ backend e2e
+        run: python .github/scripts/verify_cpp_backend.py
 
   publish-to-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: [sdist, wheels, verify-artifact-install]
     runs-on: ubuntu-latest
+    if: github.event_name == 'release'
     environment:
       name: pypi
       url: https://pypi.org/p/gsply
     permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      id-token: write
 
     steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v6
-      with:
-        name: python-package-distributions
-        path: dist/
+      - name: Download artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
 
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@v1.13.0
-      with:
-        verbose: true
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.13.0
+        with:
+          verbose: true

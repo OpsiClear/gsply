@@ -1,21 +1,25 @@
 # Release Notes
 
-## v0.4.1 (Opt-in C++ acceleration backend)
+## v0.4.1 (Bundled C++ acceleration backend)
 
 ### Features
-- **Optional `gsply_cpp` backend, opt-in.** gsply stays pure Python (NumPy +
-  Numba) by default. When the separately built `gsply-cpp` package is installed
-  and the backend is enabled, PLY/SPZ read/write route through the C++
+- **Bundled `gsply_cpp` backend, opt-in.** gsply uses the Python backend
+  (NumPy + Numba) by default. Published platform wheels include `gsply_cpp`
+  in the root `gsply` wheel, and when the backend is enabled, PLY/SPZ
+  read/write route through the C++
   implementation for higher throughput, with automatic pure-Python fallback for
   anything it doesn't support (e.g. compressed PLY).
   - Enable via `gsply.use_backend("cpp")` (or `"auto"`), or the `GSPLY_BACKEND`
     environment variable; `gsply.active_backend()` reports the effective backend.
-  - `gsply-cpp` is build-from-source (compiler + CMake) and not on PyPI; install
-    from the repo's `cpp/` directory (see the README). New `gsply[cpp]` extra.
+  - `pip install gsply` installs the C++ backend from supported platform wheels.
+    No `gsply[cpp]` extra and no separate `gsply-cpp` PyPI project are used.
+  - Source installs can remain Python-only by default, or compile the extension
+    with `-Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON`.
   - Numerics: C++ reads are float32-ULP-identical to Python; C++ writes may differ
-    by ≤1 LSB per quantized value and use a different compressor (decoded data
+    by <=1 LSB per quantized value and use a different compressor (decoded data
     matches, compressed bytes differ).
-- The published `gsply` wheel remains pure Python with no new required deps.
+- Unsupported source/platform installs still have the full Python backend without
+  requiring a C++ compiler.
 
 ## v0.4.0 (SPZ v4 / NGSP zstd container)
 

@@ -1,16 +1,19 @@
-"""Optional C++ acceleration backend (``gsply_cpp``), opt-in.
+"""Bundled C++ acceleration backend (``gsply_cpp``), opt-in.
 
-gsply is pure Python by default (NumPy + Numba). If the optional
-``gsply_cpp`` package is installed *and* the backend is set to ``"cpp"`` -- via
-``gsply.use_backend("cpp")`` or the ``GSPLY_BACKEND=cpp`` environment variable --
-then the PLY/SPZ read/write entry points route through the C++ backend, falling
-back to pure Python for anything it doesn't support (e.g. compressed PLY).
+gsply uses the Python backend by default (NumPy + Numba). Published platform
+wheels include ``gsply_cpp`` on supported platforms. If the backend is set to
+``"cpp"`` -- via ``gsply.use_backend("cpp")`` or the ``GSPLY_BACKEND=cpp``
+environment variable -- then the PLY/SPZ read/write entry points route through
+the C++ backend, falling back to pure Python for anything it doesn't support
+(e.g. compressed PLY).
 
-Install it with ``pip install "gsply[cpp]"``. Numerical notes: C++ reads are
-float32-ULP-identical to the Python path; C++ writes may differ by <=1 LSB per
-quantized value (NumPy ``round`` half-to-even vs C++ ``lround`` half-away) and
-use a different compressor, so the compressed bytes differ while the decoded
-data matches.
+Install with ``pip install gsply``. Source installs can remain Python-only, or
+build the extension explicitly with
+``-Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON``. Numerical notes: C++
+reads are float32-ULP-identical to the Python path; C++ writes may differ by
+<=1 LSB per quantized value (NumPy ``round`` half-to-even vs C++ ``lround``
+half-away) and use a different compressor, so the compressed bytes differ while
+the decoded data matches.
 """
 
 from __future__ import annotations

@@ -1,69 +1,75 @@
-# gsply-cpp
+# Bundled gsply C++ Backend
 
-A C++ parity reimplementation of [gsply](../)'s Gaussian-splat I/O, exposed as a
-Python module (`gsply_cpp`) via nanobind. The goal is byte/value parity with the
-pure-Python `gsply` so it can serve as an accelerated, compiler-built backend.
+This directory contains the C++ parity implementation exposed as the top-level
+Python module `gsply_cpp` via nanobind. It is built into the root `gsply`
+platform wheels; it is not a separate PyPI project.
 
 ## Status
 
 | Path | Status |
 |------|--------|
-| Uncompressed PLY read/write | ✅ implemented (`read_ply` / `write_ply`), zero-copy reads |
-| SPZ read/write | ✅ implemented (`read_spz` / `write_spz`); gzip v1–v3 + NGSP v4 (zstd) |
-| Compressed PLY (PlayCanvas) | ⏳ planned |
+| Uncompressed PLY read/write | implemented (`read_ply` / `write_ply`), zero-copy reads |
+| SPZ read/write | implemented (`read_spz` / `write_spz`), gzip v1-v3 + NGSP v4 (zstd) |
+| Compressed PLY (PlayCanvas) | planned |
 
 ## Build
 
-```bash
-pip install .            # local development build, needs a C++17 compiler
-# or from the gsply repo root: pip install ./cpp
-```
-
-End users should normally install the published binary wheel through the root
-package extra:
+Default local/source builds are Python-only:
 
 ```bash
-pip install "gsply[cpp]"
+pip install .
 ```
+
+To compile the bundled C++ extension from the repository root, opt in with
+scikit-build-core config settings:
+
+```bash
+pip install . -Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON
+```
+
+Release wheels are built by `.github/workflows/publish.yml` with the same CMake
+option enabled through cibuildwheel.
 
 ## Use
 
+The public runtime path is the root package backend selector:
+
 ```python
-import gsply_cpp
-d = gsply_cpp.read_ply("scene.ply")   # -> {"means","scales","quats","opacities","sh0","shN"}
-gsply_cpp.write_ply("out.ply", d["means"], d["scales"], d["quats"],
-                    d["opacities"], d["sh0"], d["shN"])
+import gsply
+
+gsply.use_backend("cpp")
+data = gsply.read_spz("scene.spz")
+gsply.write_spz("out.spz", data, version=4)
 ```
 
-Parity is verified against `gsply` in `tests/test_parity.py`.
+The low-level module can also be imported directly for parity tests and
+benchmarks:
 
-## Prebuilt wheels & releasing
+```python
+import gsply_cpp
 
-`.github/workflows/publish-cpp.yml` builds release wheels for CPython 3.10-3.13
-on Linux x86_64, Windows AMD64, and macOS arm64 with cibuildwheel, plus an
-sdist, then publishes to PyPI via trusted publishing.
+d = gsply_cpp.read_ply("scene.ply")
+gsply_cpp.write_ply(
+    "out.ply",
+    d["means"],
+    d["scales"],
+    d["quats"],
+    d["opacities"],
+    d["sh0"],
+    d["shN"],
+)
+```
 
-End-to-end install verification:
+Parity is verified against `gsply` in `cpp/tests/test_parity.py`.
 
-1. Run `Publish gsply-cpp (wheels)` with `workflow_dispatch` before tagging.
-2. Confirm the `verify gsply[cpp]` matrix passes on Ubuntu and Windows for
-   Python 3.10-3.13. This installs `gsply[cpp]` from the built release artifacts
-   with `--no-index`, so it cannot hide a missing wheel by building from source.
-3. After publishing both `gsply` and `gsply-cpp`, run
-   `Verify pip install gsply[cpp]` to test the public PyPI install path on
-   Ubuntu and Windows.
+## Releasing
 
-To cut a release:
+Root `gsply` releases build and publish:
 
-1. Bump `version` in `cpp/pyproject.toml`.
-2. **One-time PyPI setup**: add a Trusted Publisher for the `gsply-cpp` project at
-   <https://pypi.org/manage/account/publishing/> — Owner `OpsiClear`, Repository
-   `gsply`, Workflow `publish-cpp.yml`, Environment `pypi` (use a *pending
-   publisher* if the project doesn't exist yet; the first run creates it).
-3. Tag and push: `git tag cpp-v<X.Y.Z> && git push origin cpp-v<X.Y.Z>`.
-   The workflow enforces that the tag version matches `cpp/pyproject.toml`.
+- an sdist, whose default build remains Python-only
+- CPython 3.10-3.13 platform wheels for Linux x86_64, Windows AMD64, and macOS
+  arm64, each containing `gsply_cpp`
 
-`workflow_dispatch` builds + smoke-tests the wheels **without** publishing (for
-verification). After a tagged release publishes `gsply-cpp`,
-`pip install "gsply[cpp]"` installs the prebuilt backend; enable it with
-`gsply.use_backend("cpp")`.
+The release workflow verifies the built wheel artifacts on Ubuntu and Windows
+with `pip install gsply` before publishing. After publication, run
+`.github/workflows/verify-pip.yml` to verify the public PyPI install path.

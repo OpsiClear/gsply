@@ -2,12 +2,12 @@
 
 # gsply
 
-### Ultra-Fast Gaussian Splatting PLY I/O Library
+### Ultra-Fast Gaussian Splatting PLY + SPZ I/O Library
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://readthedocs.org/projects/gsply/badge/?version=latest)](https://gsply.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-406%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-426%20passed%2C%2022%20skipped-brightgreen.svg)](#testing)
 
 **93M Gaussians/sec read | 57M Gaussians/sec write | Auto-optimized**
 
@@ -49,7 +49,7 @@ gstensor.save("output.compressed.ply")  # GPU compression
 
 ## Overview
 
-Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimized writes, optional GPU acceleration.
+Ultra-fast Gaussian Splatting PLY and SPZ I/O for Python. Zero-copy reads, auto-optimized writes, optional GPU acceleration.
 
 ### Key Features
 
@@ -58,11 +58,11 @@ Ultra-fast Gaussian Splatting PLY I/O for Python. Zero-copy reads, auto-optimize
 - **Auto-Optimized**: Writes are 2.6-2.8x faster automatically
 - **Format Support**: Uncompressed PLY + PlayCanvas compressed (71-74% smaller) + SOG + Niantic SPZ (v1–v4)
 - **GPU Ready**: Optional PyTorch integration with GSTensor (11x faster transfers)
-- **Pure Python**: NumPy + Numba (no C++ compilation required)
+- **Python-first**: NumPy + Numba core with bundled C++ acceleration on supported wheels
 - **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
 - **Format Conversion**: `normalize()`, `denormalize()` with fused kernels (~8-15x faster)
 - **Color Conversion**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
-- **Comprehensive**: 406 passing tests, full type hints, extensive documentation
+- **Comprehensive**: 426 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
 
 ---
 
@@ -90,20 +90,24 @@ pip install gsply[sogs]
 ```
 Enables `sogread()` for reading SOG (Splat Ordering Grid) format files.
 
-**C++ acceleration backend (optional, build from source):**
+**C++ acceleration backend (bundled wheels):**
 
-The published `gsply` wheel is pure Python. An optional C++ backend (`gsply_cpp`)
-accelerates PLY/SPZ read/write. It is **build-from-source** (needs a C++17
-compiler + CMake) and is not on PyPI — install it directly from this repo:
+`pip install gsply` installs the `gsply_cpp` backend automatically from
+published platform wheels on supported platforms. No `gsply[cpp]` extra and no
+separate `gsply-cpp` package are needed.
 
 ```bash
-# from a clone:
-pip install ./cpp
-# or straight from GitHub:
-pip install "gsply-cpp @ git+https://github.com/OpsiClear/gsply.git#subdirectory=cpp"
+pip install gsply
 ```
 
-Then opt in at runtime (pure Python remains the default):
+Source installs and unsupported platforms can remain Python-only by default. To
+build the extension locally from the repository root, opt in explicitly:
+
+```bash
+pip install . -Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON
+```
+
+Then opt in at runtime (the Python backend remains the default):
 
 ```python
 import gsply
@@ -117,13 +121,13 @@ gsply.write_spz("out.spz", data, version=4)
 
 When enabled, `plyread`/`plywrite`/`read_spz`/`write_spz` use `gsply_cpp` where it
 applies and fall back to pure Python otherwise (e.g. compressed PLY). Reads are
-float32-ULP-identical to the Python path; writes may differ by ≤1 LSB per
+float32-ULP-identical to the Python path; writes may differ by <=1 LSB per
 quantized value and use a different compressor (decoded data matches; compressed
 bytes differ).
 
 **Full Installation:**
 ```bash
-pip install gsply[sogs] torch  # GPU + SOG support
+pip install "gsply[sogs,spz]" torch  # GPU + SOG + SPZ v4 support
 ```
 
 **Development:**
@@ -516,14 +520,21 @@ pytest tests/ -v --cov=gsply --cov-report=html
 ```
 gsply/
 ├── src/gsply/          # Source code
+│   ├── __init__.py     # Public API exports and lazy optional imports
+│   ├── _backend.py     # Optional gsply_cpp backend selection
 │   ├── gsdata.py       # GSData dataclass
 │   ├── reader.py       # PLY reading
 │   ├── writer.py       # PLY writing
+│   ├── spz.py          # Niantic SPZ reading/writing
+│   ├── sog_reader.py   # SOG reading
 │   ├── formats.py      # Format detection
 │   ├── utils.py        # Utility functions (fused kernels)
 │   └── torch/          # PyTorch integration
-│       └── gstensor.py # GSTensor GPU dataclass
-├── tests/              # Unit tests (365 tests)
+│       ├── gstensor.py # GSTensor GPU dataclass
+│       ├── compression.py
+│       └── io.py       # GPU I/O
+├── cpp/                # Bundled C++ acceleration backend source
+├── tests/              # Unit tests (448 collected)
 ├── benchmarks/         # Performance benchmarks
 ├── docs/               # Documentation
 └── pyproject.toml      # Package configuration
@@ -531,7 +542,7 @@ gsply/
 
 ### Testing
 
-gsply has comprehensive test coverage with **406 passing tests**:
+gsply has comprehensive test coverage with **426 passed, 22 skipped, 448 collected** in the latest local verification:
 
 ```bash
 # Run all tests

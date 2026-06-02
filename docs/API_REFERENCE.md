@@ -1,8 +1,21 @@
 # gsply API Reference
 
-Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY I/O Library
+Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY and SPZ I/O Library
 
-**Version:** 0.2.12
+**Version:** 0.4.1
+
+**New in v0.4.1:**
+- Bundled C++ acceleration backend (`gsply_cpp`) for supported PLY/SPZ read/write paths
+- Backend controls: `use_backend("python" | "cpp" | "auto")` and `active_backend()`
+- Python remains the default backend; unsupported C++ paths fall back to Python where applicable
+
+**New in v0.4.0:**
+- NGSP/SPZ v4 support with per-attribute zstd streams
+- `read_spz()` auto-detects legacy gzip SPZ v1/v2/v3 and NGSP v4 containers
+- `write_spz(..., version=4, zstd_level=12)` writes SPZ v4 and requires `gsply[spz]`
+
+**New in v0.3.0:**
+- Niantic SPZ read/write support (`read_spz()`, `write_spz()`) for legacy gzip v1/v2/v3 containers
 
 **New in v0.2.12:**
 - SH Coefficient Ordering Fix - Fixed incorrect spherical harmonics coefficient ordering to match 3DGS PLY format
@@ -58,9 +71,26 @@ pip install gsply[sogs]
 ```
 Enables `sogread()` for reading SOG format files.
 
+SPZ v4/zstd support:
+```bash
+pip install "gsply[spz]"
+```
+Enables NGSP/SPZ v4 read/write support. SPZ v1-v3 work without this extra, with
+`isal` used for faster gzip when installed.
+
+C++ acceleration backend:
+```bash
+pip install gsply
+```
+Published platform wheels include the `gsply_cpp` backend when one is available
+for your platform. No `gsply[cpp]` extra and no separate `gsply-cpp` package are
+needed. Enable it with `gsply.use_backend("cpp")` or `gsply.use_backend("auto")`.
+Source builds can opt into compiling the extension with
+`-Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON`.
+
 **Full installation:**
 ```bash
-pip install gsply[sogs] torch  # GPU + SOG support
+pip install "gsply[sogs,spz]" torch  # GPU + SOG + SPZ v4 support
 ```
 
 **Quick Navigation:**
@@ -73,6 +103,10 @@ pip install gsply[sogs] torch  # GPU + SOG support
     - [`create_ply_format(sh_degree=0)`](#create_ply_formatsh_degree0)
     - [`create_rasterizer_format(sh_degree=0)`](#create_rasterizer_formatsh_degree0)
     - [`sogread(file_path | bytes)`](#sogreadfile_path--bytes)
+    - [`read_spz(file_path)`](#read_spzfile_path)
+    - [`write_spz(file_path, data, *, version=3, fractional_bits=12, zstd_level=12)`](#write_spzfile_path-data--version3-fractional_bits12-zstd_level12)
+    - [`use_backend(name)`](#use_backendname)
+    - [`active_backend()`](#active_backend)
   - [GSData](#gsdata)
     - [`data.save(file_path, compressed=False)`](#datasavefile_path-compressedfalse)
     - [`GSData.load(file_path)`](#gsdataloadfile_path)
@@ -330,6 +364,104 @@ means, scales, quats, opacities, sh0, shN = data.unpack()
 ```
 
 **Note:** SOG format is compatible with PlayCanvas splat-transform format.
+
+---
+
+### `read_spz(file_path)`
+
+Read a Niantic SPZ file into a `GSData` container using the same PLY-format
+conventions as `plyread()`.
+
+Supports legacy gzip SPZ v1/v2/v3 containers and NGSP v4 zstd containers. The
+container is auto-detected from file magic.
+
+**Parameters:**
+- `file_path` (str | Path): Path to the `.spz` file
+
+**Returns:**
+`GSData` dataclass with decoded Gaussians:
+- `means`: (N, 3) - Gaussian centers
+- `scales`: (N, 3) - Log scales
+- `quats`: (N, 4) - Unit quaternions in wxyz order
+- `opacities`: (N,) - Logit opacities
+- `sh0`: (N, 3) - DC spherical harmonics
+- `shN`: (N, K, 3) - Higher-order SH coefficients
+
+**Requirements:**
+- SPZ v1-v3 use gzip and work with the core package
+- SPZ v4 requires `zstandard` from `pip install "gsply[spz]"`
+- `isal` from `gsply[spz]` accelerates gzip paths when available
+
+**Example:**
+```python
+from gsply import read_spz
+
+data = read_spz("scene.spz")
+print(len(data), data.get_sh_degree())
+```
+
+---
+
+### `write_spz(file_path, data, *, version=3, fractional_bits=12, zstd_level=12)`
+
+Write a `GSData` container to a Niantic SPZ file.
+
+The input is interpreted in PLY format: means are linear positions, scales are
+log-space, quaternions are unit wxyz, opacities are logit-space, `sh0` is SH DC,
+and `shN` is shaped `[N, K, 3]`.
+
+**Parameters:**
+- `file_path` (str | Path): Output `.spz` path
+- `data` (GSData): Gaussians to encode
+- `version` (int): `3` writes legacy gzip SPZ; `4` writes NGSP v4/zstd
+- `fractional_bits` (int): Position fixed-point precision; default is 12
+- `zstd_level` (int): zstd compression level for version 4; default is 12
+
+**Example:**
+```python
+from gsply import plyread, write_spz
+
+data = plyread("scene.ply")
+write_spz("scene.spz", data)                 # v3 gzip
+write_spz("scene_v4.spz", data, version=4)   # v4 zstd, requires gsply[spz]
+```
+
+---
+
+### `use_backend(name)`
+
+Select the I/O backend for supported PLY/SPZ read/write operations.
+
+Pure Python is the default. Published platform wheels install the bundled C++
+backend with `pip install gsply`; it is imported as `gsply_cpp`.
+
+**Parameters:**
+- `name` (str): `"python"`, `"cpp"`, or `"auto"`
+
+**Behavior:**
+- `"python"`: Always use the pure Python implementation
+- `"cpp"`: Use `gsply_cpp` for supported paths when installed
+- `"auto"`: Use `gsply_cpp` when importable, otherwise Python
+
+**Example:**
+```python
+import gsply
+
+gsply.use_backend("auto")
+print(gsply.active_backend())
+```
+
+---
+
+### `active_backend()`
+
+Return the backend that will actually be used for supported paths.
+
+**Returns:**
+- `"cpp"` when the C++ backend was requested and `gsply_cpp` is importable
+- `"python"` otherwise
+
+`GSPLY_BACKEND=cpp` can also request the C++ backend before importing `gsply`.
 
 ---
 

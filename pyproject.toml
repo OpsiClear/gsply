@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0.0"]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "gsply"
@@ -44,11 +44,6 @@ spz = [
     "isal>=1.0.0",  # ISA-L igzip: faster SPZ (de)compress; reader/writer fall back to gzip
     "zstandard>=0.22.0",  # zstd: required for the NGSP v4 container (read + write)
 ]
-cpp = [
-    # Optional C++ acceleration backend, opt-in via gsply.use_backend("cpp").
-    # Release wheels are built by .github/workflows/publish-cpp.yml.
-    "gsply-cpp>=0.1.0",
-]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -90,13 +85,19 @@ Repository = "https://github.com/OpsiClear/gsply"
 Issues = "https://github.com/OpsiClear/gsply/issues"
 Documentation = "https://github.com/OpsiClear/gsply#readme"
 
-[tool.setuptools]
-packages = ["gsply", "gsply.torch"]
-package-dir = {"" = "src"}
-zip-safe = true
-
-[tool.setuptools.package-data]
-gsply = ["py.typed"]
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+wheel.packages = ["src/gsply"]
+wheel.cmake = false
+sdist.include = [
+    "CMakeLists.txt",
+    "cpp/CMakeLists.txt",
+    "cpp/README.md",
+    "cpp/src/**",
+    "cpp/tests/**",
+]
+install.components = ["python"]
+cmake.build-type = "Release"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
