@@ -47,6 +47,7 @@ import threading
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import NamedTuple
 
 import numba
 import numpy as np
@@ -113,6 +114,18 @@ _GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"
 _GZIP_PARALLEL_MIN_BYTES = 1 << 20
 _GZIP_PARALLEL_BLOCK_BYTES = 1 << 18
 _GZIP_COMPRESSION_LEVEL = 6  # matches the C++ backend default more closely than gzip's level 9
+
+
+class _SpzPayload(NamedTuple):
+    """Validated uncompressed SPZ section payload and decode metadata."""
+
+    payload: np.ndarray
+    n: int
+    sh_degree: int
+    sh_dim: int
+    fractional_bits: int
+    uses_smallest_three: bool
+    rot_stride: int
 
 
 def _gzip_compress_parallel(
@@ -353,8 +366,8 @@ def _decode_to_gsdata(
     )
 
 
-def _read_legacy_gzip(compressed: bytes, file_path: Path) -> GSData:
-    """Read a legacy gzip-container SPZ (v1/v2/v3)."""
+def _read_legacy_gzip_payload(compressed: bytes, file_path: Path) -> _SpzPayload:
+    """Parse a legacy gzip-container SPZ into packed sections."""
     try:
         raw = _gunzip(compressed)
     except Exception as exc:
@@ -391,11 +404,32 @@ def _read_legacy_gzip(compressed: bytes, file_path: Path) -> GSData:
         )
     # Tolerate trailing extension bytes (header flag 0x2) — read only the sections.
     payload = np.frombuffer(raw, dtype=np.uint8, count=expected, offset=16)
-    return _decode_to_gsdata(payload, n, sh_dim, fractional_bits, uses_smallest_three, rot_stride)
+    return _SpzPayload(
+        payload=payload,
+        n=n,
+        sh_degree=int(sh_degree),
+        sh_dim=sh_dim,
+        fractional_bits=int(fractional_bits),
+        uses_smallest_three=uses_smallest_three,
+        rot_stride=rot_stride,
+    )
 
 
-def _read_ngsp_v4(raw_file: bytes, file_path: Path) -> GSData:
-    """Read an NGSP v4 container (uncompressed header + TOC + per-section zstd streams)."""
+def _read_legacy_gzip(compressed: bytes, file_path: Path) -> GSData:
+    """Read a legacy gzip-container SPZ (v1/v2/v3)."""
+    parsed = _read_legacy_gzip_payload(compressed, file_path)
+    return _decode_to_gsdata(
+        parsed.payload,
+        parsed.n,
+        parsed.sh_dim,
+        parsed.fractional_bits,
+        parsed.uses_smallest_three,
+        parsed.rot_stride,
+    )
+
+
+def _read_ngsp_v4_payload(raw_file: bytes, file_path: Path) -> _SpzPayload:
+    """Parse an NGSP v4 container into packed sections."""
     if not _HAS_ZSTD:
         raise ValueError(
             f"Reading SPZ v4 (NGSP/zstd) requires the 'zstandard' package "
@@ -459,7 +493,39 @@ def _read_ngsp_v4(raw_file: bytes, file_path: Path) -> GSData:
         parts = list(ex.map(_decode_stream, jobs))
 
     payload = np.concatenate(parts) if parts else np.empty(0, dtype=np.uint8)
-    return _decode_to_gsdata(payload, n, sh_dim, fractional_bits, True, rot_stride)
+    return _SpzPayload(
+        payload=payload,
+        n=n,
+        sh_degree=int(sh_degree),
+        sh_dim=sh_dim,
+        fractional_bits=int(fractional_bits),
+        uses_smallest_three=True,
+        rot_stride=rot_stride,
+    )
+
+
+def _read_ngsp_v4(raw_file: bytes, file_path: Path) -> GSData:
+    """Read an NGSP v4 container (uncompressed header + TOC + per-section zstd streams)."""
+    parsed = _read_ngsp_v4_payload(raw_file, file_path)
+    return _decode_to_gsdata(
+        parsed.payload,
+        parsed.n,
+        parsed.sh_dim,
+        parsed.fractional_bits,
+        parsed.uses_smallest_three,
+        parsed.rot_stride,
+    )
+
+
+def _read_spz_payload(file_path: str | Path) -> _SpzPayload:
+    """Read and validate an SPZ container, returning packed sections for decoding."""
+    file_path = Path(file_path)
+    raw_file = file_path.read_bytes()  # file errors propagate as OSError
+    if len(raw_file) >= 2 and raw_file[0] == 0x1F and raw_file[1] == 0x8B:
+        return _read_legacy_gzip_payload(raw_file, file_path)
+    if len(raw_file) >= 4 and struct.unpack_from("<I", raw_file, 0)[0] == NGSP_MAGIC:
+        return _read_ngsp_v4_payload(raw_file, file_path)
+    raise ValueError(f"Not an SPZ file (unrecognized container): {file_path}")
 
 
 def read_spz(file_path: str | Path) -> GSData:
@@ -481,14 +547,15 @@ def read_spz(file_path: str | Path) -> GSData:
     """
     if _backend.active_backend() == "cpp":  # opt-in C++ backend (full SPZ parity)
         return _backend.dict_to_gsdata(_backend.cpp().read_spz(str(file_path)))
-    file_path = Path(file_path)
-    raw_file = file_path.read_bytes()  # file errors propagate as OSError
-    # Legacy SPZ is a gzip stream (magic 1f 8b); NGSP v4 starts with "NGSP" in the clear.
-    if len(raw_file) >= 2 and raw_file[0] == 0x1F and raw_file[1] == 0x8B:
-        return _read_legacy_gzip(raw_file, file_path)
-    if len(raw_file) >= 4 and struct.unpack_from("<I", raw_file, 0)[0] == NGSP_MAGIC:
-        return _read_ngsp_v4(raw_file, file_path)
-    raise ValueError(f"Not an SPZ file (unrecognized container): {file_path}")
+    parsed = _read_spz_payload(file_path)
+    return _decode_to_gsdata(
+        parsed.payload,
+        parsed.n,
+        parsed.sh_dim,
+        parsed.fractional_bits,
+        parsed.uses_smallest_three,
+        parsed.rot_stride,
+    )
 
 
 # ======================================================================================

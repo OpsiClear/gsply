@@ -62,7 +62,7 @@ Ultra-fast Gaussian Splatting PLY and SPZ I/O for Python. Zero-copy reads, auto-
 - **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
 - **Format Conversion**: `normalize()`, `denormalize()` with fused kernels (~8-15x faster)
 - **Color Conversion**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
-- **Comprehensive**: 427 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
+- **Comprehensive**: 430 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
 
 ---
 
@@ -88,7 +88,8 @@ backend remains the default at runtime; opt into C++ with
 ```bash
 pip install torch
 ```
-Enables `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, and GPU-accelerated format conversions.
+Enables `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, `read_spz_gpu()`, and
+GPU-accelerated format conversions.
 
 **SOG Format Support:**
 ```bash
@@ -131,6 +132,10 @@ applies and fall back to pure Python otherwise (e.g. compressed PLY). Reads are
 float32-ULP-identical to the Python path; writes may differ by <=1 LSB per
 quantized value and use a different compressor (decoded data matches; compressed
 bytes differ).
+
+For non-Python C++ applications, use the standalone CMake target in `cpp/`:
+`add_subdirectory(path/to/gsply/cpp)` then link `gsplycpp::core` and include
+`gsplycpp.hpp`. See [cpp/README.md](cpp/README.md).
 
 **Full Installation:**
 ```bash
@@ -193,10 +198,14 @@ data.save("modified.ply")
 ### GPU Acceleration
 
 ```python
-from gsply import GSTensor, plyread_gpu, plywrite_gpu
+from gsply import GSTensor, plyread_gpu, plywrite_gpu, read_spz_gpu
 
 # Direct GPU I/O (4-5x faster than CPU decompress + GPU transfer)
 gstensor = plyread_gpu("model.compressed.ply", device='cuda')
+
+# Direct SPZ decode to tensors. Container decompression happens on CPU, then
+# packed SPZ sections are uploaded once and unpacked with PyTorch ops.
+spz_tensor = read_spz_gpu("model.spz", device='cuda')
 
 # Or convert from CPU
 data = GSData.load("model.ply")
@@ -282,11 +291,15 @@ data_restored = decompress_from_bytes(compressed_bytes)
 ### SPZ Format (Niantic)
 
 ```python
-from gsply import read_spz, write_spz
+from gsply import read_spz, read_spz_gpu, write_spz
 
 # Read any SPZ — the container is auto-detected (legacy gzip v1/v2/v3 or NGSP v4
 # zstd). Returns a GSData in PLY format, same API as plyread().
 data = read_spz("scene.spz")
+
+# PyTorch path: returns GSTensor on the requested device.
+# This avoids materializing the decoded float arrays on CPU before upload.
+gstensor = read_spz_gpu("scene.spz", device="cuda")
 
 # Write v3 (gzip, smallest-three quats) — the default
 write_spz("out.spz", data)
@@ -401,6 +414,7 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 - `plyread(file_path)` - Read PLY files (auto-detects format)
 - `plywrite(file_path, ...)` - Write PLY files
 - `read_spz(file_path)` - Read Niantic SPZ (gzip v1/v2/v3 or NGSP v4 zstd)
+- `read_spz_gpu(file_path, device="cuda")` - Read SPZ into `GSTensor` with tensor decode
 - `write_spz(file_path, data, *, version=3, ...)` - Write SPZ (v3 gzip / v4 zstd)
 - `detect_format(file_path)` - Detect format and SH degree
 - `sogread(file_path | bytes)` - Read SOG files (optional)
@@ -557,9 +571,10 @@ gsply/
 │   └── torch/          # PyTorch integration
 │       ├── gstensor.py # GSTensor GPU dataclass
 │       ├── compression.py
+│       ├── spz.py      # SPZ tensor decode
 │       └── io.py       # GPU I/O
 ├── cpp/                # Bundled C++ acceleration backend source
-├── tests/              # Unit tests (449 collected)
+├── tests/              # Unit tests (452 collected)
 ├── benchmarks/         # Performance benchmarks
 ├── docs/               # Documentation
 └── pyproject.toml      # Package configuration
@@ -567,7 +582,7 @@ gsply/
 
 ### Testing
 
-gsply has comprehensive test coverage with **427 passed, 22 skipped, 449 collected** in the latest local verification:
+gsply has comprehensive test coverage with **430 passed, 22 skipped, 452 collected** in the latest local verification:
 
 ```bash
 # Run all tests

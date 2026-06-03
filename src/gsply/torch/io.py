@@ -10,6 +10,7 @@ from pathlib import Path
 from gsply.gsdata import DataFormat
 from gsply.torch.compression import read_compressed_gpu, write_compressed_gpu
 from gsply.torch.gstensor import GSTensor
+from gsply.torch.spz import read_spz_gpu
 
 logger = logging.getLogger(__name__)
 
@@ -107,4 +108,4 @@ def plywrite_gpu(
     write_compressed_gpu(file_path, gstensor)
 
 
-__all__ = ["plyread_gpu", "plywrite_gpu"]
+__all__ = ["plyread_gpu", "plywrite_gpu", "read_spz_gpu"]

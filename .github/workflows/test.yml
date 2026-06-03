@@ -150,6 +150,26 @@ jobs:
       run: |
         pytest tests/ -v -k "torch or gstensor" --cov=gsply.torch --cov-report=xml --cov-report=term
 
+  test-cpp-core:
+    name: Test Python-free C++ core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Configure C++ core
+      run: cmake -S cpp -B build/gsplycpp -DGSPLY_CPP_BUILD_PYTHON=OFF -DGSPLY_CPP_BUILD_TESTS=ON
+
+    - name: Build C++ core
+      run: cmake --build build/gsplycpp --config Release --parallel
+
+    - name: Run C++ core smoke test
+      run: ctest --test-dir build/gsplycpp --output-on-failure -C Release
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

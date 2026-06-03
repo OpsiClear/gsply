@@ -1,7 +1,7 @@
 # Bundled gsply C++ Backend
 
-This directory contains the C++ parity implementation exposed as the top-level
-Python module `gsply_cpp` via nanobind. It is built into the root `gsply`
+This directory contains the Python-free C++ core library plus the optional
+nanobind module `gsply_cpp`. The Python module is built into the root `gsply`
 platform wheels; it is not a separate PyPI project.
 
 ## Status
@@ -29,6 +29,39 @@ pip install . -Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON
 
 Release wheels are built by `.github/workflows/publish.yml` with the same CMake
 option enabled through cibuildwheel.
+
+For a C++ application, build the core library directly from the repository root.
+This path does not find Python and does not require nanobind:
+
+```bash
+cmake -S cpp -B build/gsplycpp -DGSPLY_CPP_BUILD_PYTHON=OFF
+cmake --build build/gsplycpp --config Release
+```
+
+To run the Python-free C++ smoke test:
+
+```bash
+cmake -S cpp -B build/gsplycpp -DGSPLY_CPP_BUILD_TESTS=ON
+cmake --build build/gsplycpp --config Release
+ctest --test-dir build/gsplycpp --output-on-failure -C Release
+```
+
+When using gsply from another CMake project, prefer `add_subdirectory` and link
+the canonical target:
+
+```cmake
+add_subdirectory(path/to/gsply/cpp gsplycpp-build)
+target_link_libraries(my_app PRIVATE gsplycpp::core)
+```
+
+```cpp
+#include <gsplycpp.hpp>
+
+int main() {
+  gsplycpp::GSData data = gsplycpp::read_spz("scene.spz");
+  gsplycpp::write_ply("scene.ply", data);
+}
+```
 
 ## Use
 

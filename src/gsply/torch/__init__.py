@@ -20,9 +20,9 @@ except (ImportError, RuntimeError):
 # Import GSTensor and GPU I/O functions only if PyTorch is available
 if TORCH_AVAILABLE:
     from .gstensor import GSTensor
-    from .io import plyread_gpu, plywrite_gpu
+    from .io import plyread_gpu, plywrite_gpu, read_spz_gpu
 
-    __all__ = ["GSTensor", "plyread_gpu", "plywrite_gpu", "TORCH_AVAILABLE"]
+    __all__ = ["GSTensor", "plyread_gpu", "plywrite_gpu", "read_spz_gpu", "TORCH_AVAILABLE"]
 else:
     __all__ = ["TORCH_AVAILABLE"]
 

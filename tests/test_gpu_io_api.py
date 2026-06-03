@@ -8,7 +8,8 @@ import pytest
 
 pytest.importorskip("torch")
 
-from gsply import GSData, plyread_gpu, plywrite_gpu  # noqa: E402
+import gsply.spz as spz_module  # noqa: E402
+from gsply import GSData, plyread_gpu, plywrite_gpu, read_spz, read_spz_gpu, write_spz  # noqa: E402
 from gsply.torch import GSTensor  # noqa: E402
 
 
@@ -34,6 +35,21 @@ def sample_gsdata_sh0():
         masks=np.ones(n, dtype=bool),
         _base=None,
     )
+
+
+@pytest.fixture
+def sample_spz_gsdata():
+    """Create deterministic PLY-format GSData for SPZ GPU tests."""
+    rng = np.random.default_rng(123)
+    n = 257
+    means = rng.uniform(-2.0, 2.0, (n, 3)).astype(np.float32)
+    scales = rng.uniform(-8.0, -2.0, (n, 3)).astype(np.float32)
+    quats = rng.standard_normal((n, 4)).astype(np.float32)
+    quats /= np.linalg.norm(quats, axis=1, keepdims=True)
+    opacities = rng.uniform(-3.0, 4.0, n).astype(np.float32)
+    sh0 = rng.uniform(-1.0, 1.0, (n, 3)).astype(np.float32)
+    shN = rng.uniform(-0.4, 0.4, (n, 8, 3)).astype(np.float32)  # noqa: N806
+    return GSData.from_arrays(means, scales, quats, opacities, sh0, shN, format="ply")
 
 
 def test_plyread_gpu_api(sample_gsdata_sh0):
@@ -171,7 +187,51 @@ def test_gpu_io_lazy_import():
     # Should be available via lazy import
     assert hasattr(gsply, "plyread_gpu")
     assert hasattr(gsply, "plywrite_gpu")
+    assert hasattr(gsply, "read_spz_gpu")
 
     # Should be callable
     assert callable(gsply.plyread_gpu)
     assert callable(gsply.plywrite_gpu)
+    assert callable(gsply.read_spz_gpu)
+
+
+@pytest.mark.parametrize("version", [3, 4])
+def test_read_spz_gpu_matches_cpu_reader(sample_spz_gsdata, tmp_path, version):
+    """read_spz_gpu returns GSTensor values matching the CPU SPZ reader."""
+    if version == 4:
+        pytest.importorskip("zstandard")
+
+    path = tmp_path / f"scene_v{version}.spz"
+    write_spz(path, sample_spz_gsdata, version=version)
+
+    expected = read_spz(path)
+    actual = read_spz_gpu(path, device="cpu")
+
+    assert isinstance(actual, GSTensor)
+    assert actual.device.type == "cpu"
+    assert actual.is_scales_ply
+    assert actual.is_opacities_ply
+    assert actual.is_sh0_sh
+    assert actual.get_sh_degree() == expected.get_sh_degree()
+
+    np.testing.assert_allclose(actual.means.numpy(), expected.means, atol=1e-6)
+    np.testing.assert_allclose(actual.scales.numpy(), expected.scales, atol=1e-6)
+    np.testing.assert_allclose(actual.opacities.numpy(), expected.opacities, atol=1e-5)
+    np.testing.assert_allclose(actual.sh0.numpy(), expected.sh0, atol=1e-6)
+    np.testing.assert_allclose(actual.shN.numpy(), expected.shN, atol=1e-6)
+    np.testing.assert_allclose(actual.quats.numpy(), expected.quats, atol=1e-6)
+
+
+def test_read_spz_gpu_uses_packed_tensor_decode(sample_spz_gsdata, tmp_path, monkeypatch):
+    """read_spz_gpu must not route through the CPU GSData decode path."""
+    path = tmp_path / "scene.spz"
+    write_spz(path, sample_spz_gsdata, version=3)
+
+    def fail_cpu_decode(*_args, **_kwargs):
+        raise AssertionError("read_spz_gpu should not materialize CPU GSData first")
+
+    monkeypatch.setattr(spz_module, "_decode_to_gsdata", fail_cpu_decode)
+    actual = read_spz_gpu(path, device="cpu")
+
+    assert isinstance(actual, GSTensor)
+    assert len(actual) == len(sample_spz_gsdata)

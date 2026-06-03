@@ -70,7 +70,8 @@ GPU acceleration (PyTorch):
 ```bash
 pip install torch
 ```
-Enables `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, and GPU-accelerated format conversions.
+Enables `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, `read_spz_gpu()`, and
+GPU-accelerated format conversions.
 
 SOG format support:
 ```bash
@@ -133,6 +134,7 @@ pip install "gsply[sogs,spz]" torch  # GPU + SOG + SPZ v4 support
     - [`len(data)`](#lendata)
     - [`plyread_gpu(file_path, device='cuda')`](#plyread_gpufile_path-devicecuda)
     - [`plywrite_gpu(file_path, gstensor, compressed=True)`](#plywrite_gpufile_path-gstensor-compressedtrue)
+    - [`read_spz_gpu(file_path, device='cuda')`](#read_spz_gpufile_path-devicecuda)
   - [Compression APIs](#compression-apis)
     - [`compress_to_bytes(data)`](#compress_to_bytesdata)
     - [`compress_to_arrays(data)`](#compress_to_arraysdata)
@@ -407,6 +409,40 @@ from gsply import read_spz
 
 data = read_spz("scene.spz")
 print(len(data), data.get_sh_degree())
+```
+
+---
+
+### `read_spz_gpu(file_path, device='cuda')`
+
+Read a Niantic SPZ file into a `GSTensor` on the requested PyTorch device.
+
+The container is still decompressed and validated on CPU because gzip and zstd
+containers are byte-stream codecs. gsply then transfers the packed SPZ sections
+once to the target device and unpacks positions, scales, opacities, colors,
+quaternions, and SH coefficients with PyTorch tensor operations. This avoids
+materializing the decoded float arrays on CPU before upload.
+
+Supports the same SPZ containers as `read_spz()`: legacy gzip v1/v2/v3 and
+NGSP v4 zstd.
+
+**Parameters:**
+- `file_path` (str | Path): Path to the `.spz` file
+- `device` (str | torch.device): Target device, default `"cuda"`
+
+**Returns:**
+`GSTensor` in PLY format on the requested device.
+
+**Requirements:**
+- Requires PyTorch
+- SPZ v4 requires `zstandard` from `pip install "gsply[spz]"`
+
+**Example:**
+```python
+from gsply import read_spz_gpu
+
+gstensor = read_spz_gpu("scene.spz", device="cuda")
+print(gstensor.means.device, len(gstensor))
 ```
 
 ---

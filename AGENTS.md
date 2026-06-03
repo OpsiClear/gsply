@@ -106,9 +106,10 @@ gsply/
 |       |-- __init__.py     # Conditional import (checks torch availability)
 |       |-- gstensor.py     # GSTensor GPU dataclass
 |       |-- compression.py  # GPU compression/decompression
+|       |-- spz.py          # SPZ tensor decode
 |       `-- io.py           # GPU I/O (plyread_gpu, plywrite_gpu)
 |-- cpp/                    # Bundled C++ acceleration backend source
-|-- tests/                  # Test suite (448 collected tests)
+|-- tests/                  # Test suite (452 collected tests)
 |-- benchmarks/             # Performance benchmarks
 |-- docs/                   # Documentation
 `-- .github/workflows/      # CI/CD pipelines
@@ -151,8 +152,8 @@ Tests automatically generate synthetic data. Some tests use real PLY files:
 
 ### Test Count
 
-Current collected test count: **448 tests** (documented in README.md)
-- Latest local verification: `uv run --no-sync pytest -q` -> 426 passed, 22 skipped
+Current collected test count: **452 tests** (documented in README.md)
+- Latest local verification: `uv run --no-sync pytest -q` -> 430 passed, 22 skipped
 - Update this count in README and AGENTS.md if adding/removing tests
 - Includes coverage for fused activation kernels, optional backend dispatch, SOG, SPZ, and GPU APIs
 
@@ -250,7 +251,7 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - **GSTensor uses lazy import** via `__getattr__` in `__init__.py`
   - This prevents torch from loading when just importing gsply
   - Avoids torch-related errors in CI when torch isn't needed
-  - Only imports torch when `gsply.GSTensor`, `gsply.plyread_gpu`, or `gsply.plywrite_gpu` is accessed
+  - Only imports torch when `gsply.GSTensor`, `gsply.plyread_gpu`, `gsply.plywrite_gpu`, or `gsply.read_spz_gpu` is accessed
 - Use `try/except ImportError` for torch imports in modules
 - Tests use `pytest.importorskip("torch")` to skip when unavailable
 - GSTensor features only work if user installs PyTorch separately
@@ -259,13 +260,14 @@ masks:     (N,)   - boolean mask (initialized to all True)
 
 ### GPU I/O API (v0.2.4+)
 
-**New Functions: `plyread_gpu()` and `plywrite_gpu()`**
+**Functions: `plyread_gpu()`, `plywrite_gpu()`, and `read_spz_gpu()`**
 - Located in `src/gsply/torch/io.py`
 - Exported via lazy import in `src/gsply/__init__.py` (matches GSTensor pattern)
-- Provides direct GPU I/O for compressed PLY files
+- `plyread_gpu()` / `plywrite_gpu()` provide direct GPU I/O for compressed PLY files
+- `read_spz_gpu()` reads SPZ v1-v4 into `GSTensor`; container decompression and validation happen on CPU, then packed SPZ sections upload once and decode with PyTorch tensor ops
 - **Performance**: 4-5x faster than CPU decompress + GPU transfer
-- **API Style**: Matches `plyread()`/`plywrite()` for consistency
-- **Tests**: `tests/test_gpu_io_api.py` (5 tests covering API, roundtrip, lazy import)
+- **API Style**: Matches `plyread()`/`plywrite()`/`read_spz()` for consistency
+- **Tests**: `tests/test_gpu_io_api.py` (8 tests covering API, roundtrip, lazy import, SPZ parity)
 - **Implementation**: Uses `read_compressed_gpu()` and `write_compressed_gpu()` from `compression.py`
 
 ### SOG Format Support (v0.2.5+)
@@ -304,6 +306,8 @@ masks:     (N,)   - boolean mask (initialized to all True)
 - `GSPLY_BACKEND=cpp` can select the C++ backend before importing `gsply`
 - Published platform wheels include the C++ backend in the root `gsply` wheel; source installs can remain Python-only by default or compile it with `-Cwheel.cmake=true -Ccmake.define.GSPLY_BUILD_CPP=ON`
 - The C++ backend is used for supported PLY/SPZ read/write paths; unsupported paths such as compressed PLY fall back to Python
+- Python-free C++ applications can build `cpp/` directly and link the `gsplycpp::core` CMake target without Python or nanobind; include `gsplycpp.hpp`
+- Optional standalone C++ smoke test: configure with `-DGSPLY_CPP_BUILD_TESTS=ON` and run `ctest`
 
 ### Numba JIT Acceleration
 
@@ -574,7 +578,7 @@ gstensor = GSTensor.from_arrays(means_tensor, scales_tensor, ..., device="cuda")
 ### Before Creating PR
 
 1. **Run pre-commit hooks**: `pre-commit run --all-files` (automatically checks formatting, linting, etc.)
-2. **Run full test suite**: `pytest` (all non-skipped tests must pass; current collection is 448 tests)
+2. **Run full test suite**: `pytest` (all non-skipped tests must pass; current collection is 452 tests)
 3. **Type check** (optional): `mypy src/` or `pre-commit run --hook-stage manual mypy --all-files`
 4. **Update test count** in README.md if you added/removed tests
 5. **Update docs/CHANGELOG.md** with your changes
@@ -594,7 +598,7 @@ Follow conventional commits style:
 
 ### Code Review Checklist
 
-- [ ] All non-skipped tests pass (latest local run: 426 passed, 22 skipped, 448 collected)
+- [ ] All non-skipped tests pass (latest local run: 430 passed, 22 skipped, 452 collected)
 - [ ] No new linter warnings
 - [ ] Type hints added for new functions
 - [ ] Docstrings added for public APIs
@@ -713,7 +717,7 @@ twine upload dist/*
 - **Memory**: Large files (>1M Gaussians) need testing for memory efficiency
 - **SH Degrees**: Support degrees 0-3 only (14, 23, 38, 59 properties)
 - **Optional Dependencies**:
-  - PyTorch: Required only for `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`
+  - PyTorch: Required only for `GSTensor`, `plyread_gpu()`, `plywrite_gpu()`, `read_spz_gpu()`
   - `gsply[sogs]`: Required only for `sogread()` (installs `imagecodecs`)
   - `gsply[spz]`: Adds `isal` and `zstandard`; zstd is required for SPZ v4
 - **Type Checking**: `py.typed` marker file exists for PEP 561 compliance

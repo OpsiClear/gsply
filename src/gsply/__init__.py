@@ -128,6 +128,15 @@ def __getattr__(name):
             raise ImportError(
                 "plywrite_gpu requires PyTorch to be installed.\nInstall with: pip install torch"
             ) from e
+    elif name == "read_spz_gpu":
+        try:
+            from gsply.torch.io import read_spz_gpu
+
+            return read_spz_gpu
+        except ImportError as e:
+            raise ImportError(
+                "read_spz_gpu requires PyTorch to be installed.\nInstall with: pip install torch"
+            ) from e
     elif name == "sogread":
         try:
             from gsply.sog_reader import sogread

@@ -1,5 +1,19 @@
 # Release Notes
 
+## Unreleased
+
+### Features
+- Added `read_spz_gpu(file_path, device="cuda")`, a PyTorch SPZ reader that
+  decompresses/validates the container on CPU, uploads the packed SPZ sections
+  once, and decodes to `GSTensor` with tensor operations.
+- Split the bundled C++ code into a Python-free `gsplycpp::core` CMake target
+  plus the optional `gsply_cpp` nanobind module. C++ applications can now
+  include `gsplycpp.hpp` and link the core target without Python or nanobind.
+
+### Tests
+- Added GPU SPZ parity coverage against the CPU reader for SPZ v3/v4.
+- Added an optional standalone C++ smoke test for the Python-free core library.
+
 ## v0.4.3 (SPZ v3 Python write performance)
 
 ### Performance

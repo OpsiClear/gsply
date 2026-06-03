@@ -8,15 +8,10 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-# nanobind needs Python's Development.Module component + the installed nanobind's
-# CMake config (located via `python -m nanobind --cmake_dir`).
-find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
-find_package(nanobind CONFIG REQUIRED)
+option(GSPLY_CPP_BUILD_PYTHON "Build the Python nanobind extension" OFF)
+option(GSPLY_CPP_BUILD_TESTS "Build Python-free C++ smoke tests" OFF)
 
-# libdeflate for SPZ gzip decompression + CRC32 — fastest whole-buffer inflate,
+# libdeflate for SPZ gzip decompression + CRC32 - fastest whole-buffer inflate,
 # exactly the SPZ read use case.
 include(FetchContent)
 set(LIBDEFLATE_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
@@ -58,23 +53,57 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(zstd)
 
-nanobind_add_module(
-  gsply_cpp
-  NB_STATIC       # bundle libnanobind statically
-  src/bindings.cpp
+add_library(
+  gsply_core STATIC
   src/ply.cpp
   src/spz.cpp
 )
-target_include_directories(gsply_cpp PRIVATE src)
-set_property(TARGET gsply_cpp PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(gsply_cpp PRIVATE libdeflate::libdeflate_static zlibstatic libzstd_static)
-target_include_directories(gsply_cpp PRIVATE ${zstd_SOURCE_DIR}/lib)
+add_library(gsplycpp::core ALIAS gsply_core)
+target_include_directories(
+  gsply_core
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include/gsplycpp>
+  PRIVATE
+    ${zstd_SOURCE_DIR}/lib
+)
+set_property(TARGET gsply_core PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(gsply_core PUBLIC libdeflate::libdeflate_static zlibstatic libzstd_static)
 
 # OpenMP to parallelize the per-Gaussian decode/encode loops (parity with numba prange).
 find_package(OpenMP QUIET)
 if(OpenMP_CXX_FOUND)
-  target_link_libraries(gsply_cpp PRIVATE OpenMP::OpenMP_CXX)
-  target_compile_definitions(gsply_cpp PRIVATE GSPLY_OPENMP=1)
+  target_link_libraries(gsply_core PUBLIC OpenMP::OpenMP_CXX)
+  target_compile_definitions(gsply_core PRIVATE GSPLY_OPENMP=1)
 endif()
 
-install(TARGETS gsply_cpp LIBRARY DESTINATION . COMPONENT python)
+install(TARGETS gsply_core ARCHIVE DESTINATION lib COMPONENT devel)
+install(DIRECTORY src/ DESTINATION include/gsplycpp COMPONENT devel FILES_MATCHING PATTERN "*.hpp")
+
+if(GSPLY_CPP_BUILD_TESTS)
+  enable_testing()
+  add_executable(gsply_cpp_standalone_test tests/standalone.cpp)
+  target_link_libraries(gsply_cpp_standalone_test PRIVATE gsplycpp::core)
+  add_test(NAME gsply_cpp_standalone COMMAND gsply_cpp_standalone_test)
+endif()
+
+if(GSPLY_CPP_BUILD_PYTHON)
+  # nanobind needs Python's Development.Module component + the installed nanobind's
+  # CMake config (located via `python -m nanobind --cmake_dir`).
+  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
+  find_package(nanobind CONFIG REQUIRED)
+
+  nanobind_add_module(
+    gsply_cpp
+    NB_STATIC       # bundle libnanobind statically
+    src/bindings.cpp
+  )
+  target_include_directories(gsply_cpp PRIVATE src)
+  set_property(TARGET gsply_cpp PROPERTY POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries(gsply_cpp PRIVATE gsply_core)
+
+  install(TARGETS gsply_cpp LIBRARY DESTINATION . COMPONENT python)
+endif()
