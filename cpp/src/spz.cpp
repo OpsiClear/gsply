@@ -34,6 +34,7 @@ constexpr uint32_t C_MASK = (1u << 9) - 1u;  // 9-bit magnitude
 constexpr size_t NGSP_HEADER_SIZE = 32;       // v4 uncompressed header
 constexpr uint32_t LATEST_SPZ_VERSION = 4;
 constexpr uint32_t MIN_ZSTD_VERSION = 4;  // versions >= this use the NGSP zstd container
+constexpr size_t ZSTD_INTERNAL_THREAD_MIN_BYTES = size_t(32) << 20;
 
 template <typename T>
 T read_le(const uint8_t* p) {
@@ -543,7 +544,6 @@ void write_spz(const std::string& path, const GSView& d, int fractional_bits, in
 
   // version == 4: NGSP container — each non-empty section as its own zstd stream.
   const int zlevel = level < 0 ? 12 : level;
-  const int workers = std::max(1u, std::thread::hardware_concurrency());
   // Non-empty sections within `buf`, canonical order (offset, size). sh is empty at deg 0.
   struct Sec { size_t off, size; };
   const Sec all[6] = {{0, static_cast<size_t>(9) * n},
@@ -556,18 +556,24 @@ void write_spz(const std::string& path, const GSView& d, int fractional_bits, in
   for (const Sec& s : all) {
     if (s.size) nz.push_back(s);
   }
-  // Hybrid parallelism: compress streams concurrently, and give the largest (SH)
-  // intra-frame zstd workers so it isn't the lone long pole on one core. The
-  // small streams run single-threaded alongside it. ~1.4x over per-stream MT.
   size_t big = 0;
-  for (size_t i = 1; i < nz.size(); ++i)
-    if (nz[i].size > nz[big].size) big = i;
+  int workers = 0;
+  if (!nz.empty()) {
+    for (size_t i = 1; i < nz.size(); ++i)
+      if (nz[i].size > nz[big].size) big = i;
+    workers = nz[big].size >= ZSTD_INTERNAL_THREAD_MIN_BYTES
+                  ? static_cast<int>(std::max(1u, std::thread::hardware_concurrency()))
+                  : 0;
+  }
+  // Compress independent attribute streams concurrently. Typical SH3 sections
+  // are fastest as single-threaded frames; very large SH streams can still use
+  // zstd's internal workers to avoid one long serial stream.
   std::vector<std::vector<uint8_t>> chunks(nz.size());
   std::vector<char> ok(nz.size(), 1);  // exceptions can't cross an OpenMP region
   GSPLY_PARALLEL_FOR
   for (int64_t i = 0; i < static_cast<int64_t>(nz.size()); ++i) {
-    const int nw = (static_cast<size_t>(i) == big) ? workers : 0;
     try {
+      const int nw = static_cast<size_t>(i) == big ? workers : 0;
       chunks[i] = zstd_compress(buf + nz[i].off, nz[i].size, zlevel, nw);
     } catch (...) {
       ok[i] = 0;

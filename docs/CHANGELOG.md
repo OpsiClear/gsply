@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.4.6 (SPZ v4 write scheduling)
+
+### Performance
+- Improved SPZ v4 write throughput by using adaptive zstd scheduling for the
+  independent NGSP attribute streams, avoiding worker oversubscription on
+  typical SH3 assets while keeping large-stream threading available.
+
 ## v0.4.5 (C++ backend performance routing)
 
 ### Performance

@@ -114,6 +114,7 @@ _GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"
 _GZIP_PARALLEL_MIN_BYTES = 1 << 20
 _GZIP_PARALLEL_BLOCK_BYTES = 1 << 18
 _GZIP_COMPRESSION_LEVEL = 6  # matches the C++ backend default more closely than gzip's level 9
+_ZSTD_INTERNAL_THREAD_MIN_BYTES = 32 << 20
 
 
 class _SpzPayload(NamedTuple):
@@ -719,17 +720,18 @@ def write_spz(
         raise ValueError(
             "Writing SPZ v4 (NGSP/zstd) requires the 'zstandard' package (install 'gsply[spz]')"
         )
-    # Hybrid parallelism: compress streams concurrently (zstandard releases the GIL);
-    # the largest stream (SH) gets intra-frame workers so it isn't the lone long pole.
+    # Compress independent attribute streams concurrently. Typical SH3 sections
+    # are fastest as single-threaded frames; very large SH streams can still use
+    # zstd's internal workers to avoid one long serial stream.
     bodies = [body for _, body in sections]
     big = max(range(len(bodies)), key=lambda i: len(bodies[i]))
+
+    def _compress_body(i: int) -> bytes:
+        threads = -1 if i == big and len(bodies[i]) >= _ZSTD_INTERNAL_THREAD_MIN_BYTES else 0
+        return _zstd_compress(bodies[i], zstd_level, threads=threads)
+
     with ThreadPoolExecutor(max(1, len(bodies))) as ex:
-        chunks = list(
-            ex.map(
-                lambda i: _zstd_compress(bodies[i], zstd_level, threads=-1 if i == big else 0),
-                range(len(bodies)),
-            )
-        )
+        chunks = list(ex.map(_compress_body, range(len(bodies))))
     num_streams = len(sections)
     toc_off = NGSP_HEADER_SIZE  # no extensions
     header = (

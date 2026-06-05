@@ -470,6 +470,14 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ## What's New
 
+### v0.4.6 - SPZ v4 Write Scheduling
+
+- **Faster SPZ v4 writes**: Python and C++ writers now use adaptive zstd
+  scheduling for NGSP attribute streams, avoiding worker oversubscription on
+  typical SH3 assets while keeping large-stream threading available.
+- **Compatibility preserved**: SPZ quantization, zstd level, fractional bits,
+  stream order, and decoded parity are unchanged.
+
 ### v0.4.5 - C++ Backend Performance Routing
 
 - **C++ PLY parity without slow paths**: C++ reads now preserve an aligned
