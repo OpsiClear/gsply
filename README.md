@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://readthedocs.org/projects/gsply/badge/?version=latest)](https://gsply.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-435%20passed%2C%2022%20skipped-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-438%20passed%2C%2022%20skipped-brightgreen.svg)](#testing)
 
 **93M Gaussians/sec read | 57M Gaussians/sec write | Auto-optimized**
 
@@ -62,7 +62,7 @@ Ultra-fast Gaussian Splatting PLY and SPZ I/O for Python. Zero-copy reads, auto-
 - **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
 - **Format Conversion**: `normalize()`, `denormalize()` with fused kernels (~8-15x faster)
 - **Color Conversion**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
-- **Comprehensive**: 435 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
+- **Comprehensive**: 438 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
 
 ---
 
@@ -470,6 +470,16 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ## What's New
 
+### v0.4.5 - C++ Backend Performance Routing
+
+- **C++ PLY parity without slow paths**: C++ reads now preserve an aligned
+  canonical `_base` row buffer, so read-backed writes keep the zero-copy path.
+- **Smarter backend dispatch**: `gsply.use_backend("cpp")` now routes PLY writes
+  through C++ only for generated higher-order SH data where it wins; SH0 and
+  read-backed `_base` writes stay on the faster Python paths.
+- **SPZ routing tuned**: SPZ v4 reads use the Python zstd path when available,
+  while C++ remains the fallback for environments without `zstandard`.
+
 ### v0.4.4 - SOG Parity and Normalization Correctness
 
 - **SOG parity**: `sogread()` now follows the current PlayCanvas
@@ -596,7 +606,7 @@ gsply/
 │       ├── spz.py      # SPZ tensor decode
 │       └── io.py       # GPU I/O
 ├── cpp/                # Bundled C++ acceleration backend source
-├── tests/              # Unit tests (457 collected)
+├── tests/              # Unit tests (460 collected)
 ├── benchmarks/         # Performance benchmarks
 ├── docs/               # Documentation
 └── pyproject.toml      # Package configuration
@@ -604,7 +614,7 @@ gsply/
 
 ### Testing
 
-gsply has comprehensive test coverage with **435 passed, 22 skipped, 457 collected** in the latest local verification:
+gsply has comprehensive test coverage with **438 passed, 22 skipped, 460 collected** in the latest local verification:
 
 ```bash
 # Run all tests

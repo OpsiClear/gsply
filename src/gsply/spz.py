@@ -545,8 +545,13 @@ def read_spz(file_path: str | Path) -> GSData:
         ValueError: If the file is not a recognized SPZ container (or v4 is
             requested without the ``zstandard`` package).
     """
-    if _backend.active_backend() == "cpp":  # opt-in C++ backend (full SPZ parity)
-        return _backend.dict_to_gsdata(_backend.cpp().read_spz(str(file_path)))
+    if _backend.active_backend() == "cpp":  # opt-in C++ backend, with v4 fast-path routing
+        path = Path(file_path)
+        with path.open("rb") as f:
+            head = f.read(4)
+        is_ngsp_v4 = len(head) >= 4 and struct.unpack_from("<I", head, 0)[0] == NGSP_MAGIC
+        if not (is_ngsp_v4 and _HAS_ZSTD):
+            return _backend.dict_to_gsdata(_backend.cpp().read_spz(str(path)))
     parsed = _read_spz_payload(file_path)
     return _decode_to_gsdata(
         parsed.payload,

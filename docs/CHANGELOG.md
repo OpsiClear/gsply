@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v0.4.5 (C++ backend performance routing)
+
+### Performance
+- Preserved the canonical PLY row buffer returned by `gsply_cpp.read_ply()` so
+  C++ reads keep the same zero-copy write path as Python reads.
+- Updated the C++ PLY reader to read payloads into aligned float storage and
+  expose a direct `_base` view, avoiding slow unaligned NumPy bulk writes.
+- Made `plywrite()` route C++ mode only through paths where it wins. Read-backed
+  `_base` writes and SH0 writes stay on the faster Python zero-copy/JIT paths,
+  while generated higher-order SH writes still use the C++ writer.
+- Kept SPZ v4 reads on the Python zstd path when `zstandard` is installed,
+  while preserving C++ fallback for environments without Python zstd support.
+
+### Tests
+- Added backend dispatch regressions covering C++ PLY `_base` preservation,
+  Python fast-path routing in C++ mode, and SPZ v4 read routing.
+
 ## v0.4.4 (SOG parity and normalization correctness)
 
 ### Features

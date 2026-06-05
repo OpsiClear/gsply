@@ -2,6 +2,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -76,30 +77,69 @@ nb::dict gsdata_to_dict(const GSData& d) {
   return out;
 }
 
-// Read a GS PLY into a numpy dict. The whole file is read once into a heap
-// buffer; for the canonical layout (each attribute's columns contiguous and
-// in order) the returned arrays are zero-copy strided views into that buffer,
-// matching gsply.plyread. Non-contiguous layouts fall back to a gather copy.
+// Read a GS PLY into a numpy dict. The float payload is read once into an
+// aligned heap buffer; for the canonical layout (each attribute's columns
+// contiguous and in order) the returned arrays are zero-copy strided views into
+// that buffer, matching gsply.plyread. Non-contiguous layouts fall back to a
+// gather copy.
 nb::dict read_ply_dict(const std::string& path) {
-  // fread (not std::ifstream) — MSVC's stream read is ~3x slower for bulk loads,
-  // and this read dominates PLY-read wall time once decode is zero-copy.
+  // fread (not std::ifstream) — MSVC's stream read is ~3x slower for bulk loads.
+  // Read only enough bytes to parse the header, then stream the float payload
+  // directly into an aligned float[] buffer. PLY headers have arbitrary byte
+  // length, so pointing NumPy at raw + data_offset often creates unaligned
+  // arrays that make later ndarray.tofile()/numeric operations slower.
   std::error_code ec;
   const std::uintmax_t fsz = std::filesystem::file_size(path, ec);
   if (ec) throw std::runtime_error("Cannot open PLY: " + path);
   std::FILE* fp = std::fopen(path.c_str(), "rb");
   if (!fp) throw std::runtime_error("Cannot open PLY: " + path);
   const size_t fsize = static_cast<size_t>(fsz);
-  char* raw = new char[fsize + 1];  // +1: never new char[0]
-  const size_t got = std::fread(raw, 1, fsize, fp);
-  std::fclose(fp);
+  float* P = nullptr;
   try {
-    if (got != fsize) throw std::runtime_error("Short read on PLY: " + path);
-    PlyHeader h = parse_ply_header(raw, fsize, path);
+    static constexpr char marker[] = "end_header";
+    static constexpr size_t marker_len = sizeof(marker) - 1;
+    static constexpr size_t chunk = 4096;
+    std::vector<char> header_buf;
+    header_buf.reserve(chunk);
+    bool found = false;
+    while (!found) {
+      const size_t old = header_buf.size();
+      if (old >= fsize) throw std::runtime_error("PLY header end marker not found: " + path);
+      const size_t want = std::min(chunk, fsize - old);
+      header_buf.resize(old + want);
+      const size_t got = std::fread(header_buf.data() + old, 1, want, fp);
+      if (got != want) throw std::runtime_error("Short read on PLY: " + path);
+      const size_t start = old > marker_len ? old - marker_len : 0;
+      for (size_t i = start; i + marker_len <= header_buf.size(); ++i) {
+        if (std::memcmp(header_buf.data() + i, marker, marker_len) == 0) {
+          found = true;
+          break;
+        }
+      }
+    }
+
+    PlyHeader h = parse_ply_header(header_buf.data(), header_buf.size(), path);
     PlyLayout L = compute_ply_layout(h, path);
     const int64_t n = h.n;
     const int rs = L.n_props;  // row stride (float elements)
-    const size_t need = h.data_offset + static_cast<size_t>(n) * rs * sizeof(float);
-    if (static_cast<size_t>(fsize) < need) throw std::runtime_error("PLY truncated: " + path);
+    const size_t payload_bytes = static_cast<size_t>(n) * rs * sizeof(float);
+    const size_t need = h.data_offset + payload_bytes;
+    if (fsize < need) throw std::runtime_error("PLY truncated: " + path);
+    P = new float[payload_bytes ? payload_bytes / sizeof(float) : 1];
+    const size_t preloaded =
+        header_buf.size() > h.data_offset
+            ? std::min(header_buf.size() - h.data_offset, payload_bytes)
+            : 0;
+    if (preloaded > 0) {
+      std::memcpy(reinterpret_cast<char*>(P), header_buf.data() + h.data_offset, preloaded);
+    }
+    const size_t remaining = payload_bytes - preloaded;
+    if (remaining > 0) {
+      const size_t got = std::fread(reinterpret_cast<char*>(P) + preloaded, 1, remaining, fp);
+      if (got != remaining) throw std::runtime_error("Short read on PLY: " + path);
+    }
+    std::fclose(fp);
+    fp = nullptr;
 
     const auto c = [&](const char* k) { return L.col.at(k); };
     const auto adj3 = [&](const char* a, const char* b, const char* cc) {
@@ -115,34 +155,36 @@ nb::dict read_ply_dict(const std::string& path) {
     }
 
     if (viewable) {
-      float* P = reinterpret_cast<float*>(raw + h.data_offset);
-      nb::capsule owner(raw, [](void* p) noexcept { delete[] static_cast<char*>(p); });
-      raw = nullptr;  // capsule owns it now; keep catch's delete[] from double-freeing
+      float* payload = P;
+      nb::capsule owner(payload, [](void* p) noexcept { delete[] static_cast<float*>(p); });
+      P = nullptr;  // capsule owns it now; keep catch's delete[] from double-freeing
       const size_t un = static_cast<size_t>(n);
       nb::dict out;
-      out["means"] = strided_view(P + c("x"), {un, 3}, {rs, 1}, owner);
-      out["scales"] = strided_view(P + c("scale_0"), {un, 3}, {rs, 1}, owner);
-      out["quats"] = strided_view(P + c("rot_0"), {un, 4}, {rs, 1}, owner);
-      out["opacities"] = strided_view(P + c("opacity"), {un}, {rs}, owner);
-      out["sh0"] = strided_view(P + c("f_dc_0"), {un, 3}, {rs, 1}, owner);
+      out["_base"] = strided_view(payload, {un, static_cast<size_t>(rs)}, {rs, 1}, owner);
+      out["means"] = strided_view(payload + c("x"), {un, 3}, {rs, 1}, owner);
+      out["scales"] = strided_view(payload + c("scale_0"), {un, 3}, {rs, 1}, owner);
+      out["quats"] = strided_view(payload + c("rot_0"), {un, 4}, {rs, 1}, owner);
+      out["opacities"] = strided_view(payload + c("opacity"), {un}, {rs}, owner);
+      out["sh0"] = strided_view(payload + c("f_dc_0"), {un, 3}, {rs, 1}, owner);
       // f_rest is channel-major [3,K] per row; present as [N,K,3] via strides
       // (coeff stride 1 element, channel stride sh_dim elements) — no transpose.
       if (L.sh_dim > 0) {
-        out["shN"] = strided_view(P + r0, {un, static_cast<size_t>(L.sh_dim), 3},
+        out["shN"] = strided_view(payload + r0, {un, static_cast<size_t>(L.sh_dim), 3},
                                   {rs, 1, static_cast<int64_t>(L.sh_dim)}, owner);
       } else {
         out["shN"] = nb::none();
       }
-      return out;  // `raw` ownership transferred to the capsule
+      return out;  // payload ownership transferred to the capsule
     }
 
     // Rare non-canonical column order: gather-decode then copy out.
-    GSData d =
-        decode_ply_payload(h, L, reinterpret_cast<const float*>(raw + h.data_offset), path);
-    delete[] raw;
+    GSData d = decode_ply_payload(h, L, P, path);
+    delete[] P;
+    P = nullptr;
     return gsdata_to_dict(d);
   } catch (...) {
-    delete[] raw;
+    if (fp) std::fclose(fp);
+    delete[] P;
     throw;
   }
 }

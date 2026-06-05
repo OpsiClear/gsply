@@ -85,7 +85,28 @@ def cpp() -> Any | None:
 
 def dict_to_gsdata(d: dict[str, Any]) -> GSData:
     """Wrap a ``gsply_cpp`` read result (dict of arrays) into a PLY-format GSData."""
+    import numpy as np
+
     from gsply.gsdata import GSData
+
+    base = _canonical_base_from_cpp_dict(d)
+    if base is not None:
+        from gsply.gsdata import DataFormat, _create_format_dict, _get_sh_order_format
+
+        sh_coeffs = 0 if d.get("shN") is None else np.asarray(d["shN"]).shape[1]
+        recreated = GSData._recreate_from_base(
+            base,
+            _create_format_dict(
+                scales=DataFormat.SCALES_PLY,
+                opacities=DataFormat.OPACITIES_PLY,
+                sh0=DataFormat.SH0_SH,
+                sh_order=_get_sh_order_format({0: 0, 3: 1, 8: 2, 15: 3}[sh_coeffs]),
+                means=DataFormat.MEANS_RAW,
+                quats=DataFormat.QUATS_RAW,
+            ),
+        )
+        if recreated is not None:
+            return recreated
 
     return GSData.from_arrays(
         means=d["means"],
@@ -95,6 +116,87 @@ def dict_to_gsdata(d: dict[str, Any]) -> GSData:
         sh0=d["sh0"],
         shN=d["shN"],
         format="ply",
+    )
+
+
+def _canonical_base_from_cpp_dict(d: dict[str, Any]) -> np.ndarray | None:
+    """Recover the canonical PLY base from ``gsply_cpp.read_ply`` views.
+
+    The C++ reader exposes zero-copy field views into one canonical row buffer.
+    ``GSData.from_arrays()`` would discard that shared base and force later writes
+    to gather/interleave again, so reconstruct the full ``(N, P)`` array when
+    the field strides and offsets prove this is the canonical PLY layout.
+    """
+    import numpy as np
+
+    means = np.asarray(d.get("means"))
+    if means.ndim != 2 or means.shape[1] != 3 or means.dtype != np.float32:
+        return None
+    if len(means.strides) != 2 or means.strides[1] != means.dtype.itemsize:
+        return None
+
+    shn = d.get("shN")
+    sh_coeffs = 0 if shn is None else np.asarray(shn).shape[1]
+    if sh_coeffs not in (0, 3, 8, 15):
+        return None
+
+    n_props = 14 + sh_coeffs * 3
+    row_stride = means.strides[0]
+    itemsize = means.dtype.itemsize
+    if row_stride != n_props * itemsize:
+        return None
+
+    ptr0 = means.__array_interface__["data"][0]
+    base_from_cpp = None
+    if d.get("_base") is not None:
+        candidate = np.asarray(d["_base"])
+        if (
+            candidate.dtype == np.float32
+            and candidate.shape == (means.shape[0], n_props)
+            and candidate.strides == (row_stride, itemsize)
+            and candidate.__array_interface__["data"][0] == ptr0
+        ):
+            base_from_cpp = candidate
+
+    def _field_offset(name: str, shape: tuple[int, ...], strides: tuple[int, ...]) -> int | None:
+        arr = np.asarray(d.get(name))
+        if arr.dtype != np.float32 or arr.shape != shape or arr.strides != strides:
+            return None
+        delta = arr.__array_interface__["data"][0] - ptr0
+        if delta < 0 or delta % itemsize != 0:
+            return None
+        return delta // itemsize
+
+    opacity_idx = 6 + sh_coeffs * 3
+    n = means.shape[0]
+    expected_fields = {
+        "sh0": ((n, 3), (row_stride, itemsize), 3),
+        "opacities": ((n,), (row_stride,), opacity_idx),
+        "scales": ((n, 3), (row_stride, itemsize), opacity_idx + 1),
+        "quats": ((n, 4), (row_stride, itemsize), opacity_idx + 4),
+    }
+    for name, (shape, strides, expected) in expected_fields.items():
+        offset = _field_offset(name, shape, strides)
+        if offset != expected:
+            return None
+
+    if sh_coeffs > 0:
+        shn_arr = np.asarray(shn)
+        if shn_arr.ndim != 3 or shn_arr.shape[2] != 3:
+            return None
+        if shn_arr.__array_interface__["data"][0] - ptr0 != 6 * itemsize:
+            return None
+        if shn_arr.strides != (row_stride, itemsize, sh_coeffs * itemsize):
+            return None
+
+    if base_from_cpp is not None:
+        return base_from_cpp
+
+    return np.lib.stride_tricks.as_strided(
+        means,
+        shape=(means.shape[0], n_props),
+        strides=(row_stride, itemsize),
+        writeable=means.flags.writeable,
     )
 
 

@@ -1145,6 +1145,12 @@ def write_uncompressed(
     # ZERO-COPY FAST PATH: Write _base array directly if it exists
     if data._base is not None:
         num_gaussians = len(data)
+        base = data._base
+        if not base.flags.c_contiguous or not base.flags.aligned:
+            # Some zero-copy bases can point at non-C-contiguous or unaligned
+            # memory. NumPy can write those arrays through a much slower element
+            # path, so realign once before the bulk write.
+            base = np.array(base, dtype=np.float32, copy=True, order="C")
         # shN.shape = (N, K, 3) where K is number of bands
         # Header needs total coefficients = K * 3
         num_sh_rest = (
@@ -1153,11 +1159,11 @@ def write_uncompressed(
         header_bytes = _build_header_fast(num_gaussians, num_sh_rest)
 
         buffer_size = (
-            _LARGE_BUFFER_SIZE if data._base.nbytes > _LARGE_FILE_THRESHOLD else _SMALL_BUFFER_SIZE
+            _LARGE_BUFFER_SIZE if base.nbytes > _LARGE_FILE_THRESHOLD else _SMALL_BUFFER_SIZE
         )
         with open(file_path, "wb", buffering=buffer_size) as f:
             f.write(header_bytes)
-            data._base.tofile(f)
+            base.tofile(f)
 
         logger.debug(
             f"[Gaussian PLY] Wrote uncompressed (zero-copy): {num_gaussians} Gaussians to {file_path.name}"
@@ -1506,21 +1512,28 @@ def plywrite(
 
     file_path = Path(file_path)
 
-    # Opt-in C++ backend: only the plain uncompressed GSData write (gsply_cpp emits
-    # the canonical INRIA layout). GSTensor / raw-array / compressed paths use Python.
-    from gsply import _backend  # noqa: PLC0415
-
-    if (
-        _backend.active_backend() == "cpp"
-        and not compressed
+    # Opt-in C++ backend: use it only for the plain uncompressed GSData write
+    # shapes where it wins. Direct _base writes and SH0 writes are faster through
+    # the Python zero-copy/JIT path; GSTensor / raw-array / compressed paths also
+    # use Python.
+    can_try_cpp_write = (
+        not compressed
         and scales is None
         and isinstance(data, GSData)
+        and data._base is None
+        and data.shN is not None
+        and np.asarray(data.shN).size > 0
         and not str(file_path).endswith((".compressed.ply", ".ply_compressed"))
-    ):
+    )
+    if can_try_cpp_write:
         try:
-            m, s, q, o, c0, cn = _backend.gsdata_ply_arrays(data)
-            _backend.cpp().write_ply(str(file_path), m, s, q, o, c0, cn)
-            return
+            from gsply import _backend  # noqa: PLC0415
+
+            if _backend.active_backend() == "cpp":
+                data = _ensure_ply_format(data, inplace=True)
+                m, s, q, o, c0, cn = _backend.gsdata_ply_arrays(data)
+                _backend.cpp().write_ply(str(file_path), m, s, q, o, c0, cn)
+                return
         except Exception:  # noqa: BLE001 - any failure -> fall back to pure Python
             pass
 

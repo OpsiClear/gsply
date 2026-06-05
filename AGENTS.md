@@ -12,7 +12,7 @@ This file provides context and instructions for AI coding agents working on the 
   for SOG, `gsply[spz]` for SPZ v4/zstd
 - **Performance**: 93M Gaussians/sec read, 57M Gaussians/sec write
 - **Key Features**: Zero-copy optimization, compressed format support, GPU integration, SOG format support, Niantic SPZ v1-v4 support, optional C++ acceleration backend
-- **Current Version**: 0.4.4
+- **Current Version**: 0.4.5
 
 ## Development Environment Setup
 
@@ -109,7 +109,7 @@ gsply/
 |       |-- spz.py          # SPZ tensor decode
 |       `-- io.py           # GPU I/O (plyread_gpu, plywrite_gpu)
 |-- cpp/                    # Bundled C++ acceleration backend source
-|-- tests/                  # Test suite (457 collected tests)
+|-- tests/                  # Test suite (460 collected tests)
 |-- benchmarks/             # Performance benchmarks
 |-- docs/                   # Documentation
 `-- .github/workflows/      # CI/CD pipelines
@@ -152,8 +152,8 @@ Tests automatically generate synthetic data. Some tests use real PLY files:
 
 ### Test Count
 
-Current collected test count: **457 tests** (documented in README.md)
-- Latest local verification: `uv run --no-sync pytest -q` -> 435 passed, 22 skipped
+Current collected test count: **460 tests** (documented in README.md)
+- Latest local verification: `uv run --no-sync pytest -q` -> 438 passed, 22 skipped
 - Update this count in README and AGENTS.md if adding/removing tests
 - Includes coverage for fused activation kernels, optional backend dispatch, SOG, SPZ, and GPU APIs
 
@@ -578,7 +578,7 @@ gstensor = GSTensor.from_arrays(means_tensor, scales_tensor, ..., device="cuda")
 ### Before Creating PR
 
 1. **Run pre-commit hooks**: `pre-commit run --all-files` (automatically checks formatting, linting, etc.)
-2. **Run full test suite**: `pytest` (all non-skipped tests must pass; current collection is 452 tests)
+2. **Run full test suite**: `pytest` (all non-skipped tests must pass; current collection is 460 tests)
 3. **Type check** (optional): `mypy src/` or `pre-commit run --hook-stage manual mypy --all-files`
 4. **Update test count** in README.md if you added/removed tests
 5. **Update docs/CHANGELOG.md** with your changes
@@ -598,7 +598,7 @@ Follow conventional commits style:
 
 ### Code Review Checklist
 
-- [ ] All non-skipped tests pass (latest local run: 430 passed, 22 skipped, 452 collected)
+- [ ] All non-skipped tests pass (latest local run: 438 passed, 22 skipped, 460 collected)
 - [ ] No new linter warnings
 - [ ] Type hints added for new functions
 - [ ] Docstrings added for public APIs
