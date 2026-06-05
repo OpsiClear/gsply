@@ -2,7 +2,16 @@
 
 Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY and SPZ I/O Library
 
-**Version:** 0.4.3
+**Version:** 0.4.4
+
+**New in v0.4.4:**
+- `sogread()` matches the current PlayCanvas SOG reader for current `version: 2`
+  assets, legacy V1 assets without a version field, and unbundled `meta.json`
+  paths
+- SOG reads preserve PLY-format log-scales and logit-opacities; call
+  `denormalize()` for linear values
+- Invalid/zero quaternion fallbacks use the documented `wxyz` identity
+  quaternion (`[1, 0, 0, 0]`)
 
 **New in v0.4.3:**
 - Faster pure-Python SPZ v3 writes for large payloads through a parallel

@@ -2,8 +2,8 @@
 
 Complete guide to gsply - Ultra-fast Gaussian Splatting PLY and SPZ I/O library for Python
 
-**Version:** 0.4.3
-**Last Updated:** 2026-06-02
+**Version:** 0.4.4
+**Last Updated:** 2026-06-05
 
 > Note: This guide focuses on PLY and PlayCanvas compressed PLY workflows. See
 > the README and API reference for the current SPZ, SOG, GPU I/O, and optional
@@ -1376,4 +1376,4 @@ gsply is the **fastest Gaussian Splatting PLY I/O library** for Python, achievin
 
 The optimization journey demonstrates that careful profiling, strategic refactoring, and aggressive vectorization can deliver massive performance improvements while maintaining code quality and backward compatibility.
 
-**Status:** Current for PLY-focused workflows in v0.4.3; see README and API reference for the full current API surface.
+**Status:** Current for PLY-focused workflows in v0.4.4; see README and API reference for the full current API surface.

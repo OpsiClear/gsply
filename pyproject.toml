@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "gsply"
-version = "0.4.3"
+version = "0.4.4"
 description = "Ultra-fast Gaussian Splatting PLY + SPZ I/O library - pure Python with NumPy and Numba. Features 11x faster GPU transfers and automatic format state tracking for seamless conversions."
 readme = "README.md"
 requires-python = ">=3.10"

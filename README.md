@@ -470,6 +470,17 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ## What's New
 
+### v0.4.4 - SOG Parity and Normalization Correctness
+
+- **SOG parity**: `sogread()` now follows the current PlayCanvas
+  splat-transform reader for `version: 2`, legacy V1 assets, direct
+  `meta.json` paths, and unknown-version errors.
+- **Normalization correctness**: SOG data remains in PLY-format log-scales and
+  logit-opacities, and activated `exp`/`sigmoid` values match splat-transform
+  round trips.
+- **Quaternion fallback**: Invalid SOG tags and zero-norm activation fallback
+  now use canonical `wxyz` identity `[1, 0, 0, 0]`.
+
 ### v0.4.3 - SPZ v3 Python Write Performance
 
 - **Faster pure-Python SPZ v3 writes**: Large `write_spz(..., version=3)`

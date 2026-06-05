@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.4 (SOG parity and normalization correctness)
+
 ### Features
 - Added `read_spz_gpu(file_path, device="cuda")`, a PyTorch SPZ reader that
   decompresses/validates the container on CPU, uploads the packed SPZ sections
