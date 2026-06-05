@@ -109,7 +109,7 @@ gsply/
 |       |-- spz.py          # SPZ tensor decode
 |       `-- io.py           # GPU I/O (plyread_gpu, plywrite_gpu)
 |-- cpp/                    # Bundled C++ acceleration backend source
-|-- tests/                  # Test suite (452 collected tests)
+|-- tests/                  # Test suite (457 collected tests)
 |-- benchmarks/             # Performance benchmarks
 |-- docs/                   # Documentation
 `-- .github/workflows/      # CI/CD pipelines
@@ -152,8 +152,8 @@ Tests automatically generate synthetic data. Some tests use real PLY files:
 
 ### Test Count
 
-Current collected test count: **452 tests** (documented in README.md)
-- Latest local verification: `uv run --no-sync pytest -q` -> 430 passed, 22 skipped
+Current collected test count: **457 tests** (documented in README.md)
+- Latest local verification: `uv run --no-sync pytest -q` -> 435 passed, 22 skipped
 - Update this count in README and AGENTS.md if adding/removing tests
 - Includes coverage for fused activation kernels, optional backend dispatch, SOG, SPZ, and GPU APIs
 
@@ -275,13 +275,13 @@ masks:     (N,)   - boolean mask (initialized to all True)
 **SOG Reader: `sogread()`**
 - Located in `src/gsply/sog_reader.py`
 - Exported via lazy import in `src/gsply/__init__.py` (optional dependency)
-- Reads SOG (Splat Ordering Grid) format files (PlayCanvas splat-transform compatible)
+- Reads SOG (Spatially Ordered Gaussians) format files (PlayCanvas splat-transform compatible)
 - **Returns**: `GSData` container (same as `plyread()`) for consistent API
-- **Supports**: Both `.sog` ZIP bundles and folder formats
+- **Supports**: Current `version: 2` SOG and legacy V1 assets; `.sog` ZIP bundles, folders, direct `meta.json` paths, and ZIP bytes
 - **In-memory**: Can read directly from bytes without disk I/O
 - **Dependencies**: Requires `gsply[sogs]` which installs `imagecodecs` (fastest WebP decoder)
 - **Performance**: ~6x faster when reading from bytes vs file path
-- **API**: `sogread(file_path | bytes) -> GSData`
+- **API**: `sogread(file_path | meta_json_path | bytes) -> GSData`
 
 ### SPZ Format Support (v0.3.0+; v0.4.0+ for NGSP v4)
 

@@ -188,24 +188,25 @@ def _activate_gaussians_numba(
             sigmoid = exp_term / (1.0 + exp_term)
         opacities[i] = sigmoid
 
-        # Quaternion activation: normalize with safety floor
-        qx = quats[i, 0]
-        qy = quats[i, 1]
-        qz = quats[i, 2]
-        qw = quats[i, 3]
+        # Quaternion activation: normalize with safety floor. gsply stores
+        # quaternions in PLY/3DGS rot_0..rot_3 order: w, x, y, z.
+        qw = quats[i, 0]
+        qx = quats[i, 1]
+        qy = quats[i, 2]
+        qz = quats[i, 3]
 
-        norm = np.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
+        norm = np.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
         if norm < min_quat_norm:
-            quats[i, 0] = np.float32(0.0)
+            quats[i, 0] = np.float32(1.0)
             quats[i, 1] = np.float32(0.0)
             quats[i, 2] = np.float32(0.0)
-            quats[i, 3] = np.float32(1.0)
+            quats[i, 3] = np.float32(0.0)
         else:
             inv = 1.0 / norm
-            quats[i, 0] = qx * inv
-            quats[i, 1] = qy * inv
-            quats[i, 2] = qz * inv
-            quats[i, 3] = qw * inv
+            quats[i, 0] = qw * inv
+            quats[i, 1] = qx * inv
+            quats[i, 2] = qy * inv
+            quats[i, 3] = qz * inv
 
 
 @njit(parallel=True, fastmath=True, cache=True, nogil=True)

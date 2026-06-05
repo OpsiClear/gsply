@@ -9,10 +9,21 @@
 - Split the bundled C++ code into a Python-free `gsplycpp::core` CMake target
   plus the optional `gsply_cpp` nanobind module. C++ applications can now
   include `gsplycpp.hpp` and link the core target without Python or nanobind.
+- Aligned `sogread()` with the current PlayCanvas SOG reader: current SOG is
+  `version: 2`, legacy V1 has no version field, unknown future versions fail
+  explicitly, and unbundled `meta.json` paths are accepted.
+
+### Bug Fixes
+- Fixed the zero/invalid quaternion fallback to use the documented PLY/3DGS
+  `wxyz` identity quaternion (`[1, 0, 0, 0]`), matching splat-transform.
 
 ### Tests
 - Added GPU SPZ parity coverage against the CPU reader for SPZ v3/v4.
 - Added an optional standalone C++ smoke test for the Python-free core library.
+- Added SOG regressions for direct `meta.json`, legacy V1 SH-band inference, and
+  unsupported-version errors.
+- Added SOG activated-space checks that verify log-scales/logit-opacities
+  denormalize with `exp`/`sigmoid`.
 
 ## v0.4.3 (SPZ v3 Python write performance)
 
@@ -429,7 +440,7 @@ if data.is_sh_order_3:
 ## v0.2.5 (SOG Format Support & API Improvements)
 
 ### New Features
-- **SOG Format Reader**: Read SOG (Splat Ordering Grid) format files
+- **SOG Format Reader**: Read SOG (Spatially Ordered Gaussians) format files
   - `sogread(file_path | bytes)` - Read SOG files from path or bytes (requires `gsply[sogs]`)
   - Returns `GSData` container (same as `plyread()`) for consistent API
   - Supports `.sog` ZIP bundles and folder formats

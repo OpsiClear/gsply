@@ -1,4 +1,4 @@
-"""Tests for gsply.sog_reader module - both v2 (codebook) and v3 (linear) formats."""
+"""Tests for gsply.sog_reader module - current v2 and legacy v1 formats."""
 
 import json
 import os
@@ -30,13 +30,15 @@ def _make_rgba_webp(height: int, width: int, rgba: np.ndarray) -> bytes:
     return imagecodecs.webp_encode(rgba, lossless=True)
 
 
-def _build_v3_sog_folder(
+def _build_v1_sog_folder(
     tmp_dir: Path,
     count: int = 16,
     *,
     include_shn: bool = True,
+    include_shn_shape: bool = True,
+    meta_version: int | None = None,
 ) -> Path:
-    """Build a minimal v3 SOG folder with synthetic WebP images.
+    """Build a minimal legacy v1 SOG folder with synthetic WebP images.
 
     Creates a deterministic dataset so we can verify the dequantized values.
     """
@@ -115,17 +117,21 @@ def _build_v3_sog_folder(
             labels_img[r, c, 1] = (label >> 8) & 0xFF
 
         meta["shN"] = {
-            "shape": [count, sh_coeffs],
             "dtype": "float32",
             "mins": -0.5,
             "maxs": 0.5,
             "quantization": 8,
             "files": ["shN_centroids.webp", "shN_labels.webp"],
         }
+        if include_shn_shape:
+            meta["shN"]["shape"] = [count, sh_coeffs]
     else:
         centroids_img = labels_img = None
 
-    sog_dir = tmp_dir / "sog_v3"
+    if meta_version is not None:
+        meta["version"] = meta_version
+
+    sog_dir = tmp_dir / "sog_v1"
     sog_dir.mkdir(exist_ok=True)
 
     (sog_dir / "meta.json").write_text(json.dumps(meta))
@@ -223,7 +229,7 @@ def _build_v2_sog_folder(
 
 
 # ===========================================================================
-# Unit tests for v3 JIT dequantization functions
+# Unit tests for legacy v1 JIT dequantization functions
 # ===========================================================================
 
 
@@ -327,19 +333,19 @@ class TestDecodeShnLinear:
 
 
 @requires_imagecodecs
-class TestSogreadV3:
-    """Test sogread with v3 (linear min/max) format."""
+class TestSogreadV1:
+    """Test sogread with legacy v1 (linear min/max) format."""
 
     def test_loads_correct_count(self, tmp_path):
         """sogread returns correct number of Gaussians."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16)
         data = sogread(str(sog_dir))
         assert len(data) == 16
 
     def test_output_shapes(self, tmp_path):
         """All output arrays have expected shapes."""
         count = 25
-        sog_dir = _build_v3_sog_folder(tmp_path, count=count)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=count)
         data = sogread(str(sog_dir))
 
         assert data.means.shape == (count, 3)
@@ -351,7 +357,7 @@ class TestSogreadV3:
 
     def test_output_dtypes(self, tmp_path):
         """All output arrays are float32."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16)
         data = sogread(str(sog_dir))
 
         assert data.means.dtype == np.float32
@@ -363,7 +369,7 @@ class TestSogreadV3:
 
     def test_scales_in_range(self, tmp_path):
         """Scales values fall within the configured min/max bounds."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16)
         data = sogread(str(sog_dir))
 
         assert data.scales.min() >= -10.0 - 1e-5
@@ -371,7 +377,7 @@ class TestSogreadV3:
 
     def test_opacities_in_range(self, tmp_path):
         """Opacities (logit-space) fall within configured bounds."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16)
         data = sogread(str(sog_dir))
 
         assert data.opacities.min() >= -4.0 - 1e-5
@@ -379,7 +385,7 @@ class TestSogreadV3:
 
     def test_shn_in_range(self, tmp_path):
         """SHN values fall within scalar min/max bounds."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16)
         data = sogread(str(sog_dir))
 
         assert data.shN.min() >= -0.5 - 1e-5
@@ -387,7 +393,7 @@ class TestSogreadV3:
 
     def test_sh_degree_3(self, tmp_path):
         """SH degree is correctly detected as 3 when shN has 15 bands."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16, include_shn=True)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16, include_shn=True)
         data = sogread(str(sog_dir))
 
         assert data.get_sh_degree() == 3
@@ -395,15 +401,15 @@ class TestSogreadV3:
 
     def test_no_shn(self, tmp_path):
         """Works correctly without higher-order SH data."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16, include_shn=False)
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16, include_shn=False)
         data = sogread(str(sog_dir))
 
         assert data.get_sh_degree() == 0
         assert data.shN.shape == (16, 0, 3)
 
     def test_save_roundtrip(self, tmp_path):
-        """Verify v3 SOG data survives save → load roundtrip as compressed PLY."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=64)
+        """Verify legacy v1 SOG data survives save -> load roundtrip as compressed PLY."""
+        sog_dir = _build_v1_sog_folder(tmp_path, count=64)
         data = sogread(str(sog_dir))
 
         out_path = str(tmp_path / "out")
@@ -415,6 +421,14 @@ class TestSogreadV3:
 
         assert len(data2) == 64
         assert data2.get_sh_degree() == 3
+
+    def test_shn_shape_is_optional(self, tmp_path):
+        """Legacy v1 infers SH degree from centroid texture width when shape is absent."""
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16, include_shn_shape=False)
+        data = sogread(str(sog_dir))
+
+        assert data.get_sh_degree() == 3
+        assert data.shN.shape == (16, 15, 3)
 
 
 @requires_imagecodecs
@@ -447,10 +461,44 @@ class TestSogreadV2:
 
         assert data.get_sh_degree() == 3
 
+    def test_outputs_ply_format_and_denormalizes_correctly(self, tmp_path):
+        """SOG stores scales as log-scales and opacity as logits, same as PLY."""
+        from gsply.utils import sigmoid
+
+        sog_dir = _build_v2_sog_folder(tmp_path, count=16)
+        data = sogread(str(sog_dir))
+
+        assert data.is_scales_ply
+        assert data.is_opacities_ply
+
+        linear = data.denormalize(inplace=False)
+
+        expected_scales = np.clip(np.exp(data.scales), 1e-4, 100.0)
+        expected_opacities = sigmoid(data.opacities)
+        np.testing.assert_allclose(linear.scales, expected_scales, rtol=1e-6, atol=1e-7)
+        np.testing.assert_allclose(linear.opacities, expected_opacities, rtol=1e-6, atol=1e-7)
+        assert linear.is_scales_linear
+        assert linear.is_opacities_linear
+        assert data.is_scales_ply
+        assert data.is_opacities_ply
+
+    def test_invalid_quat_tag_defaults_to_wxyz_identity(self, tmp_path):
+        """Invalid quaternion tags match splat-transform's identity fallback."""
+        count = 16
+        sog_dir = _build_v2_sog_folder(tmp_path, count=count)
+        side = int(np.ceil(np.sqrt(count)))
+        invalid_quats = np.zeros((side, side, 4), dtype=np.uint8)
+        (sog_dir / "quats.webp").write_bytes(_make_rgba_webp(side, side, invalid_quats))
+
+        data = sogread(str(sog_dir))
+
+        expected = np.tile(np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32), (count, 1))
+        np.testing.assert_allclose(data.quats, expected, atol=0.0)
+
 
 @requires_imagecodecs
 class TestSogreadFormatDetection:
-    """Test format detection between v2 and v3."""
+    """Test format detection between current v2 and legacy v1."""
 
     def test_v2_detected_by_count_key(self, tmp_path):
         """v2 format is detected when meta has top-level 'count'."""
@@ -459,43 +507,57 @@ class TestSogreadFormatDetection:
         # v2 should work without error
         assert len(data) == 16
 
-    def test_v3_detected_by_shape_key(self, tmp_path):
-        """v3 format is detected when meta['means'] has 'shape'."""
-        sog_dir = _build_v3_sog_folder(tmp_path, count=16)
+    def test_v1_detected_by_missing_version(self, tmp_path):
+        """Legacy v1 format is detected when meta has no version field."""
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16)
         data = sogread(str(sog_dir))
-        # v3 should work without error
+        # v1 should work without error
         assert len(data) == 16
 
     def test_both_produce_same_structure(self, tmp_path):
         """Both formats produce GSData with identical field names and shapes."""
         v2_dir = _build_v2_sog_folder(tmp_path, count=16)
-        v3_dir = _build_v3_sog_folder(tmp_path, count=16)
+        v1_dir = _build_v1_sog_folder(tmp_path, count=16)
 
         d2 = sogread(str(v2_dir))
-        d3 = sogread(str(v3_dir))
+        d1 = sogread(str(v1_dir))
 
-        assert d2.means.shape == d3.means.shape
-        assert d2.scales.shape == d3.scales.shape
-        assert d2.quats.shape == d3.quats.shape
-        assert d2.opacities.shape == d3.opacities.shape
-        assert d2.sh0.shape == d3.sh0.shape
-        assert d2.shN.shape == d3.shN.shape
+        assert d2.means.shape == d1.means.shape
+        assert d2.scales.shape == d1.scales.shape
+        assert d2.quats.shape == d1.quats.shape
+        assert d2.opacities.shape == d1.opacities.shape
+        assert d2.sh0.shape == d1.sh0.shape
+        assert d2.shN.shape == d1.shN.shape
+
+    def test_rejects_unknown_version(self, tmp_path):
+        """Future/unknown SOG versions fail explicitly instead of mis-decoding."""
+        sog_dir = _build_v1_sog_folder(tmp_path, count=16, meta_version=3)
+
+        with pytest.raises(ValueError, match="Unsupported SOG meta version: 3"):
+            sogread(str(sog_dir))
+
+    def test_reads_unbundled_meta_json_path(self, tmp_path):
+        """sogread accepts output/meta.json paths like splat-transform."""
+        sog_dir = _build_v2_sog_folder(tmp_path, count=16)
+        data = sogread(sog_dir / "meta.json")
+
+        assert len(data) == 16
 
 
 @requires_imagecodecs
 class TestSogreadRealData:
     """Test with real SOG data from NAS (skipped if unavailable)."""
 
-    V3_SCENE = os.path.join(tempfile.gettempdir(), "test_sog_v3")
+    LEGACY_V1_SCENE = os.path.join(tempfile.gettempdir(), "test_sog_v3")
     V2_SCENE = os.path.join(tempfile.gettempdir(), "test_sog_v2")
 
     @pytest.mark.skipif(
-        not Path(V3_SCENE).exists(),
-        reason="Real v3 test data not available",
+        not Path(LEGACY_V1_SCENE).exists(),
+        reason="Real legacy v1 test data not available",
     )
-    def test_real_v3_scene(self):
-        """Load real v3 scene (047ec389 - Maltese on Bean Bag)."""
-        data = sogread(self.V3_SCENE)
+    def test_real_legacy_v1_scene(self):
+        """Load real legacy v1 scene (047ec389 - Maltese on Bean Bag)."""
+        data = sogread(self.LEGACY_V1_SCENE)
         assert len(data) == 137827
         assert data.means.shape == (137827, 3)
         assert data.shN.shape == (137827, 15, 3)

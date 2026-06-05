@@ -141,9 +141,11 @@ class TestApplyPreActivations:
 
         result = apply_pre_activations(data, inplace=False)
 
-        # Should handle gracefully (set to [0,0,0,1] for very small norms)
+        # Should handle gracefully (identity quaternion in wxyz order)
         quat_norms = np.linalg.norm(result.quats, axis=1)
         assert np.all(quat_norms >= 1e-8)  # min_quat_norm default
+        expected_identity = np.tile(np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32), (n, 1))
+        np.testing.assert_allclose(result.quats, expected_identity, atol=0.0)
 
     def test_activation_validation_errors(self):
         """Test validation errors for invalid inputs."""

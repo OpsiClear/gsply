@@ -1,18 +1,19 @@
-"""SOG (Splat Ordering Grid) format reader - optimized implementation.
+"""SOG (Spatially Ordered Gaussians) format reader - optimized implementation.
 
 SOG format uses WebP images to store quantized Gaussian splatting data with
 codebook-based compression for scales and colors.
 
 Supports two metadata layouts:
 
-**v2 (codebook-based)**:
-    Top-level ``count`` and per-attribute ``codebook`` arrays (256 k-means
-    centroids).
+**v2 (current, codebook-based)**:
+    ``version: 2``, top-level ``count`` and per-attribute ``codebook`` arrays
+    (256 k-means centroids).
 
-**v3 (linear min/max quantization)**:
-    Per-attribute ``shape``, ``dtype``, ``mins`` / ``maxs`` fields.  Scales and
-    SH0 are linearly dequantized from 8-bit pixel values; SHN centroids use a
-    scalar min/max range with a ``quantization`` field.
+**v1 (legacy, linear min/max quantization)**:
+    No ``version`` field. Per-attribute ``shape``, ``dtype``, ``mins`` /
+    ``maxs`` fields. Scales and SH0 are linearly dequantized from 8-bit pixel
+    values; SHN centroids use a scalar min/max range with a ``quantization``
+    field.
 
 Returns GSData container (same as plyread) for consistent API across all formats.
 
@@ -27,6 +28,7 @@ Format:
 Can be:
     - .sog ZIP bundle (all files in one archive)
     - Folder with separate files
+    - meta.json path with sibling image files
     - Bytes (in-memory ZIP extraction)
 """
 
@@ -122,10 +124,10 @@ def _unpack_quats_jit(
         tag = rgba[o + 3]
 
         if tag < 252 or tag > 255:
-            r0[i] = 0.0
+            r0[i] = 1.0
             r1[i] = 0.0
             r2[i] = 0.0
-            r3[i] = 1.0
+            r3[i] = 0.0
             continue
 
         max_comp = tag - 252
@@ -271,7 +273,7 @@ def _decode_shn_jit(
 def _decode_scales_linear_jit(
     rgba: np.ndarray, mins: np.ndarray, maxs: np.ndarray, count: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """JIT-compiled scale decoding using linear min/max dequantization (v3 format).
+    """JIT-compiled scale decoding using linear min/max dequantization (legacy v1).
 
     :param rgba: (N*4,) uint8 RGBA data from scales.webp
     :param mins: (3,) float32 per-channel minimum values
@@ -301,7 +303,7 @@ def _decode_scales_linear_jit(
 def _decode_colors_linear_jit(
     rgba: np.ndarray, mins: np.ndarray, maxs: np.ndarray, count: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """JIT-compiled color and opacity decoding with linear min/max dequantization (v3 format).
+    """JIT-compiled color and opacity decoding with linear min/max dequantization (legacy v1).
 
     All four RGBA channels are linearly dequantized. The 4th channel (A) is
     opacity already in logit space.
@@ -344,7 +346,7 @@ def _decode_shn_linear_jit(
     palette_count: int,
     centroids_width: int,
 ) -> np.ndarray:
-    """JIT-compiled SHN decoding with linear min/max dequantization (v3 format).
+    """JIT-compiled SHN decoding with linear min/max dequantization (legacy v1).
 
     :param labels_rgba: (N*4,) uint8 RGBA data from shN_labels.webp
     :param centroids_rgba: (W*H*4,) uint8 RGBA data from shN_centroids.webp
@@ -410,13 +412,14 @@ def _load_webp_image(data: bytes) -> tuple[np.ndarray, int, int]:
 
 
 def sogread(file_path: str | Path | bytes) -> GSData:
-    """Read SOG (Splat Ordering Grid) format file.
+    """Read SOG (Spatially Ordered Gaussians) format file.
 
     Returns GSData container (same as plyread) for consistent API.
-    Supports both .sog ZIP bundles and folders with separate files.
+    Supports .sog ZIP bundles, folders with separate files, and direct
+    meta.json paths with sibling image files.
     Can also accept bytes directly for in-memory ZIP extraction.
 
-    :param file_path: Path to .sog file, folder containing SOG files, or bytes (ZIP data)
+    :param file_path: Path to .sog, folder, meta.json, or bytes (ZIP data)
     :returns: GSData container with Gaussian parameters (same container as plyread)
     :raises ImportError: If imagecodecs is not installed
     :raises ValueError: If file format is invalid or missing required files
@@ -434,6 +437,7 @@ def sogread(file_path: str | Path | bytes) -> GSData:
     """
     entries: dict[str, bytes] | None = None
     path_obj: Path | None = None
+    meta_path: Path | None = None
 
     # Handle bytes input (in-memory ZIP)
     if isinstance(file_path, bytes):
@@ -448,6 +452,10 @@ def sogread(file_path: str | Path | bytes) -> GSData:
         if path_obj.is_file() and path_obj.suffix.lower() == ".sog":
             with zipfile.ZipFile(path_obj, "r") as zf:
                 entries = {name: zf.read(name) for name in zf.namelist()}
+        elif path_obj.is_file():
+            if path_obj.name != "meta.json":
+                raise ValueError(f"SOG file must be a .sog bundle or meta.json: {path_obj}")
+            meta_path = path_obj
 
     def load(name: str) -> bytes:
         if entries is not None:
@@ -455,6 +463,11 @@ def sogread(file_path: str | Path | bytes) -> GSData:
             if name not in entries:
                 raise ValueError(f"Missing entry '{name}' in SOG bundle")
             return entries[name]
+        if meta_path is not None:
+            file_full_path = meta_path if name == "meta.json" else meta_path.parent / name
+            if not file_full_path.exists():
+                raise ValueError(f"Missing file '{name}' next to SOG meta.json")
+            return file_full_path.read_bytes()
         # Folder mode (requires path_obj)
         if path_obj is None:
             raise ValueError("Cannot load from folder: file_path must be a Path, not bytes")
@@ -466,9 +479,18 @@ def sogread(file_path: str | Path | bytes) -> GSData:
     meta_bytes = load("meta.json")
     meta = json.loads(meta_bytes.decode("utf-8"))
 
-    # Detect format version: v2 has top-level "count", v3 uses per-attribute "shape"
-    is_v3 = "count" not in meta and "shape" in meta.get("means", {})
-    count = meta["means"]["shape"][0] if is_v3 else meta["count"]
+    # Current standard SOG is version 2. Legacy V1 has no version field and uses
+    # per-channel linear min/max quantization instead of codebooks.
+    version = meta.get("version")
+    is_v1 = version is None
+    if version not in (None, 2):
+        raise ValueError(f"Unsupported SOG meta version: {version}")
+    if is_v1:
+        if "shape" not in meta.get("means", {}):
+            raise ValueError("Legacy SOG meta is missing means.shape")
+        count = meta["means"]["shape"][0]
+    else:
+        count = meta["count"]
 
     # --- Means (same encoding in both formats: 16-bit split, log space) ---
     means_mins = np.array(meta["means"]["mins"], dtype=np.float32)
@@ -515,8 +537,8 @@ def sogread(file_path: str | Path | bytes) -> GSData:
         raise ValueError("SOG scales texture too small for count")
 
     scales = np.empty((count, 3), dtype=np.float32)
-    if is_v3:
-        # v3: linear min/max dequantization
+    if is_v1:
+        # Legacy v1: linear min/max dequantization
         sc_mins = np.array(meta["scales"]["mins"], dtype=np.float32)
         sc_maxs = np.array(meta["scales"]["maxs"], dtype=np.float32)
         sx, sy, sz = _decode_scales_linear_jit(scales_rgba, sc_mins, sc_maxs, count)
@@ -534,8 +556,8 @@ def sogread(file_path: str | Path | bytes) -> GSData:
     if cw * ch < count:
         raise ValueError("SOG sh0 texture too small for count")
 
-    if is_v3:
-        # v3: linear min/max dequantization (4 channels: RGB + opacity in logit space)
+    if is_v1:
+        # Legacy v1: linear min/max dequantization (4 channels: RGB + opacity in logit space)
         sh0_mins = np.array(meta["sh0"]["mins"], dtype=np.float32)
         sh0_maxs = np.array(meta["sh0"]["maxs"], dtype=np.float32)
         sh0_r, sh0_g, sh0_b, opacities = _decode_colors_linear_jit(
@@ -557,57 +579,61 @@ def sogread(file_path: str | Path | bytes) -> GSData:
     if "shN" in meta:
         shn_meta = meta["shN"]  # noqa: N806
 
-        if is_v3:
-            # v3: derive bands from shape, use scalar min/max dequantization
-            shn_bands = shn_meta["shape"][1]  # e.g. 15 for SH degree 3
-            sh_degree = SH_BANDS_TO_DEGREE.get(shn_bands, 0)
-            sh_coeffs = shn_bands  # shape[1] IS the number of coefficients
+        centroids_data = load(shn_meta["files"][0])
+        labels_data = load(shn_meta["files"][1])
+        centroids_rgba, cw, ch = _load_webp_image(centroids_data)
+        labels_rgba, lw, lh = _load_webp_image(labels_data)
+
+        if lw * lh < count:
+            raise ValueError("SOG shN labels texture too small for count")
+
+        if is_v1:
+            # Legacy v1 infers SH bands from centroid image geometry:
+            # width = 64 entries/row * coefficients/channel.
+            width_to_coeffs = {192: 3, 512: 8, 960: 15}
+            sh_coeffs = width_to_coeffs.get(cw, 0)
+            if sh_coeffs == 0:
+                raise ValueError(
+                    f"SOG shN centroids texture has unrecognized width {cw}, "
+                    "expected one of 192 / 512 / 960"
+                )
+            sh_degree = SH_BANDS_TO_DEGREE[sh_coeffs]
+            centroids_width = cw
+            palette_count = (cw // sh_coeffs) * ch
+            shn_mins = float(shn_meta["mins"])
+            shn_maxs = float(shn_meta["maxs"])
+            shn = _decode_shn_linear_jit(  # noqa: N806
+                labels_rgba,
+                centroids_rgba,
+                shn_mins,
+                shn_maxs,
+                count,
+                sh_coeffs,
+                palette_count,
+                centroids_width,
+            )
         else:
-            # v2: explicit bands and count
+            # v2: explicit bands and count with codebook lookup
             bands = shn_meta["bands"]
             sh_degree = bands
             sh_coeffs = SH_DEGREE_TO_COEFFS[bands]
-
-        if sh_coeffs > 0:
-            centroids_data = load(shn_meta["files"][0])
-            labels_data = load(shn_meta["files"][1])
-            centroids_rgba, cw, ch = _load_webp_image(centroids_data)
-            labels_rgba, lw, lh = _load_webp_image(labels_data)
-
-            if lw * lh < count:
-                raise ValueError("SOG shN labels texture too small for count")
-
             centroids_width = 64 * sh_coeffs
-
-            if is_v3:
-                # v3: linear dequantization with scalar min/max
-                shn_mins = float(shn_meta["mins"])
-                shn_maxs = float(shn_meta["maxs"])
-                # Derive palette count from centroids texture dimensions
-                palette_count = ch * 64
-                shn = _decode_shn_linear_jit(  # noqa: N806
-                    labels_rgba,
-                    centroids_rgba,
-                    shn_mins,
-                    shn_maxs,
-                    count,
-                    sh_coeffs,
-                    palette_count,
-                    centroids_width,
+            if cw != centroids_width:
+                raise ValueError(
+                    f"SOG shN centroids texture width {cw} does not match "
+                    f"expected {centroids_width} for {bands}-band palette"
                 )
-            else:
-                # v2: codebook lookup
-                palette_count = shn_meta["count"]
-                codebook = np.array(shn_meta["codebook"], dtype=np.float32)
-                shn = _decode_shn_jit(  # noqa: N806
-                    labels_rgba,
-                    centroids_rgba,
-                    codebook,
-                    count,
-                    sh_coeffs,
-                    palette_count,
-                    centroids_width,
-                )
+            palette_count = shn_meta["count"]
+            codebook = np.array(shn_meta["codebook"], dtype=np.float32)
+            shn = _decode_shn_jit(  # noqa: N806
+                labels_rgba,
+                centroids_rgba,
+                codebook,
+                count,
+                sh_coeffs,
+                palette_count,
+                centroids_width,
+            )
     else:
         shn = np.zeros((count, 0, 3), dtype=np.float32)  # noqa: N806
 

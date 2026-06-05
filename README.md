@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://readthedocs.org/projects/gsply/badge/?version=latest)](https://gsply.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-426%20passed%2C%2022%20skipped-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-435%20passed%2C%2022%20skipped-brightgreen.svg)](#testing)
 
 **93M Gaussians/sec read | 57M Gaussians/sec write | Auto-optimized**
 
@@ -62,7 +62,7 @@ Ultra-fast Gaussian Splatting PLY and SPZ I/O for Python. Zero-copy reads, auto-
 - **Object-Oriented API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
 - **Format Conversion**: `normalize()`, `denormalize()` with fused kernels (~8-15x faster)
 - **Color Conversion**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
-- **Comprehensive**: 430 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
+- **Comprehensive**: 435 passing tests, 22 skipped optional-environment tests, full type hints, extensive documentation
 
 ---
 
@@ -95,7 +95,7 @@ GPU-accelerated format conversions.
 ```bash
 pip install gsply[sogs]
 ```
-Enables `sogread()` for reading SOG (Splat Ordering Grid) format files.
+Enables `sogread()` for reading SOG (Spatially Ordered Gaussians) format files.
 
 **C++ acceleration backend (bundled wheels):**
 
@@ -323,10 +323,16 @@ data = sogread("model.sog")
 positions = data.means
 colors = data.sh0
 
+# Read unbundled splat-transform output
+data = sogread("model/meta.json")
+
 # Read from bytes (in-memory, no disk I/O)
 with open("model.sog", "rb") as f:
     sog_bytes = f.read()
 data = sogread(sog_bytes)  # Fully in-memory extraction
+
+# SOG returns PLY-format values: log-scales and logit-opacities.
+linear = data.denormalize(inplace=False)
 ```
 
 ---
@@ -381,16 +387,21 @@ Chunk-based quantized format:
 - Compatible with PlayCanvas, SuperSplat, other WebGL viewers
 - Parallel compression/decompression with Numba JIT
 
-### SOG Format (Splat Ordering Grid) - Optional
+### SOG Format (Spatially Ordered Gaussians) - Optional
 
 WebP-based texture format for web deployment:
 - Requires `gsply[sogs]` installation
 - Uses WebP images for efficient storage
 - Codebook-based compression for scales and colors
 - Compatible with PlayCanvas splat-transform
-- Supports both `.sog` ZIP bundles and folder formats
+- Supports current `version: 2` SOG and legacy V1 assets without a version field
+- Supports `.sog` ZIP bundles, folders, direct `meta.json` paths, and ZIP bytes
 - Returns `GSData` container (same API as `plyread()`)
-- In-memory ZIP extraction: Can read directly from bytes
+- Returns PLY-format log-scales and logit-opacities; call `denormalize()` for
+  linear scales/opacities
+- Invalid quaternion tags fall back to the canonical `wxyz` identity quaternion
+  `[1, 0, 0, 0]`, matching splat-transform
+- In-memory ZIP extraction: can read bundled SOG directly from bytes
 
 ### SPZ (Niantic) - Optional
 
@@ -417,7 +428,7 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 - `read_spz_gpu(file_path, device="cuda")` - Read SPZ into `GSTensor` with tensor decode
 - `write_spz(file_path, data, *, version=3, ...)` - Write SPZ (v3 gzip / v4 zstd)
 - `detect_format(file_path)` - Detect format and SH degree
-- `sogread(file_path | bytes)` - Read SOG files (optional)
+- `sogread(file_path | meta_json_path | bytes)` - Read SOG files (optional)
 
 ### GSData Container
 - `GSData.load(file_path)` - Load from PLY (classmethod)
@@ -526,7 +537,7 @@ Complete API documentation: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ### v0.2.5 - SOG Format Support & API Improvements
 
-- **SOG Format Support**: `sogread()` - Read SOG (Splat Ordering Grid) format files
+- **SOG Format Support**: `sogread()` - Read SOG (Spatially Ordered Gaussians) format files
 - **Object-Oriented I/O API**: `data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`
 - **Format Conversion API**: `normalize()`, `denormalize()` for linear ↔ PLY format conversion
 - **Color Conversion API**: `to_rgb()`, `to_sh()` for SH ↔ RGB conversion
@@ -574,7 +585,7 @@ gsply/
 │       ├── spz.py      # SPZ tensor decode
 │       └── io.py       # GPU I/O
 ├── cpp/                # Bundled C++ acceleration backend source
-├── tests/              # Unit tests (452 collected)
+├── tests/              # Unit tests (457 collected)
 ├── benchmarks/         # Performance benchmarks
 ├── docs/               # Documentation
 └── pyproject.toml      # Package configuration
@@ -582,7 +593,7 @@ gsply/
 
 ### Testing
 
-gsply has comprehensive test coverage with **430 passed, 22 skipped, 452 collected** in the latest local verification:
+gsply has comprehensive test coverage with **435 passed, 22 skipped, 457 collected** in the latest local verification:
 
 ```bash
 # Run all tests

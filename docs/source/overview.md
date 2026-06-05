@@ -32,7 +32,7 @@ memory overhead; auto-consolidation optimizes writes automatically.
 
 `detect_format()` auto-detects PLY layout. `plywrite()` selects compressed output when
 `compressed=True` or when the file extension is `.compressed.ply`. Supports uncompressed PLY,
-PlayCanvas compressed PLY, and SOG (Splat Ordering Grid) formats.
+PlayCanvas compressed PLY, and SOG (Spatially Ordered Gaussians) formats.
 
 ### Object-Oriented API
 

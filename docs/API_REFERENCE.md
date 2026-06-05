@@ -55,7 +55,7 @@ Complete API reference for gsply - Ultra-Fast Gaussian Splatting PLY and SPZ I/O
 - Object-Oriented I/O API (`data.save()`, `GSData.load()`, `gstensor.save()`, `GSTensor.load()`)
 - Format Conversion API (`normalize()`, `denormalize()`) - Convert between linear and PLY formats
 - Color Conversion API (`to_rgb()`, `to_sh()`) - Convert between SH and RGB color formats
-- SOG Format Support (`sogread()`) - Read SOG (Splat Ordering Grid) format files
+- SOG Format Support (`sogread()`) - Read SOG (Spatially Ordered Gaussians) format files
 
 ## Installation
 
@@ -327,14 +327,15 @@ Use this when creating GSData for rasterization or when you have linear values.
 
 ### `sogread(file_path | bytes)`
 
-Read SOG (Splat Ordering Grid) format file.
+Read SOG (Spatially Ordered Gaussians) format file.
 
 Returns `GSData` container (same as `plyread()`) for consistent API across all formats.
-Supports both `.sog` ZIP bundles and folders with separate files.
-Can also accept bytes directly for in-memory ZIP extraction.
+Supports current `version: 2` SOG and legacy V1 assets without a version field.
+Input may be a `.sog` ZIP bundle, a folder with separate files, a direct
+`meta.json` path, or bundled SOG bytes for in-memory ZIP extraction.
 
 **Parameters:**
-- `file_path` (str | Path | bytes): Path to `.sog` file, folder containing SOG files, or bytes (ZIP data)
+- `file_path` (str | Path | bytes): Path to `.sog`, folder, `meta.json`, or bytes (ZIP data)
 
 **Returns:**
 `GSData` dataclass with Gaussian parameters (same structure as `plyread()`):

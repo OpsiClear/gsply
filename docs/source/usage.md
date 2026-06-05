@@ -70,7 +70,7 @@ views into a shared `_base` buffer, so slicing and masking operations don't dupl
 from gsply import sogread
 
 # Read SOG format (requires gsply[sogs])
-data = sogread("model.sog")  # Returns GSData (same API as plyread)
+data = sogread("model.sog")  # Also accepts an unbundled meta.json path
 
 # In-memory reading from bytes
 with open("model.sog", "rb") as f:
